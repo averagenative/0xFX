@@ -39,11 +39,20 @@
 <h2>Cabinets</h2>
 <div class="grid" id="cabs"></div>
 
+<h2>Knobs (Rotatable)</h2>
+<div class="grid" id="knobs"></div>
+
 <h2>Cables</h2>
 <div class="grid" id="cables"></div>
 
 <h2>LED Indicators</h2>
 <div class="grid" id="leds"></div>
+
+<h2>App Icons</h2>
+<div class="grid" id="icons"></div>
+
+<h2>Logos</h2>
+<div class="grid" id="logos"></div>
 
 <h2>Theme Textures</h2>
 <div class="grid" id="textures"></div>
@@ -78,14 +87,29 @@ const assets = {
     dir: "../resources/cabs",
     files: ["1x12_open","2x12_closed","4x12_straight","4x12_slant","direct_flat"],
   },
+  knobs: {
+    dir: "../resources/knobs",
+    files: ["knob_chicken_cream","knob_chicken_brown","knob_skirted_black","knob_dome_silver","knob_pointer_black"],
+    small: true,
+  },
   cables: {
     dir: "../resources/cables",
-    files: ["patch_cable_short","patch_cable_medium","instrument_cable","speaker_cable","cable_bundle"],
+    files: ["patch_cable_short","patch_cable_medium","instrument_cable","speaker_cable","cable_bundle","cable_run_horizontal","cable_run_curved"],
+    wide: true,
   },
   leds: {
     dir: "../resources/leds",
     files: ["led_red_on","led_red_off","led_green_on","led_green_off","led_amber_on","led_amber_off","led_blue_on"],
     small: true,
+  },
+  icons: {
+    dir: "../resources/icon",
+    files: ["icon_01_pedal","icon_02_knob","icon_03_amp_glow","icon_04_hex"],
+    small: true,
+  },
+  logos: {
+    dir: "../resources/logo",
+    files: ["logo_01_stamped","logo_02_neon","logo_03_etched","logo_04_amp_badge","logo_05_burned","logo_06_stencil"],
   },
   textures: {
     dir: "../resources/theme",

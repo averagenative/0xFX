@@ -23,6 +23,8 @@ resources/reference/*.png
 resources/cables/*.png
 resources/leds/*.png
 resources/logo/*.png
+resources/knobs/*.png
+resources/icon/*.png
 
 # OS
 .DS_Store

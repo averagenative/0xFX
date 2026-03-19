@@ -2,10 +2,16 @@
  * 0xFX — GUI application entry point
  *
  * SDL2 + OpenGL 3.3 + Dear ImGui
- * Phase 3B: basic window with amp panel and pedalboard placeholders
+ * Borderless window with custom title bar (no Windows chrome)
  */
 #include <SDL.h>
 #include <SDL_opengl.h>
+#include <SDL_syswm.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <windowsx.h>  /* GET_X_LPARAM, GET_Y_LPARAM */
+#endif
 
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
@@ -65,6 +71,74 @@ static void setup_theme(void) {
     style.ItemSpacing       = ImVec2(8, 6);
 }
 
+/* ── Borderless window support (Win32) ─────────────────────────── */
+
+#define RESIZE_BORDER 8
+
+#ifdef _WIN32
+static WNDPROC g_orig_wndproc = NULL;
+
+static LRESULT CALLBACK borderless_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_NCCALCSIZE && wp == TRUE) {
+        if (IsZoomed(hwnd)) {
+            NCCALCSIZE_PARAMS *params = (NCCALCSIZE_PARAMS *)lp;
+            HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi; mi.cbSize = sizeof(mi);
+            if (GetMonitorInfo(mon, &mi)) params->rgrc[0] = mi.rcWork;
+        }
+        return 0;
+    }
+    if (msg == WM_NCHITTEST) {
+        LRESULT hit = DefWindowProcW(hwnd, msg, wp, lp);
+        if (hit == HTCLIENT) {
+            RECT rc; GetClientRect(hwnd, &rc);
+            POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            ScreenToClient(hwnd, &pt);
+            int w = rc.right, h = rc.bottom;
+            bool top = pt.y < RESIZE_BORDER, bottom = pt.y >= h - RESIZE_BORDER;
+            bool left = pt.x < RESIZE_BORDER, right_ = pt.x >= w - RESIZE_BORDER;
+            if (top && left)      return HTTOPLEFT;
+            if (top && right_)    return HTTOPRIGHT;
+            if (bottom && left)   return HTBOTTOMLEFT;
+            if (bottom && right_) return HTBOTTOMRIGHT;
+            if (top)              return HTTOP;
+            if (bottom)           return HTBOTTOM;
+            if (left)             return HTLEFT;
+            if (right_)           return HTRIGHT;
+        } else return hit;
+    }
+    if (msg == WM_GETMINMAXINFO) {
+        MINMAXINFO *mmi = (MINMAXINFO *)lp;
+        HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi; mi.cbSize = sizeof(mi);
+        if (GetMonitorInfo(mon, &mi)) {
+            mmi->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
+            mmi->ptMaxPosition.y = mi.rcWork.top  - mi.rcMonitor.top;
+            mmi->ptMaxSize.x     = mi.rcWork.right  - mi.rcWork.left;
+            mmi->ptMaxSize.y     = mi.rcWork.bottom - mi.rcWork.top;
+        }
+        return 0;
+    }
+    return CallWindowProcW(g_orig_wndproc, hwnd, msg, wp, lp);
+}
+
+static void install_borderless_wndproc(SDL_Window *window) {
+    SDL_SysWMinfo wmInfo;
+    SDL_VERSION(&wmInfo.version);
+    if (SDL_GetWindowWMInfo(window, &wmInfo)) {
+        HWND hwnd = wmInfo.info.win.window;
+        g_orig_wndproc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC,
+                                                      (LONG_PTR)borderless_wndproc);
+        LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        style |= WS_THICKFRAME | WS_CAPTION | WS_SYSMENU |
+                 WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+        SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                     SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+    }
+}
+#endif /* _WIN32 */
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
@@ -94,13 +168,19 @@ int main(int argc, char *argv[]) {
         "0xFX — Guitar Amp Sim & Pedalboard",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         1400, 800,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
+        SDL_WINDOW_ALLOW_HIGHDPI
     );
     if (!window) {
         fprintf(stderr, "SDL_CreateWindow error: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
+
+    SDL_SetWindowMinimumSize(window, 800, 500);
+#ifdef _WIN32
+    install_borderless_wndproc(window);
+#endif
 
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, gl_context);
@@ -378,7 +458,113 @@ int main(int argc, char *argv[]) {
                 ImGui::EndPopup();
             }
 
+            /* ── Window controls: _ [] X (borderless) ─────────── */
+            {
+                ImVec2 wc_sz(35.0f, 28.0f);
+                float controls_w = wc_sz.x * 3 + 4 + 8;
+                ImGui::SameLine(ImGui::GetWindowWidth() - controls_w);
+
+                /* Minimize */
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
+                if (ImGui::Button("_##wmin", wc_sz)) {
+#ifdef _WIN32
+                    SDL_SysWMinfo wmInfo; SDL_VERSION(&wmInfo.version);
+                    if (SDL_GetWindowWMInfo(window, &wmInfo))
+                        ShowWindow(wmInfo.info.win.window, SW_MINIMIZE);
+#else
+                    SDL_MinimizeWindow(window);
+#endif
+                }
+                ImGui::PopStyleColor(4);
+                ImGui::SameLine(0, 2);
+
+                /* Maximize / Restore */
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
+                {
+                    bool maximized = false;
+#ifdef _WIN32
+                    SDL_SysWMinfo wmI; SDL_VERSION(&wmI.version);
+                    if (SDL_GetWindowWMInfo(window, &wmI))
+                        maximized = IsZoomed(wmI.info.win.window) != 0;
+#else
+                    maximized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
+#endif
+                    if (ImGui::Button(maximized ? "[]##wmax" : "[ ]##wmax", wc_sz)) {
+#ifdef _WIN32
+                        SDL_SysWMinfo wmI2; SDL_VERSION(&wmI2.version);
+                        if (SDL_GetWindowWMInfo(window, &wmI2))
+                            ShowWindow(wmI2.info.win.window, maximized ? SW_RESTORE : SW_MAXIMIZE);
+#else
+                        if (maximized) SDL_RestoreWindow(window);
+                        else SDL_MaximizeWindow(window);
+#endif
+                    }
+                }
+                ImGui::PopStyleColor(4);
+                ImGui::SameLine(0, 2);
+
+                /* Close — red accent */
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.10f, 0.10f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.00f, 0.25f, 0.25f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                if (ImGui::Button("X##wclose", wc_sz)) {
+                    running = false;
+                }
+                ImGui::PopStyleColor(4);
+            }
+
+            /* ── Window drag (click empty toolbar area to move window) ── */
+            {
+                static bool dragging_window = false;
+                static int drag_start_wx, drag_start_wy, drag_start_mx, drag_start_my;
+
+                bool in_toolbar = (io.MousePos.y < 50);
+                bool over_widget = ImGui::IsAnyItemHovered() || ImGui::IsAnyItemActive();
+
+                /* Double-click toolbar: maximize/restore */
+                if (io.MouseDoubleClicked[0] && in_toolbar && !over_widget) {
+#ifdef _WIN32
+                    SDL_SysWMinfo wmI; SDL_VERSION(&wmI.version);
+                    if (SDL_GetWindowWMInfo(window, &wmI)) {
+                        bool is_max = IsZoomed(wmI.info.win.window) != 0;
+                        ShowWindow(wmI.info.win.window, is_max ? SW_RESTORE : SW_MAXIMIZE);
+                    }
+#else
+                    bool is_max = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
+                    if (is_max) SDL_RestoreWindow(window); else SDL_MaximizeWindow(window);
+#endif
+                }
+
+                if (io.MouseClicked[0] && in_toolbar && !over_widget) {
+                    dragging_window = true;
+                    SDL_GetWindowPosition(window, &drag_start_wx, &drag_start_wy);
+                    SDL_GetGlobalMouseState(&drag_start_mx, &drag_start_my);
+                }
+                if (dragging_window) {
+                    if (io.MouseDown[0]) {
+                        int mx, my;
+                        SDL_GetGlobalMouseState(&mx, &my);
+                        SDL_SetWindowPosition(window, drag_start_wx + mx - drag_start_mx,
+                                                       drag_start_wy + my - drag_start_my);
+                    } else {
+                        dragging_window = false;
+                    }
+                }
+            }
+
             ImGui::End();
+        }
+
+        /* ── Keyboard shortcuts ──────────────────────────────────── */
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            running = false;
         }
 
         /* ── Amp panel ────────────────────────────────────────── */
@@ -680,6 +866,21 @@ int main(int argc, char *argv[]) {
             ImGui::TextDisabled("0xFX v0.1.0 | Phase 3B MVP | %.0f FPS",
                                io.Framerate);
             ImGui::End();
+        }
+
+        /* ── Window border + resize grip (borderless) ──────── */
+        {
+            ImDrawList *fg = ImGui::GetForegroundDrawList();
+            ImU32 border_col = IM_COL32(50, 45, 38, 200);
+            fg->AddRect(ImVec2(0, 0),
+                        ImVec2(io.DisplaySize.x, io.DisplaySize.y),
+                        border_col, 0.0f, 0, 2.0f);
+            /* Resize grip triangle — bottom-right */
+            float gs = 14.0f;
+            float bx = io.DisplaySize.x, by = io.DisplaySize.y;
+            ImU32 grip_col = IM_COL32(80, 72, 58, 180);
+            fg->AddTriangleFilled(
+                ImVec2(bx - gs, by), ImVec2(bx, by - gs), ImVec2(bx, by), grip_col);
         }
 
         /* Render */
