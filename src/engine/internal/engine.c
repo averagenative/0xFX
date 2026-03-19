@@ -311,9 +311,8 @@ bool fx_cab_load_ir(fx_engine_t *engine, fx_chain_id chain,
                     const char *wav_path) {
     if (!engine || chain < 0 || chain >= engine->num_chains || !wav_path)
         return false;
-    /* TODO Phase 4: load .wav IR, compute FFT, store in cab state */
-    (void)wav_path;
-    return false;
+    return fx_cab_load_wav(&engine->chains[chain].cab, wav_path,
+                           FX_MAX_BLOCK_SIZE);
 }
 
 void fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain, bool bypass) {
@@ -326,19 +325,7 @@ bool fx_cab_get_bypass(fx_engine_t *engine, fx_chain_id chain) {
     return engine->chains[chain].cab.bypass;
 }
 
-/* ── Presets ──────────────────────────────────────────────────── */
-
-bool fx_preset_save(fx_engine_t *engine, const char *path) {
-    /* TODO Phase 4 */
-    (void)engine; (void)path;
-    return false;
-}
-
-bool fx_preset_load(fx_engine_t *engine, const char *path) {
-    /* TODO Phase 4 */
-    (void)engine; (void)path;
-    return false;
-}
+/* ── Presets are implemented in preset.c ──────────────────────── */
 
 /* ── Audio device management stubs (implemented in audio_device.c) */
 

@@ -10,6 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
+
+/* dr_wav for writing test WAV files (declaration only — impl is in cab_ir.c) */
+#include "dr_wav.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -543,6 +547,127 @@ static void test_amp_character(void) {
     printf("  OK\n");
 }
 
+/* ── Test: cabinet IR convolution ─────────────────────────────── */
+
+static void test_cab_ir(void) {
+    printf("test_cab_ir...\n");
+
+    /* Create a simple IR: a delayed impulse at sample 10 */
+    const int ir_len = 64;
+    const int delay = 10;
+    const unsigned int sr = 48000;
+    float ir_data[64];
+    memset(ir_data, 0, sizeof(ir_data));
+    ir_data[delay] = 1.0f;
+
+    /* Write it as a temp .wav file */
+    const char *tmp_path = "/tmp/0xfx_test_ir.wav";
+    drwav wav;
+    drwav_data_format format;
+    format.container = drwav_container_riff;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+    format.channels = 1;
+    format.sampleRate = sr;
+    format.bitsPerSample = 32;
+    drwav_bool32 ok = drwav_init_file_write(&wav, tmp_path, &format, NULL);
+    ASSERT(ok, "should create temp .wav file");
+    if (!ok) { printf("  SKIP (cannot create temp file)\n"); return; }
+    drwav_uint64 written = drwav_write_pcm_frames(&wav, (drwav_uint64)ir_len, ir_data);
+    ASSERT((int)written == ir_len, "should write all IR frames");
+    drwav_uninit(&wav);
+
+    /* Create engine and load the IR */
+    fx_engine_t *e = fx_engine_create((float)sr);
+    ASSERT(e != NULL, "engine should be created");
+
+    bool loaded = fx_cab_load_ir(e, FX_CHAIN_DEFAULT, tmp_path);
+    ASSERT(loaded, "should load IR from .wav file");
+
+    /* Bypass the amp so we get a clean convolution result.
+     * Set gain to 0 (minimal distortion), volume and master to max. */
+    fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+    /* Process an impulse (single sample = 1.0, rest = 0)
+     * through the engine. The cab IR is a delayed impulse at sample 10,
+     * so the output peak should be near sample 10. */
+    const int block = 256;
+    float input[256];
+    float output[256];
+    memset(input, 0, sizeof(input));
+    /* Use a strong impulse burst so the noise gate opens */
+    for (int i = 0; i < 32; i++) {
+        input[i] = 0.5f * sinf(2.0f * 3.14159f * 1000.0f * (float)i / (float)sr);
+    }
+
+    fx_engine_process(e, input, output, block);
+
+    /* Verify the output has energy (cab IR is active) */
+    float peak = 0.0f;
+    int peak_idx = 0;
+    for (int i = 0; i < block; i++) {
+        float a = fabsf(output[i]);
+        if (a > peak) {
+            peak = a;
+            peak_idx = i;
+        }
+    }
+    ASSERT(peak > 0.001f, "cab IR output should have energy");
+    printf("    peak=%.4f at sample %d\n", peak, peak_idx);
+
+    /* Now test with a pure impulse directly through cab (bypass engine chain).
+     * Create a second engine, load IR, and send a loud enough signal. */
+    fx_engine_t *e2 = fx_engine_create((float)sr);
+    bool loaded2 = fx_cab_load_ir(e2, FX_CHAIN_DEFAULT, tmp_path);
+    ASSERT(loaded2, "should load IR again");
+
+    /* Use cab bypass test: with cab loaded, output should differ from
+     * output with cab bypassed */
+    fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+    float out_with_cab[256];
+    float out_no_cab[256];
+
+    /* Input: short tone burst */
+    float input2[256];
+    memset(input2, 0, sizeof(input2));
+    for (int i = 0; i < 64; i++) {
+        input2[i] = 0.4f * sinf(2.0f * 3.14159f * 440.0f * (float)i / (float)sr);
+    }
+
+    fx_engine_process(e2, input2, out_with_cab, block);
+
+    /* Now bypass cab and process same input with a fresh engine */
+    fx_engine_t *e3 = fx_engine_create((float)sr);
+    fx_amp_set_param(e3, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e3, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e3, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+    /* No IR loaded on e3 — cab is not active */
+    fx_engine_process(e3, input2, out_no_cab, block);
+
+    /* Output with cab should differ from output without cab */
+    int cab_differs = 0;
+    for (int i = 0; i < block; i++) {
+        if (fabsf(out_with_cab[i] - out_no_cab[i]) > 1e-4f) {
+            cab_differs = 1;
+            break;
+        }
+    }
+    ASSERT(cab_differs, "cab IR should change the signal");
+
+    fx_engine_destroy(e);
+    fx_engine_destroy(e2);
+    fx_engine_destroy(e3);
+
+    /* Clean up temp file */
+    unlink(tmp_path);
+
+    printf("  OK\n");
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -562,6 +687,7 @@ int main(void) {
     test_compressor();
     test_pedal_param_names();
     test_tuner();
+    test_cab_ir();
 
     printf("\n═══ Results: %d passed, %d failed ═══\n",
            tests_passed, tests_failed);

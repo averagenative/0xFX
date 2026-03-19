@@ -9,7 +9,9 @@
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 5000,
-    "acceptanceCriteria": ["All dirs exist: src/engine/, src/audio/, src/gui/, src/standalone/, src/plugin/, deps/, tests/"],
+    "acceptanceCriteria": [
+      "All dirs exist: src/engine/, src/audio/, src/gui/, src/standalone/, src/plugin/, deps/, tests/"
+    ],
     "files": []
   },
   {
@@ -20,10 +22,16 @@
     "phase": 1,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-001"],
+    "depends": [
+      "TASK-001"
+    ],
     "estimatedTokens": 5000,
-    "acceptanceCriteria": ["miniaudio.h, dr_wav.h, cJSON, KissFFT in deps/"],
-    "files": ["deps/"]
+    "acceptanceCriteria": [
+      "miniaudio.h, dr_wav.h, cJSON, KissFFT in deps/"
+    ],
+    "files": [
+      "deps/"
+    ]
   },
   {
     "id": "TASK-003",
@@ -33,10 +41,18 @@
     "phase": 1,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-001"],
+    "depends": [
+      "TASK-001"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["cmake -B build succeeds", "0xfx_standalone target compiles", "fx_api_test target compiles"],
-    "files": ["CMakeLists.txt"]
+    "acceptanceCriteria": [
+      "cmake -B build succeeds",
+      "0xfx_standalone target compiles",
+      "fx_api_test target compiles"
+    ],
+    "files": [
+      "CMakeLists.txt"
+    ]
   },
   {
     "id": "TASK-004",
@@ -46,10 +62,18 @@
     "phase": 1,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-001"],
+    "depends": [
+      "TASK-001"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Opaque fx_engine_t handle", "All pedal/amp/chain types defined", "No internal structs exposed"],
-    "files": ["src/engine/fx_engine.h"]
+    "acceptanceCriteria": [
+      "Opaque fx_engine_t handle",
+      "All pedal/amp/chain types defined",
+      "No internal structs exposed"
+    ],
+    "files": [
+      "src/engine/fx_engine.h"
+    ]
   },
   {
     "id": "TASK-005",
@@ -59,10 +83,19 @@
     "phase": 1,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-004"],
+    "depends": [
+      "TASK-004"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["fx_engine_create/destroy work", "fx_engine_process copies input to output", "Pedal add/remove/move API works"],
-    "files": ["src/engine/internal/engine.c", "src/engine/internal/engine_internal.h"]
+    "acceptanceCriteria": [
+      "fx_engine_create/destroy work",
+      "fx_engine_process copies input to output",
+      "Pedal add/remove/move API works"
+    ],
+    "files": [
+      "src/engine/internal/engine.c",
+      "src/engine/internal/engine_internal.h"
+    ]
   },
   {
     "id": "TASK-006",
@@ -72,10 +105,19 @@
     "phase": 1,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-002"],
+    "depends": [
+      "TASK-002"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Device enumeration returns device names", "Duplex audio device opens", "Hot-plug detection works"],
-    "files": ["src/audio/audio_device.c", "src/audio/audio_device.h"]
+    "acceptanceCriteria": [
+      "Device enumeration returns device names",
+      "Duplex audio device opens",
+      "Hot-plug detection works"
+    ],
+    "files": [
+      "src/audio/audio_device.c",
+      "src/audio/audio_device.h"
+    ]
   },
   {
     "id": "TASK-007",
@@ -85,10 +127,19 @@
     "phase": 1,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-005", "TASK-006"],
+    "depends": [
+      "TASK-005",
+      "TASK-006"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Binary runs", "Prints detected devices", "Audio passes through"],
-    "files": ["src/standalone/main.c"]
+    "acceptanceCriteria": [
+      "Binary runs",
+      "Prints detected devices",
+      "Audio passes through"
+    ],
+    "files": [
+      "src/standalone/main.c"
+    ]
   },
   {
     "id": "TASK-009",
@@ -98,10 +149,18 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-004"],
+    "depends": [
+      "TASK-004"
+    ],
     "estimatedTokens": 5000,
-    "acceptanceCriteria": ["5 amp types in enum", "Per-chain set/get model API", "Param introspection API"],
-    "files": ["src/engine/fx_engine.h"]
+    "acceptanceCriteria": [
+      "5 amp types in enum",
+      "Per-chain set/get model API",
+      "Param introspection API"
+    ],
+    "files": [
+      "src/engine/fx_engine.h"
+    ]
   },
   {
     "id": "TASK-010",
@@ -111,10 +170,19 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-009"],
+    "depends": [
+      "TASK-009"
+    ],
     "estimatedTokens": 30000,
-    "acceptanceCriteria": ["Cascaded waveshaping (1-4 stages per model)", "4 waveshaper types: tanh, asym, atan, hard", "DC blocking highpass per stage", "Test: amp output differs from input"],
-    "files": ["src/engine/internal/amp.c"]
+    "acceptanceCriteria": [
+      "Cascaded waveshaping (1-4 stages per model)",
+      "4 waveshaper types: tanh, asym, atan, hard",
+      "DC blocking highpass per stage",
+      "Test: amp output differs from input"
+    ],
+    "files": [
+      "src/engine/internal/amp.c"
+    ]
   },
   {
     "id": "TASK-011",
@@ -124,10 +192,19 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-010"],
+    "depends": [
+      "TASK-010"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["3-band biquad EQ (bass/mid/treble) + presence", "Per-model voicing (different center freqs)", "Coefficient caching (recalc only on param change)"],
-    "files": ["src/engine/internal/amp.c", "src/engine/internal/biquad.c"]
+    "acceptanceCriteria": [
+      "3-band biquad EQ (bass/mid/treble) + presence",
+      "Per-model voicing (different center freqs)",
+      "Coefficient caching (recalc only on param change)"
+    ],
+    "files": [
+      "src/engine/internal/amp.c",
+      "src/engine/internal/biquad.c"
+    ]
   },
   {
     "id": "TASK-012",
@@ -137,10 +214,18 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-010"],
+    "depends": [
+      "TASK-010"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Envelope follower compression", "Sag simulation (voltage droop under load)", "Per-model compression threshold"],
-    "files": ["src/engine/internal/amp.c"]
+    "acceptanceCriteria": [
+      "Envelope follower compression",
+      "Sag simulation (voltage droop under load)",
+      "Per-model compression threshold"
+    ],
+    "files": [
+      "src/engine/internal/amp.c"
+    ]
   },
   {
     "id": "TASK-013",
@@ -150,10 +235,19 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-005"],
+    "depends": [
+      "TASK-005"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Silence below threshold attenuated", "Signal above threshold passes", "Smooth gain transitions (no clicks)", "Hold phase prevents chatter"],
-    "files": ["src/engine/internal/noise_gate.c"]
+    "acceptanceCriteria": [
+      "Silence below threshold attenuated",
+      "Signal above threshold passes",
+      "Smooth gain transitions (no clicks)",
+      "Hold phase prevents chatter"
+    ],
+    "files": [
+      "src/engine/internal/noise_gate.c"
+    ]
   },
   {
     "id": "TASK-014",
@@ -163,10 +257,21 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-010", "TASK-011", "TASK-012", "TASK-013"],
+    "depends": [
+      "TASK-010",
+      "TASK-011",
+      "TASK-012",
+      "TASK-013"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Signal flow: input → gate → pre-pedals → amp → post-pedals → output", "Multi-chain: split → per-chain amp+cab → sum with mix", "Test: all 5 amp models produce unique output"],
-    "files": ["src/engine/internal/engine.c"]
+    "acceptanceCriteria": [
+      "Signal flow: input → gate → pre-pedals → amp → post-pedals → output",
+      "Multi-chain: split → per-chain amp+cab → sum with mix",
+      "Test: all 5 amp models produce unique output"
+    ],
+    "files": [
+      "src/engine/internal/engine.c"
+    ]
   },
   {
     "id": "TASK-015",
@@ -176,10 +281,17 @@
     "phase": 2,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-009"],
+    "depends": [
+      "TASK-009"
+    ],
     "estimatedTokens": 5000,
-    "acceptanceCriteria": ["fx_amp_get_param_count() returns correct count per model", "fx_amp_get_param_name() returns knob names"],
-    "files": ["src/engine/internal/amp.c"]
+    "acceptanceCriteria": [
+      "fx_amp_get_param_count() returns correct count per model",
+      "fx_amp_get_param_name() returns knob names"
+    ],
+    "files": [
+      "src/engine/internal/amp.c"
+    ]
   },
   {
     "id": "TASK-017",
@@ -189,10 +301,18 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-005"],
+    "depends": [
+      "TASK-005"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Pedal add/remove/move/bypass API works", "Internal dispatch table maps type → init/process/free", "Test: add pedal, set param, verify param"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Pedal add/remove/move/bypass API works",
+      "Internal dispatch table maps type → init/process/free",
+      "Test: add pedal, set param, verify param"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-018",
@@ -202,10 +322,19 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017"],
+    "depends": [
+      "TASK-017"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Soft clip x/(1+|x|) with mid-hump EQ", "Drive/Tone/Level params", "Test: OD output differs from clean", "Per-param names: Drive, Tone, Level"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Soft clip x/(1+|x|) with mid-hump EQ",
+      "Drive/Tone/Level params",
+      "Test: OD output differs from clean",
+      "Per-param names: Drive, Tone, Level"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-019",
@@ -215,10 +344,17 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017"],
+    "depends": [
+      "TASK-017"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Clean blend mixed with tanh-clipped signal", "Gain/Treble/Output params"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Clean blend mixed with tanh-clipped signal",
+      "Gain/Treble/Output params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-020",
@@ -228,10 +364,18 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017"],
+    "depends": [
+      "TASK-017"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Op-amp hard clip with asymmetry", "Backwards filter (high=dark, low=bright)", "Distortion/Filter/Volume params"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Op-amp hard clip with asymmetry",
+      "Backwards filter (high=dark, low=bright)",
+      "Distortion/Filter/Volume params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-021",
@@ -241,10 +385,19 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017"],
+    "depends": [
+      "TASK-017"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Circular buffer delay line", "Time/Feedback/Mix params", "Test: echoes persist after input stops", "Feedback capped at 0.9"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Circular buffer delay line",
+      "Time/Feedback/Mix params",
+      "Test: echoes persist after input stops",
+      "Feedback capped at 0.9"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-022",
@@ -254,10 +407,19 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017"],
+    "depends": [
+      "TASK-017"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["Freeverb: 4 comb + 2 allpass filters", "Decay/Damping/Mix params", "Test: reverb tail persists after input stops", "LP damping in comb feedback"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Freeverb: 4 comb + 2 allpass filters",
+      "Decay/Damping/Mix params",
+      "Test: reverb tail persists after input stops",
+      "LP damping in comb feedback"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-023",
@@ -267,10 +429,19 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017"],
+    "depends": [
+      "TASK-017"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Peak-detecting envelope follower", "4:1 ratio compression above threshold", "Output/Sensitivity params", "Test: compressor produces output"],
-    "files": ["src/engine/internal/pedals.c"]
+    "acceptanceCriteria": [
+      "Peak-detecting envelope follower",
+      "4:1 ratio compression above threshold",
+      "Output/Sensitivity params",
+      "Test: compressor produces output"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   },
   {
     "id": "TASK-024",
@@ -280,10 +451,19 @@
     "phase": 3,
     "status": "done",
     "claimedBy": null,
-    "depends": ["TASK-017", "TASK-014"],
+    "depends": [
+      "TASK-017",
+      "TASK-014"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Pre-pedals process before amp", "Post-pedals process after amp+cab", "Test: signal chain order matters (pre vs post)"],
-    "files": ["src/engine/internal/engine.c"]
+    "acceptanceCriteria": [
+      "Pre-pedals process before amp",
+      "Post-pedals process after amp+cab",
+      "Test: signal chain order matters (pre vs post)"
+    ],
+    "files": [
+      "src/engine/internal/engine.c"
+    ]
   },
   {
     "id": "TASK-025",
@@ -291,12 +471,21 @@
     "title": "Vendor ImGui + SDL2+OpenGL backend",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
-    "depends": ["TASK-003"],
+    "status": "done",
+    "claimedBy": "main-agent",
+    "depends": [
+      "TASK-003"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["ImGui + backends in deps/", "CMakeLists.txt links SDL2+OpenGL+ImGui", "Empty window compiles and opens"],
-    "files": ["deps/", "CMakeLists.txt"]
+    "acceptanceCriteria": [
+      "ImGui + backends in deps/",
+      "CMakeLists.txt links SDL2+OpenGL+ImGui",
+      "Empty window compiles and opens"
+    ],
+    "files": [
+      "deps/",
+      "CMakeLists.txt"
+    ]
   },
   {
     "id": "TASK-026",
@@ -304,12 +493,21 @@
     "title": "GUI main window + render loop",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
-    "depends": ["TASK-025"],
+    "status": "done",
+    "claimedBy": "main-agent",
+    "depends": [
+      "TASK-025"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["SDL2 window 1400x800", "OpenGL 3.3 context", "ImGui renders text", "Stable 60fps render loop"],
-    "files": ["src/gui/gui_main.c"]
+    "acceptanceCriteria": [
+      "SDL2 window 1400x800",
+      "OpenGL 3.3 context",
+      "ImGui renders text",
+      "Stable 60fps render loop"
+    ],
+    "files": [
+      "src/gui/gui_main.c"
+    ]
   },
   {
     "id": "TASK-027",
@@ -319,10 +517,20 @@
     "phase": 3,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-026"],
+    "depends": [
+      "TASK-026"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["Click-drag to rotate", "Visual arc indicator", "Value label below", "Double-click reset to default", "Shift+drag for fine adjust"],
-    "files": ["src/gui/knobs.c"]
+    "acceptanceCriteria": [
+      "Click-drag to rotate",
+      "Visual arc indicator",
+      "Value label below",
+      "Double-click reset to default",
+      "Shift+drag for fine adjust"
+    ],
+    "files": [
+      "src/gui/knobs.c"
+    ]
   },
   {
     "id": "TASK-028",
@@ -332,10 +540,20 @@
     "phase": 3,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-027", "TASK-015"],
+    "depends": [
+      "TASK-027",
+      "TASK-015"
+    ],
     "estimatedTokens": 30000,
-    "acceptanceCriteria": ["Turnable knobs for all amp params", "Amp model selector dropdown", "Knob layout varies per amp type", "Calls fx_amp_set_param() on knob change"],
-    "files": ["src/gui/amp_panel.c"]
+    "acceptanceCriteria": [
+      "Turnable knobs for all amp params",
+      "Amp model selector dropdown",
+      "Knob layout varies per amp type",
+      "Calls fx_amp_set_param() on knob change"
+    ],
+    "files": [
+      "src/gui/amp_panel.c"
+    ]
   },
   {
     "id": "TASK-029",
@@ -345,10 +563,20 @@
     "phase": 3,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-027", "TASK-017"],
+    "depends": [
+      "TASK-027",
+      "TASK-017"
+    ],
     "estimatedTokens": 30000,
-    "acceptanceCriteria": ["Pre/post amp pedal sections", "Each pedal: stomp box with knobs + bypass LED", "Add pedal button with type selector popup", "Calls fx_pedal_set_param() on knob change"],
-    "files": ["src/gui/pedalboard.c"]
+    "acceptanceCriteria": [
+      "Pre/post amp pedal sections",
+      "Each pedal: stomp box with knobs + bypass LED",
+      "Add pedal button with type selector popup",
+      "Calls fx_pedal_set_param() on knob change"
+    ],
+    "files": [
+      "src/gui/pedalboard.c"
+    ]
   },
   {
     "id": "TASK-030",
@@ -358,10 +586,19 @@
     "phase": 3,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-029"],
+    "depends": [
+      "TASK-029"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["Click-hold starts drag", "Ghost shows insertion point", "Release calls fx_chain_move_pedal()", "No audio glitch during reorder"],
-    "files": ["src/gui/pedalboard.c"]
+    "acceptanceCriteria": [
+      "Click-hold starts drag",
+      "Ghost shows insertion point",
+      "Release calls fx_chain_move_pedal()",
+      "No audio glitch during reorder"
+    ],
+    "files": [
+      "src/gui/pedalboard.c"
+    ]
   },
   {
     "id": "TASK-031",
@@ -371,10 +608,19 @@
     "phase": 3,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-026", "TASK-006"],
+    "depends": [
+      "TASK-026",
+      "TASK-006"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Settings dropdown shows detected interfaces", "Select device calls fx_audio_set_device()", "Buffer size + sample rate selectors"],
-    "files": ["src/gui/settings.c"]
+    "acceptanceCriteria": [
+      "Settings dropdown shows detected interfaces",
+      "Select device calls fx_audio_set_device()",
+      "Buffer size + sample rate selectors"
+    ],
+    "files": [
+      "src/gui/settings.c"
+    ]
   },
   {
     "id": "TASK-032",
@@ -384,10 +630,18 @@
     "phase": 3,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-026"],
+    "depends": [
+      "TASK-026"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Note name + cents bar (-50 to +50)", "Updates ~30Hz", "Always visible in toolbar"],
-    "files": ["src/gui/tuner_display.c"]
+    "acceptanceCriteria": [
+      "Note name + cents bar (-50 to +50)",
+      "Updates ~30Hz",
+      "Always visible in toolbar"
+    ],
+    "files": [
+      "src/gui/tuner_display.c"
+    ]
   },
   {
     "id": "TASK-034",
@@ -395,12 +649,21 @@
     "title": "Overlap-add FFT convolution",
     "domain": "engine",
     "phase": 4,
-    "status": "queued",
-    "claimedBy": null,
-    "depends": ["TASK-002"],
+    "status": "done",
+    "claimedBy": "cab-ir-agent",
+    "depends": [
+      "TASK-002"
+    ],
     "estimatedTokens": 30000,
-    "acceptanceCriteria": ["Load .wav IR via dr_wav", "FFT via KissFFT", "Per-block: FFT input → complex multiply → IFFT → overlap-add", "Test: convolve impulse with known IR, verify output"],
-    "files": ["src/engine/internal/cab_ir.c"]
+    "acceptanceCriteria": [
+      "Load .wav IR via dr_wav",
+      "FFT via KissFFT",
+      "Per-block: FFT input → complex multiply → IFFT → overlap-add",
+      "Test: convolve impulse with known IR, verify output"
+    ],
+    "files": [
+      "src/engine/internal/cab_ir.c"
+    ]
   },
   {
     "id": "TASK-035",
@@ -410,10 +673,18 @@
     "phase": 4,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-034"],
+    "depends": [
+      "TASK-034"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["Load .wav IRs (44.1/48kHz, 16/24/32-bit, mono)", "Resample if needed", "Up to 4096 samples"],
-    "files": ["src/engine/internal/cab_ir.c"]
+    "acceptanceCriteria": [
+      "Load .wav IRs (44.1/48kHz, 16/24/32-bit, mono)",
+      "Resample if needed",
+      "Up to 4096 samples"
+    ],
+    "files": [
+      "src/engine/internal/cab_ir.c"
+    ]
   },
   {
     "id": "TASK-036",
@@ -423,10 +694,20 @@
     "phase": 4,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-034"],
+    "depends": [
+      "TASK-034"
+    ],
     "estimatedTokens": 40000,
-    "acceptanceCriteria": ["fx_cab_generate_ir() from parametric description", "Speaker Thiele-Small model", "Open/closed cabinet model", "Mic position model", "Minimum-phase reconstruction via Hilbert transform"],
-    "files": ["src/engine/internal/cab_ir.c"]
+    "acceptanceCriteria": [
+      "fx_cab_generate_ir() from parametric description",
+      "Speaker Thiele-Small model",
+      "Open/closed cabinet model",
+      "Mic position model",
+      "Minimum-phase reconstruction via Hilbert transform"
+    ],
+    "files": [
+      "src/engine/internal/cab_ir.c"
+    ]
   },
   {
     "id": "TASK-037",
@@ -436,10 +717,19 @@
     "phase": 4,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-036"],
+    "depends": [
+      "TASK-036"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["1x12 open, 2x12 closed, 4x12 straight, 4x12 slant, direct", "48kHz 32-bit float .wav", "2048 samples each", "In resources/cabs/"],
-    "files": ["resources/cabs/"]
+    "acceptanceCriteria": [
+      "1x12 open, 2x12 closed, 4x12 straight, 4x12 slant, direct",
+      "48kHz 32-bit float .wav",
+      "2048 samples each",
+      "In resources/cabs/"
+    ],
+    "files": [
+      "resources/cabs/"
+    ]
   },
   {
     "id": "TASK-039",
@@ -449,10 +739,19 @@
     "phase": 4,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-024"],
+    "depends": [
+      "TASK-024"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["fx_chain_create() adds parallel chain", "Per-chain mix level", "Max 4 chains", "Test: dual chain produces blended output"],
-    "files": ["src/engine/internal/engine.c"]
+    "acceptanceCriteria": [
+      "fx_chain_create() adds parallel chain",
+      "Per-chain mix level",
+      "Max 4 chains",
+      "Test: dual chain produces blended output"
+    ],
+    "files": [
+      "src/engine/internal/engine.c"
+    ]
   },
   {
     "id": "TASK-042",
@@ -460,12 +759,21 @@
     "title": "Implement fx_preset_save()",
     "domain": "infra",
     "phase": 4,
-    "status": "queued",
-    "claimedBy": null,
-    "depends": ["TASK-024"],
+    "status": "in_progress",
+    "claimedBy": "preset-agent",
+    "depends": [
+      "TASK-024"
+    ],
     "estimatedTokens": 25000,
-    "acceptanceCriteria": ["Serialize to .0xfx JSON", "All pedals + params + order", "All chains + amp models + params", "Metadata: name, author, tags"],
-    "files": ["src/engine/internal/preset.c"]
+    "acceptanceCriteria": [
+      "Serialize to .0xfx JSON",
+      "All pedals + params + order",
+      "All chains + amp models + params",
+      "Metadata: name, author, tags"
+    ],
+    "files": [
+      "src/engine/internal/preset.c"
+    ]
   },
   {
     "id": "TASK-043",
@@ -473,12 +781,21 @@
     "title": "Implement fx_preset_load()",
     "domain": "infra",
     "phase": 4,
-    "status": "queued",
-    "claimedBy": null,
-    "depends": ["TASK-042"],
+    "status": "in_progress",
+    "claimedBy": "preset-agent",
+    "depends": [
+      "TASK-042"
+    ],
     "estimatedTokens": 25000,
-    "acceptanceCriteria": ["Parse .0xfx JSON", "Reconstruct engine state", "Validate all fields, clamp out-of-range", "Test: save → load → process → identical output"],
-    "files": ["src/engine/internal/preset.c"]
+    "acceptanceCriteria": [
+      "Parse .0xfx JSON",
+      "Reconstruct engine state",
+      "Validate all fields, clamp out-of-range",
+      "Test: save → load → process → identical output"
+    ],
+    "files": [
+      "src/engine/internal/preset.c"
+    ]
   },
   {
     "id": "TASK-044",
@@ -488,10 +805,17 @@
     "phase": 4,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-042"],
+    "depends": [
+      "TASK-042"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["Clean Sparkle, Classic Crunch, Modern High Gain, Chimey British, Bluesy Tweed", "Each preset loads and produces audio"],
-    "files": ["presets/"]
+    "acceptanceCriteria": [
+      "Clean Sparkle, Classic Crunch, Modern High Gain, Chimey British, Bluesy Tweed",
+      "Each preset loads and produces audio"
+    ],
+    "files": [
+      "presets/"
+    ]
   },
   {
     "id": "TASK-067",
@@ -501,10 +825,17 @@
     "phase": 6,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-003"],
+    "depends": [
+      "TASK-003"
+    ],
     "estimatedTokens": 10000,
-    "acceptanceCriteria": ["CPLUG in deps/", "CLAP + VST3 examples studied"],
-    "files": ["deps/"]
+    "acceptanceCriteria": [
+      "CPLUG in deps/",
+      "CLAP + VST3 examples studied"
+    ],
+    "files": [
+      "deps/"
+    ]
   },
   {
     "id": "TASK-068",
@@ -514,10 +845,17 @@
     "phase": 6,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-067"],
+    "depends": [
+      "TASK-067"
+    ],
     "estimatedTokens": 15000,
-    "acceptanceCriteria": ["0xfx_clap shared lib target builds", "0xfx_vst3 shared lib target builds"],
-    "files": ["CMakeLists.txt"]
+    "acceptanceCriteria": [
+      "0xfx_clap shared lib target builds",
+      "0xfx_vst3 shared lib target builds"
+    ],
+    "files": [
+      "CMakeLists.txt"
+    ]
   },
   {
     "id": "TASK-069",
@@ -527,10 +865,18 @@
     "phase": 6,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-068"],
+    "depends": [
+      "TASK-068"
+    ],
     "estimatedTokens": 20000,
-    "acceptanceCriteria": ["Wraps fx_engine_process()", "Mono in → engine → stereo out", "CLAP loads in Reaper/Bitwig"],
-    "files": ["src/plugin/plugin_clap.c"]
+    "acceptanceCriteria": [
+      "Wraps fx_engine_process()",
+      "Mono in → engine → stereo out",
+      "CLAP loads in Reaper/Bitwig"
+    ],
+    "files": [
+      "src/plugin/plugin_clap.c"
+    ]
   },
   {
     "id": "TASK-108",
@@ -542,8 +888,14 @@
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 30000,
-    "acceptanceCriteria": ["Feature matrix: Neural DSP vs 0xFX", "Parity gaps identified", "Ranked list of missing features"],
-    "files": ["docs/competitive_analysis.md"]
+    "acceptanceCriteria": [
+      "Feature matrix: Neural DSP vs 0xFX",
+      "Parity gaps identified",
+      "Ranked list of missing features"
+    ],
+    "files": [
+      "docs/competitive_analysis.md"
+    ]
   },
   {
     "id": "TASK-109",
@@ -555,7 +907,13 @@
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 30000,
-    "acceptanceCriteria": ["Survey: AmpliTube, Helix Native, Guitar Rig, BIAS FX, TH-U, STL ToneHub", "What they have that we don't", "What we have that they don't"],
-    "files": ["docs/competitive_analysis.md"]
+    "acceptanceCriteria": [
+      "Survey: AmpliTube, Helix Native, Guitar Rig, BIAS FX, TH-U, STL ToneHub",
+      "What they have that we don't",
+      "What we have that they don't"
+    ],
+    "files": [
+      "docs/competitive_analysis.md"
+    ]
   }
 ]

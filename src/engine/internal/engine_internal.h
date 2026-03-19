@@ -12,6 +12,8 @@
 #include <string.h>
 #include <math.h>
 
+#include "kissfft/kiss_fftr.h"
+
 #define FX_MAX_PEDALS_PER_POS  16
 #define FX_MAX_CHAINS          4
 #define FX_MAX_PEDALS_TOTAL    64
@@ -79,13 +81,17 @@ typedef struct {
 /* ── Cabinet IR state ─────────────────────────────────────────── */
 
 typedef struct {
-    bool   loaded;
-    bool   bypass;
-    float *ir_fft_re;       /* pre-computed IR FFT real part */
-    float *ir_fft_im;       /* pre-computed IR FFT imag part */
-    float *overlap_buf;     /* overlap-add tail buffer */
-    int    fft_size;        /* FFT size (power of 2) */
-    int    ir_len;          /* original IR length in samples */
+    bool           loaded;
+    bool           bypass;
+    kiss_fft_cpx  *ir_fft;         /* pre-computed IR FFT (fft_size/2+1 bins) */
+    float         *overlap_buf;    /* overlap-add tail buffer (fft_size floats) */
+    kiss_fft_cpx  *fft_buf;        /* scratch: FFT output (fft_size/2+1 bins) */
+    float         *time_buf;       /* scratch: zero-padded input (fft_size floats) */
+    kiss_fftr_cfg  fft_cfg;        /* forward FFT config */
+    kiss_fftr_cfg  ifft_cfg;       /* inverse FFT config */
+    int            fft_size;       /* FFT size (power of 2, >= block_size + ir_len - 1) */
+    int            ir_len;         /* original IR length in samples */
+    int            block_size;     /* processing block size */
 } fx_cab_state_t;
 
 /* ── Signal chain (one amp+cab+post-fx path) ──────────────────── */
@@ -155,6 +161,7 @@ void  fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr);
 /* Cab IR */
 void fx_cab_init(fx_cab_state_t *cab);
 void fx_cab_free(fx_cab_state_t *cab);
+bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size);
 void fx_cab_process(fx_cab_state_t *cab, float *buf, int n);
 
 /* Biquad helpers */
