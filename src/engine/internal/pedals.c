@@ -63,6 +63,77 @@ typedef struct {
     float envelope;
 } squeeze_box_state_t;
 
+/* Drip Verb — spring reverb (allpass diffusion + short comb filters) */
+#define DRIP_NUM_ALLPASS  4
+#define DRIP_NUM_COMBS    3
+
+typedef struct {
+    float *ap_buf[DRIP_NUM_ALLPASS];
+    int    ap_len[DRIP_NUM_ALLPASS];
+    int    ap_pos[DRIP_NUM_ALLPASS];
+    float *comb_buf[DRIP_NUM_COMBS];
+    int    comb_len[DRIP_NUM_COMBS];
+    int    comb_pos[DRIP_NUM_COMBS];
+    float  comb_filt[DRIP_NUM_COMBS]; /* LP state in comb feedback */
+    fx_biquad_t tone_lp;              /* tone control on wet signal */
+} drip_verb_state_t;
+
+/* Carbon Delay — analog BBD-style delay */
+#define CARBON_BUF_SECONDS 1.1f
+
+typedef struct {
+    float      *buffer;
+    int         buf_len;
+    int         write_pos;
+    fx_biquad_t feedback_lp;  /* LP in feedback path (darkens repeats) */
+    float       lfo_phase;    /* LFO for mod effect */
+} carbon_delay_state_t;
+
+/* Tape Machine — tape echo with wow/flutter */
+#define TAPE_BUF_SECONDS 1.5f
+
+typedef struct {
+    float      *buffer;
+    int         buf_len;
+    int         write_pos;
+    float       wow_phase;     /* slow LFO (wow) */
+    float       flutter_phase; /* fast LFO (flutter) */
+} tape_machine_state_t;
+
+/* Howl Wah — expression wah (swept bandpass/peak) */
+typedef struct {
+    fx_biquad_t peak_filter;
+} howl_wah_state_t;
+
+/* Quack Filter — auto-wah / envelope filter */
+typedef struct {
+    float       envelope;
+    fx_biquad_t bp_filter;
+} quack_filter_state_t;
+
+/* Liquid Chorus — BBD-style chorus */
+#define CHORUS_BUF_LEN 2048
+
+typedef struct {
+    float buffer[CHORUS_BUF_LEN];
+    int   write_pos;
+    float lfo_phase;
+} liquid_chorus_state_t;
+
+/* Phase Sweep — 6-stage allpass phaser */
+#define PHASER_STAGES 6
+
+typedef struct {
+    fx_biquad_t ap[PHASER_STAGES];
+    float       lfo_phase;
+    float       feedback_z1;  /* feedback sample */
+} phase_sweep_state_t;
+
+/* Pulse Trem — tremolo (sine/square/triangle LFO) */
+typedef struct {
+    float lfo_phase;
+} pulse_trem_state_t;
+
 /* ══════════════════════════════════════════════════════════════════
  * DC blocker helper (shared by drive pedals)
  * ══════════════════════════════════════════════════════════════════ */
@@ -430,6 +501,531 @@ static void squeeze_box_process(fx_pedal_instance_t *p, float *buf, int n, float
 }
 
 /* ══════════════════════════════════════════════════════════════════
+ * DRIP VERB — spring reverb
+ * Allpass diffusion + short comb filters with spring-like resonance
+ * Params: [0] dwell, [1] tone, [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* Allpass and comb delay lengths (samples at 44.1kHz) */
+static const int drip_ap_lens_44k[DRIP_NUM_ALLPASS]   = { 113, 162, 241, 399 };
+static const int drip_comb_lens_44k[DRIP_NUM_COMBS]    = { 631, 797, 1009 };
+
+static void drip_verb_init(fx_pedal_instance_t *p, float sr) {
+    drip_verb_state_t *s = (drip_verb_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    float scale = sr / 44100.0f;
+    for (int i = 0; i < DRIP_NUM_ALLPASS; i++) {
+        s->ap_len[i] = (int)((float)drip_ap_lens_44k[i] * scale) + 1;
+        s->ap_buf[i] = (float *)calloc((size_t)s->ap_len[i], sizeof(float));
+        s->ap_pos[i] = 0;
+    }
+    for (int i = 0; i < DRIP_NUM_COMBS; i++) {
+        s->comb_len[i] = (int)((float)drip_comb_lens_44k[i] * scale) + 1;
+        s->comb_buf[i] = (float *)calloc((size_t)s->comb_len[i], sizeof(float));
+        s->comb_pos[i] = 0;
+        s->comb_filt[i] = 0.0f;
+    }
+    fx_biquad_lowpass(&s->tone_lp, 4000.0f, 0.707f, sr);
+
+    p->state = s;
+    p->params[0] = 0.5f; /* dwell */
+    p->params[1] = 0.6f; /* tone */
+    p->params[2] = 0.3f; /* mix */
+}
+
+static void drip_verb_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    drip_verb_state_t *s = (drip_verb_state_t *)p->state;
+    if (!s) return;
+
+    float dwell   = 0.5f + p->params[0] * 0.45f; /* 0.5-0.95 feedback */
+    float tone_hz = 1000.0f + p->params[1] * 7000.0f; /* 1kHz-8kHz */
+    float mix     = p->params[2];
+
+    fx_biquad_lowpass(&s->tone_lp, tone_hz, 0.707f, sr);
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Series allpass diffusion */
+        float x = dry;
+        for (int a = 0; a < DRIP_NUM_ALLPASS; a++) {
+            float *ab = s->ap_buf[a];
+            int pos   = s->ap_pos[a];
+            float out = ab[pos];
+            float in  = x + out * 0.6f;
+            ab[pos]   = in;
+            x         = out - in * 0.6f;
+            s->ap_pos[a] = (pos + 1) % s->ap_len[a];
+        }
+
+        /* Parallel comb filters (spring resonance) */
+        float wet = 0.0f;
+        for (int c = 0; c < DRIP_NUM_COMBS; c++) {
+            float *cb = s->comb_buf[c];
+            int pos   = s->comb_pos[c];
+            float out = cb[pos];
+            /* LP damping in feedback */
+            s->comb_filt[c] = out * 0.55f + s->comb_filt[c] * 0.45f;
+            cb[pos] = x + s->comb_filt[c] * dwell;
+            s->comb_pos[c] = (pos + 1) % s->comb_len[c];
+            wet += out;
+        }
+        wet *= (1.0f / DRIP_NUM_COMBS);
+
+        /* Tone control on wet */
+        wet = fx_biquad_process(&s->tone_lp, wet);
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+static void drip_verb_free(fx_pedal_instance_t *p) {
+    drip_verb_state_t *s = (drip_verb_state_t *)p->state;
+    if (s) {
+        for (int i = 0; i < DRIP_NUM_ALLPASS; i++) free(s->ap_buf[i]);
+        for (int i = 0; i < DRIP_NUM_COMBS;   i++) free(s->comb_buf[i]);
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * CARBON DELAY — analog BBD-style delay
+ * LP filter in feedback path (each repeat gets darker), optional LFO
+ * Params: [0] time, [1] feedback, [2] tone, [3] mod, [4] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void carbon_delay_init(fx_pedal_instance_t *p, float sr) {
+    carbon_delay_state_t *s = (carbon_delay_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->buf_len  = (int)(sr * CARBON_BUF_SECONDS) + 1;
+    s->buffer   = (float *)calloc((size_t)s->buf_len, sizeof(float));
+    s->write_pos = 0;
+    s->lfo_phase = 0.0f;
+
+    fx_biquad_lowpass(&s->feedback_lp, 3000.0f, 0.707f, sr);
+
+    p->state = s;
+    p->params[0] = 0.4f; /* time */
+    p->params[1] = 0.4f; /* feedback */
+    p->params[2] = 0.6f; /* tone */
+    p->params[3] = 0.1f; /* mod */
+    p->params[4] = 0.35f; /* mix */
+}
+
+static void carbon_delay_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    carbon_delay_state_t *s = (carbon_delay_state_t *)p->state;
+    if (!s || !s->buffer) return;
+
+    /* Time: 30ms-1000ms */
+    float delay_ms = 30.0f + p->params[0] * 970.0f;
+    int   base_delay = (int)(delay_ms * sr / 1000.0f);
+    if (base_delay >= s->buf_len) base_delay = s->buf_len - 1;
+    if (base_delay < 1) base_delay = 1;
+
+    float feedback = p->params[1] * 0.85f;
+    /* Tone: map 0-1 to 500Hz-8kHz LP cutoff */
+    float tone_hz  = 500.0f + p->params[2] * 7500.0f;
+    float mod_depth = p->params[3]; /* 0-1 → 0 to ~3ms of mod */
+    float mix       = p->params[4];
+
+    fx_biquad_lowpass(&s->feedback_lp, tone_hz, 0.707f, sr);
+
+    /* LFO rate: ~0.5Hz fixed for classic wobble */
+    float lfo_inc = (float)(2.0 * M_PI * 0.5 / sr);
+    float mod_samples = mod_depth * (sr * 0.003f); /* max 3ms */
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* LFO modulates read position */
+        s->lfo_phase += lfo_inc;
+        if (s->lfo_phase > (float)(2.0 * M_PI)) s->lfo_phase -= (float)(2.0 * M_PI);
+        float lfo = sinf(s->lfo_phase);
+
+        int delay_samples = base_delay + (int)(lfo * mod_samples);
+        if (delay_samples < 1) delay_samples = 1;
+        if (delay_samples >= s->buf_len) delay_samples = s->buf_len - 1;
+
+        int read_pos = s->write_pos - delay_samples;
+        if (read_pos < 0) read_pos += s->buf_len;
+        float delayed = s->buffer[read_pos];
+
+        /* LP filter in feedback (BBD-style repeat darkening) */
+        float fb_signal = fx_biquad_process(&s->feedback_lp, delayed * feedback);
+
+        s->buffer[s->write_pos] = dry + fb_signal;
+        s->write_pos = (s->write_pos + 1) % s->buf_len;
+
+        buf[i] = dry * (1.0f - mix) + delayed * mix;
+    }
+}
+
+static void carbon_delay_free(fx_pedal_instance_t *p) {
+    carbon_delay_state_t *s = (carbon_delay_state_t *)p->state;
+    if (s) free(s->buffer);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * TAPE MACHINE — tape echo with wow/flutter
+ * Wow/flutter LFO modulates delay time, tanh saturation in feedback
+ * Params: [0] time, [1] feedback, [2] wow, [3] flutter, [4] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void tape_machine_init(fx_pedal_instance_t *p, float sr) {
+    tape_machine_state_t *s = (tape_machine_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->buf_len    = (int)(sr * TAPE_BUF_SECONDS) + 1;
+    s->buffer     = (float *)calloc((size_t)s->buf_len, sizeof(float));
+    s->write_pos  = 0;
+    s->wow_phase  = 0.0f;
+    s->flutter_phase = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.4f;  /* time */
+    p->params[1] = 0.35f; /* feedback */
+    p->params[2] = 0.3f;  /* wow */
+    p->params[3] = 0.2f;  /* flutter */
+    p->params[4] = 0.35f; /* mix */
+}
+
+static void tape_machine_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    tape_machine_state_t *s = (tape_machine_state_t *)p->state;
+    if (!s || !s->buffer) return;
+
+    /* Time: 50ms-1200ms */
+    float delay_ms = 50.0f + p->params[0] * 1150.0f;
+    int   base_delay = (int)(delay_ms * sr / 1000.0f);
+    if (base_delay >= s->buf_len) base_delay = s->buf_len - 1;
+    if (base_delay < 1) base_delay = 1;
+
+    float feedback      = p->params[1] * 0.85f;
+    float wow_depth     = p->params[2]; /* slow wobble */
+    float flutter_depth = p->params[3]; /* fast wobble */
+    float mix           = p->params[4];
+
+    /* Wow: ~0.5Hz, Flutter: ~7Hz */
+    float wow_inc     = (float)(2.0 * M_PI * 0.5  / sr);
+    float flutter_inc = (float)(2.0 * M_PI * 7.0  / sr);
+
+    /* Max modulation depths in samples */
+    float wow_samps     = wow_depth     * (sr * 0.008f); /* up to 8ms */
+    float flutter_samps = flutter_depth * (sr * 0.0015f); /* up to 1.5ms */
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        s->wow_phase     += wow_inc;
+        s->flutter_phase += flutter_inc;
+        if (s->wow_phase     > (float)(2.0 * M_PI)) s->wow_phase     -= (float)(2.0 * M_PI);
+        if (s->flutter_phase > (float)(2.0 * M_PI)) s->flutter_phase -= (float)(2.0 * M_PI);
+
+        float mod = sinf(s->wow_phase) * wow_samps
+                  + sinf(s->flutter_phase) * flutter_samps;
+
+        int delay_samples = base_delay + (int)mod;
+        if (delay_samples < 1) delay_samples = 1;
+        if (delay_samples >= s->buf_len) delay_samples = s->buf_len - 1;
+
+        int read_pos = s->write_pos - delay_samples;
+        if (read_pos < 0) read_pos += s->buf_len;
+        float delayed = s->buffer[read_pos];
+
+        /* Tape saturation in feedback path */
+        float fb = tanhf(delayed * feedback * 1.5f) * 0.67f;
+
+        s->buffer[s->write_pos] = dry + fb;
+        s->write_pos = (s->write_pos + 1) % s->buf_len;
+
+        buf[i] = dry * (1.0f - mix) + delayed * mix;
+    }
+}
+
+static void tape_machine_free(fx_pedal_instance_t *p) {
+    tape_machine_state_t *s = (tape_machine_state_t *)p->state;
+    if (s) free(s->buffer);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * HOWL WAH — expression wah
+ * Peak/bandpass filter swept by frequency param
+ * Params: [0] frequency (0-1 → 400Hz-2500Hz), [1] q (1-10), [2] volume
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void howl_wah_init(fx_pedal_instance_t *p, float sr) {
+    howl_wah_state_t *s = (howl_wah_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    fx_biquad_peak(&s->peak_filter, 1000.0f, 18.0f, 4.0f, sr);
+
+    p->state = s;
+    p->params[0] = 0.5f; /* frequency */
+    p->params[1] = 0.5f; /* q */
+    p->params[2] = 0.8f; /* volume */
+}
+
+static void howl_wah_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    howl_wah_state_t *s = (howl_wah_state_t *)p->state;
+    if (!s) return;
+
+    /* Map 0-1 to 400Hz-2500Hz */
+    float freq   = 400.0f + p->params[0] * 2100.0f;
+    float q      = 1.0f   + p->params[1] * 9.0f;    /* 1-10 */
+    float volume = p->params[2];
+
+    fx_biquad_peak(&s->peak_filter, freq, 18.0f, q, sr);
+
+    for (int i = 0; i < n; i++) {
+        float x = fx_biquad_process(&s->peak_filter, buf[i]);
+        buf[i] = x * volume;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * QUACK FILTER — auto-wah / envelope filter
+ * Envelope follower drives bandpass cutoff
+ * Params: [0] sensitivity, [1] decay, [2] q, [3] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void quack_filter_init(fx_pedal_instance_t *p, float sr) {
+    quack_filter_state_t *s = (quack_filter_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->envelope = 0.0f;
+    fx_biquad_lowpass(&s->bp_filter, 500.0f, 2.0f, sr);
+
+    p->state = s;
+    p->params[0] = 0.6f; /* sensitivity */
+    p->params[1] = 0.4f; /* decay */
+    p->params[2] = 0.5f; /* q */
+    p->params[3] = 0.7f; /* mix */
+}
+
+static void quack_filter_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    quack_filter_state_t *s = (quack_filter_state_t *)p->state;
+    if (!s) return;
+
+    float sensitivity = p->params[0] * 8.0f + 0.5f;  /* signal gain into env */
+    /* Decay: 0-1 → 20ms-500ms */
+    float decay_ms    = 20.0f + p->params[1] * 480.0f;
+    float rel_coeff   = expf(-1.0f / (decay_ms * 0.001f * sr));
+    float att_coeff   = expf(-1.0f / (0.001f * sr)); /* 1ms attack */
+    float q           = 1.0f + p->params[2] * 9.0f;  /* 1-10 */
+    float mix         = p->params[3];
+
+    for (int i = 0; i < n; i++) {
+        float dry    = buf[i];
+        float abs_in = fabsf(dry) * sensitivity;
+
+        /* Envelope follower */
+        if (abs_in > s->envelope)
+            s->envelope = att_coeff * s->envelope + (1.0f - att_coeff) * abs_in;
+        else
+            s->envelope = rel_coeff * s->envelope;
+
+        /* Map envelope (0-1) to cutoff frequency: 200Hz-3000Hz */
+        float cutoff = 200.0f + s->envelope * 2800.0f;
+        if (cutoff > 3000.0f) cutoff = 3000.0f;
+
+        fx_biquad_lowpass(&s->bp_filter, cutoff, q, sr);
+        float wet = fx_biquad_process(&s->bp_filter, dry);
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * LIQUID CHORUS — BBD-style chorus
+ * Modulated delay line (~7ms base) with sine LFO
+ * Params: [0] rate (0.1-5Hz), [1] depth, [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void liquid_chorus_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    liquid_chorus_state_t *s = (liquid_chorus_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    memset(s->buffer, 0, sizeof(s->buffer));
+    s->write_pos = 0;
+    s->lfo_phase = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.2f; /* rate */
+    p->params[1] = 0.5f; /* depth */
+    p->params[2] = 0.5f; /* mix */
+}
+
+static void liquid_chorus_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    liquid_chorus_state_t *s = (liquid_chorus_state_t *)p->state;
+    if (!s) return;
+
+    /* Rate: 0.1-5Hz */
+    float rate  = 0.1f + p->params[0] * 4.9f;
+    float depth = p->params[1];
+    float mix   = p->params[2];
+
+    float lfo_inc = (float)(2.0 * M_PI * rate / sr);
+
+    /* Base delay ~7ms, depth extends up to ~7ms */
+    float base_delay  = sr * 0.007f;
+    float depth_samps = depth * sr * 0.007f;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        s->lfo_phase += lfo_inc;
+        if (s->lfo_phase > (float)(2.0 * M_PI)) s->lfo_phase -= (float)(2.0 * M_PI);
+        float lfo = sinf(s->lfo_phase);
+
+        float delay_f = base_delay + lfo * depth_samps;
+        int   delay_i = (int)delay_f;
+        float frac    = delay_f - (float)delay_i;
+
+        /* Linear interpolation */
+        int r0 = s->write_pos - delay_i;
+        if (r0 < 0) r0 += CHORUS_BUF_LEN;
+        int r1 = r0 - 1;
+        if (r1 < 0) r1 += CHORUS_BUF_LEN;
+
+        float wet = s->buffer[r0] * (1.0f - frac) + s->buffer[r1] * frac;
+
+        s->buffer[s->write_pos] = dry;
+        s->write_pos = (s->write_pos + 1) % CHORUS_BUF_LEN;
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * PHASE SWEEP — allpass phaser
+ * 6 cascaded allpass filters with LFO-swept frequency
+ * Params: [0] rate, [1] depth, [2] feedback, [3] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void phase_sweep_init(fx_pedal_instance_t *p, float sr) {
+    phase_sweep_state_t *s = (phase_sweep_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    for (int i = 0; i < PHASER_STAGES; i++) {
+        /* Initialize as allpass (using peak with 0dB gain as approximation) */
+        fx_biquad_peak(&s->ap[i], 1000.0f, 0.0f, 0.707f, sr);
+    }
+    s->lfo_phase  = 0.0f;
+    s->feedback_z1 = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.2f;  /* rate */
+    p->params[1] = 0.7f;  /* depth */
+    p->params[2] = 0.5f;  /* feedback (maps to -0.9 to 0.9) */
+    p->params[3] = 0.5f;  /* mix */
+}
+
+/* First-order allpass: y[n] = -g*x[n] + x[n-1] + g*y[n-1] */
+static inline float allpass1_process(float in, float g, float *z1) {
+    float out = -g * in + *z1;
+    *z1 = in + g * out;
+    return out;
+}
+
+static void phase_sweep_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    phase_sweep_state_t *s = (phase_sweep_state_t *)p->state;
+    if (!s) return;
+
+    float rate     = 0.1f + p->params[0] * 4.9f; /* 0.1-5Hz */
+    float depth    = p->params[1];
+    float feedback = (p->params[2] - 0.5f) * 1.8f; /* -0.9 to +0.9 */
+    float mix      = p->params[3];
+
+    float lfo_inc = (float)(2.0 * M_PI * rate / sr);
+
+    /* Sweep center frequency: 200Hz to 2000Hz */
+    float freq_min = 200.0f;
+    float freq_max = 2000.0f;
+
+    /* Reuse biquad z1/z2 as first-order allpass states */
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        s->lfo_phase += lfo_inc;
+        if (s->lfo_phase > (float)(2.0 * M_PI)) s->lfo_phase -= (float)(2.0 * M_PI);
+        float lfo = 0.5f + 0.5f * sinf(s->lfo_phase); /* 0-1 */
+
+        float freq = freq_min + lfo * depth * (freq_max - freq_min);
+        /* First-order allpass coefficient from frequency */
+        float w = (float)(2.0 * M_PI * freq / sr);
+        float tan_w = tanf(w * 0.5f);
+        float g = (tan_w - 1.0f) / (tan_w + 1.0f);
+
+        /* Input includes feedback from previous output */
+        float x = dry + s->feedback_z1 * feedback;
+
+        /* 6 cascaded first-order allpass stages (using biquad z1 only) */
+        float out = x;
+        for (int stage = 0; stage < PHASER_STAGES; stage++) {
+            float *z = &s->ap[stage].z1;
+            out = allpass1_process(out, g, z);
+        }
+
+        s->feedback_z1 = out;
+
+        buf[i] = dry * (1.0f - mix) + out * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * PULSE TREM — tremolo
+ * Amplitude modulation via LFO (sine/square/triangle)
+ * Params: [0] rate (1-15Hz), [1] depth, [2] wave (0-0.33=sine, 0.33-0.66=square, 0.66-1=tri)
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void pulse_trem_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    pulse_trem_state_t *s = (pulse_trem_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->lfo_phase = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.2f;  /* rate */
+    p->params[1] = 0.7f;  /* depth */
+    p->params[2] = 0.0f;  /* wave (sine) */
+}
+
+static void pulse_trem_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    pulse_trem_state_t *s = (pulse_trem_state_t *)p->state;
+    if (!s) return;
+
+    float rate  = 1.0f + p->params[0] * 14.0f; /* 1-15Hz */
+    float depth = p->params[1];
+    float wave  = p->params[2];
+
+    float lfo_inc = (float)(2.0 * M_PI * rate / sr);
+
+    for (int i = 0; i < n; i++) {
+        s->lfo_phase += lfo_inc;
+        if (s->lfo_phase > (float)(2.0 * M_PI)) s->lfo_phase -= (float)(2.0 * M_PI);
+
+        float lfo;
+        if (wave < 0.33f) {
+            /* Sine */
+            lfo = sinf(s->lfo_phase);
+        } else if (wave < 0.66f) {
+            /* Square */
+            lfo = s->lfo_phase < (float)M_PI ? 1.0f : -1.0f;
+        } else {
+            /* Triangle */
+            float t = s->lfo_phase / (float)(2.0 * M_PI);
+            lfo = (t < 0.5f) ? (4.0f * t - 1.0f) : (3.0f - 4.0f * t);
+        }
+
+        /* LFO ranges -1 to 1; convert to gain: 1.0 down to (1-depth) */
+        float gain = 1.0f - depth * (0.5f + 0.5f * lfo);
+        buf[i] *= gain;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
  * Pedal metadata
  * ══════════════════════════════════════════════════════════════════ */
 
@@ -465,12 +1061,20 @@ static const char *pedal_type_names[FX_PEDAL_TYPE_COUNT] = {
 };
 
 /* Per-type param names */
-static const char *jade_drive_params[]  = { "Drive", "Tone", "Level" };
-static const char *gold_drive_params[]  = { "Gain", "Treble", "Output" };
-static const char *rodent_params[]      = { "Distortion", "Filter", "Volume" };
-static const char *echo_delay_params[]  = { "Time", "Feedback", "Mix", "Sync" };
-static const char *hall_verb_params[]   = { "Decay", "Damping", "Mix" };
-static const char *squeeze_box_params[] = { "Output", "Sensitivity" };
+static const char *jade_drive_params[]     = { "Drive", "Tone", "Level" };
+static const char *gold_drive_params[]     = { "Gain", "Treble", "Output" };
+static const char *rodent_params[]         = { "Distortion", "Filter", "Volume" };
+static const char *echo_delay_params[]     = { "Time", "Feedback", "Mix", "Sync" };
+static const char *hall_verb_params[]      = { "Decay", "Damping", "Mix" };
+static const char *squeeze_box_params[]    = { "Output", "Sensitivity" };
+static const char *drip_verb_params[]      = { "Dwell", "Tone", "Mix" };
+static const char *carbon_delay_params[]   = { "Time", "Feedback", "Tone", "Mod", "Mix" };
+static const char *tape_machine_params[]   = { "Time", "Feedback", "Wow", "Flutter", "Mix" };
+static const char *howl_wah_params[]       = { "Freq", "Q", "Volume" };
+static const char *quack_filter_params[]   = { "Sens", "Decay", "Q", "Mix" };
+static const char *liquid_chorus_params[]  = { "Rate", "Depth", "Mix" };
+static const char *phase_sweep_params[]    = { "Rate", "Depth", "Feedback", "Mix" };
+static const char *pulse_trem_params[]     = { "Rate", "Depth", "Wave" };
 
 const char *fx_pedal_get_type_name(fx_pedal_type_t type) {
     if (type < 0 || type >= FX_PEDAL_TYPE_COUNT) return "?";
@@ -485,11 +1089,15 @@ int fx_pedal_get_param_count(fx_pedal_type_t type) {
         case FX_PEDAL_ECHO_DELAY:    return 4;
         case FX_PEDAL_HALL_VERB:     return 3;
         case FX_PEDAL_DRIP_VERB:     return 3;
-        case FX_PEDAL_SQUEEZE_BOX:   return 2;
-        case FX_PEDAL_NOISE_GATE:    return 4;
+        case FX_PEDAL_CARBON_DELAY:  return 5;
+        case FX_PEDAL_TAPE_MACHINE:  return 5;
+        case FX_PEDAL_HOWL_WAH:      return 3;
+        case FX_PEDAL_QUACK_FILTER:  return 4;
         case FX_PEDAL_LIQUID_CHORUS: return 3;
         case FX_PEDAL_PHASE_SWEEP:   return 4;
-        case FX_PEDAL_HOWL_WAH:      return 3;
+        case FX_PEDAL_PULSE_TREM:    return 3;
+        case FX_PEDAL_SQUEEZE_BOX:   return 2;
+        case FX_PEDAL_NOISE_GATE:    return 4;
         default: return 3;
     }
 }
@@ -516,6 +1124,30 @@ const char *fx_pedal_get_param_name(fx_pedal_type_t type, int param) {
         case FX_PEDAL_SQUEEZE_BOX:
             if (param < 2) return squeeze_box_params[param];
             break;
+        case FX_PEDAL_DRIP_VERB:
+            if (param < 3) return drip_verb_params[param];
+            break;
+        case FX_PEDAL_CARBON_DELAY:
+            if (param < 5) return carbon_delay_params[param];
+            break;
+        case FX_PEDAL_TAPE_MACHINE:
+            if (param < 5) return tape_machine_params[param];
+            break;
+        case FX_PEDAL_HOWL_WAH:
+            if (param < 3) return howl_wah_params[param];
+            break;
+        case FX_PEDAL_QUACK_FILTER:
+            if (param < 4) return quack_filter_params[param];
+            break;
+        case FX_PEDAL_LIQUID_CHORUS:
+            if (param < 3) return liquid_chorus_params[param];
+            break;
+        case FX_PEDAL_PHASE_SWEEP:
+            if (param < 4) return phase_sweep_params[param];
+            break;
+        case FX_PEDAL_PULSE_TREM:
+            if (param < 3) return pulse_trem_params[param];
+            break;
         default:
             break;
     }
@@ -541,12 +1173,20 @@ void fx_pedal_init_state(fx_pedal_instance_t *p, float sr) {
     p->state = NULL;
 
     switch (p->type) {
-        case FX_PEDAL_JADE_DRIVE:  jade_drive_init(p, sr); break;
-        case FX_PEDAL_GOLD_DRIVE:  gold_drive_init(p, sr); break;
-        case FX_PEDAL_RODENT:      rodent_init(p, sr);     break;
-        case FX_PEDAL_ECHO_DELAY:  echo_delay_init(p, sr); break;
-        case FX_PEDAL_HALL_VERB:   hall_verb_init(p, sr);   break;
-        case FX_PEDAL_SQUEEZE_BOX: squeeze_box_init(p, sr); break;
+        case FX_PEDAL_JADE_DRIVE:    jade_drive_init(p, sr);    break;
+        case FX_PEDAL_GOLD_DRIVE:    gold_drive_init(p, sr);    break;
+        case FX_PEDAL_RODENT:        rodent_init(p, sr);        break;
+        case FX_PEDAL_ECHO_DELAY:    echo_delay_init(p, sr);    break;
+        case FX_PEDAL_HALL_VERB:     hall_verb_init(p, sr);     break;
+        case FX_PEDAL_SQUEEZE_BOX:   squeeze_box_init(p, sr);   break;
+        case FX_PEDAL_DRIP_VERB:     drip_verb_init(p, sr);     break;
+        case FX_PEDAL_CARBON_DELAY:  carbon_delay_init(p, sr);  break;
+        case FX_PEDAL_TAPE_MACHINE:  tape_machine_init(p, sr);  break;
+        case FX_PEDAL_HOWL_WAH:      howl_wah_init(p, sr);      break;
+        case FX_PEDAL_QUACK_FILTER:  quack_filter_init(p, sr);  break;
+        case FX_PEDAL_LIQUID_CHORUS: liquid_chorus_init(p, sr); break;
+        case FX_PEDAL_PHASE_SWEEP:   phase_sweep_init(p, sr);   break;
+        case FX_PEDAL_PULSE_TREM:    pulse_trem_init(p, sr);    break;
         default:
             /* Unimplemented pedals: passthrough */
             break;
@@ -559,8 +1199,11 @@ void fx_pedal_free_state(fx_pedal_instance_t *p) {
     /* Type-specific cleanup (for types with sub-allocations) */
     if (p->state) {
         switch (p->type) {
-            case FX_PEDAL_ECHO_DELAY: echo_delay_free(p); break;
-            case FX_PEDAL_HALL_VERB:  hall_verb_free(p);   break;
+            case FX_PEDAL_ECHO_DELAY:   echo_delay_free(p);   break;
+            case FX_PEDAL_HALL_VERB:    hall_verb_free(p);    break;
+            case FX_PEDAL_DRIP_VERB:    drip_verb_free(p);    break;
+            case FX_PEDAL_CARBON_DELAY: carbon_delay_free(p); break;
+            case FX_PEDAL_TAPE_MACHINE: tape_machine_free(p); break;
             default: break;
         }
         free(p->state);
@@ -572,12 +1215,20 @@ void fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
     if (!p || p->bypass || !p->state) return;
 
     switch (p->type) {
-        case FX_PEDAL_JADE_DRIVE:  jade_drive_process(p, buf, n, sr);  break;
-        case FX_PEDAL_GOLD_DRIVE:  gold_drive_process(p, buf, n, sr);  break;
-        case FX_PEDAL_RODENT:      rodent_process(p, buf, n, sr);      break;
-        case FX_PEDAL_ECHO_DELAY:  echo_delay_process(p, buf, n, sr);  break;
-        case FX_PEDAL_HALL_VERB:   hall_verb_process(p, buf, n, sr);   break;
-        case FX_PEDAL_SQUEEZE_BOX: squeeze_box_process(p, buf, n, sr); break;
+        case FX_PEDAL_JADE_DRIVE:    jade_drive_process(p, buf, n, sr);    break;
+        case FX_PEDAL_GOLD_DRIVE:    gold_drive_process(p, buf, n, sr);    break;
+        case FX_PEDAL_RODENT:        rodent_process(p, buf, n, sr);        break;
+        case FX_PEDAL_ECHO_DELAY:    echo_delay_process(p, buf, n, sr);    break;
+        case FX_PEDAL_HALL_VERB:     hall_verb_process(p, buf, n, sr);     break;
+        case FX_PEDAL_SQUEEZE_BOX:   squeeze_box_process(p, buf, n, sr);   break;
+        case FX_PEDAL_DRIP_VERB:     drip_verb_process(p, buf, n, sr);     break;
+        case FX_PEDAL_CARBON_DELAY:  carbon_delay_process(p, buf, n, sr);  break;
+        case FX_PEDAL_TAPE_MACHINE:  tape_machine_process(p, buf, n, sr);  break;
+        case FX_PEDAL_HOWL_WAH:      howl_wah_process(p, buf, n, sr);      break;
+        case FX_PEDAL_QUACK_FILTER:  quack_filter_process(p, buf, n, sr);  break;
+        case FX_PEDAL_LIQUID_CHORUS: liquid_chorus_process(p, buf, n, sr); break;
+        case FX_PEDAL_PHASE_SWEEP:   phase_sweep_process(p, buf, n, sr);   break;
+        case FX_PEDAL_PULSE_TREM:    pulse_trem_process(p, buf, n, sr);    break;
         default:
             /* Unimplemented pedals: passthrough (no state, caught above) */
             break;

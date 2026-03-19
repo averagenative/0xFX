@@ -843,8 +843,8 @@
     "title": "CLAP + VST3 CMake targets",
     "domain": "infra",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "main-agent",
     "depends": [
       "TASK-067"
     ],
@@ -922,7 +922,7 @@
     "title": "Implement spring reverb (Drip Verb)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -943,7 +943,7 @@
     "title": "Implement analog delay (Carbon Delay)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -964,7 +964,7 @@
     "title": "Implement tape echo (Tape Machine)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -985,7 +985,7 @@
     "title": "Implement expression wah (Howl Wah)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1006,7 +1006,7 @@
     "title": "Implement auto-wah (Quack Filter)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1066,7 +1066,7 @@
     "title": "Port remaining modulation effects",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"

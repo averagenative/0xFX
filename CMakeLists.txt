@@ -35,6 +35,7 @@ target_include_directories(fx_engine PRIVATE
     ${CMAKE_SOURCE_DIR}/deps
 )
 target_link_libraries(fx_engine PRIVATE m)
+set_target_properties(fx_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ── ImGui library (C++) ───────────────────────────────────────
 find_package(SDL2 QUIET)
@@ -124,4 +125,62 @@ add_test(NAME api_test COMMAND fx_api_test)
 # ── Cross-compile support (MinGW) ────────────────────────────
 if(MINGW)
     target_link_libraries(0xfx_standalone PRIVATE -static)
+endif()
+
+# ── CLAP plugin shared library ────────────────────────────────
+# Build only on Linux (and Windows via MinGW) — not macOS (needs bundle)
+if(UNIX AND NOT APPLE)
+    add_library(0xfx_clap MODULE
+        src/plugin/plugin.c
+        deps/cplug/src/cplug_clap.c
+    )
+    target_include_directories(0xfx_clap PRIVATE
+        ${CMAKE_SOURCE_DIR}/deps/cplug/src
+        ${CMAKE_SOURCE_DIR}/src/engine
+    )
+    target_compile_definitions(0xfx_clap PRIVATE CPLUG_SHARED)
+    target_compile_options(0xfx_clap PRIVATE
+        -include ${CMAKE_SOURCE_DIR}/src/plugin/config.h
+        # Suppress multichar literal warnings from CPLUG_VST3_TUID_* macros
+        -Wno-multichar
+        -Wno-pedantic
+    )
+    set_target_properties(0xfx_clap PROPERTIES
+        PREFIX ""
+        SUFFIX ".clap"
+        C_VISIBILITY_PRESET hidden
+    )
+    target_link_libraries(0xfx_clap PRIVATE fx_engine m)
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(0xfx_clap PRIVATE pthread dl)
+    endif()
+    message(STATUS "CLAP plugin target enabled")
+endif()
+
+# ── VST3 plugin shared library ────────────────────────────────
+if(UNIX AND NOT APPLE)
+    add_library(0xfx_vst3 MODULE
+        src/plugin/plugin.c
+        deps/cplug/src/cplug_vst3.c
+    )
+    target_include_directories(0xfx_vst3 PRIVATE
+        ${CMAKE_SOURCE_DIR}/deps/cplug/src
+        ${CMAKE_SOURCE_DIR}/src/engine
+    )
+    target_compile_definitions(0xfx_vst3 PRIVATE CPLUG_SHARED)
+    target_compile_options(0xfx_vst3 PRIVATE
+        -include ${CMAKE_SOURCE_DIR}/src/plugin/config.h
+        -Wno-multichar
+        -Wno-pedantic
+    )
+    set_target_properties(0xfx_vst3 PROPERTIES
+        PREFIX ""
+        SUFFIX ".so"
+        C_VISIBILITY_PRESET hidden
+    )
+    target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(0xfx_vst3 PRIVATE pthread dl)
+    endif()
+    message(STATUS "VST3 plugin target enabled")
 endif()
