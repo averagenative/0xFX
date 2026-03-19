@@ -759,7 +759,7 @@
     "title": "Implement fx_preset_save()",
     "domain": "infra",
     "phase": 4,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "preset-agent",
     "depends": [
       "TASK-024"
@@ -781,7 +781,7 @@
     "title": "Implement fx_preset_load()",
     "domain": "infra",
     "phase": 4,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "preset-agent",
     "depends": [
       "TASK-042"

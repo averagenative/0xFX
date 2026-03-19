@@ -668,6 +668,203 @@ static void test_cab_ir(void) {
     printf("  OK\n");
 }
 
+/* ── Test: preset roundtrip (save + load) ─────────────────────── */
+
+static void test_preset_roundtrip(void) {
+    printf("test_preset_roundtrip...\n");
+
+    const char *tmpfile = "/tmp/0xfx_test_preset.0xfx";
+
+    /* ── Build engine A with specific state ───────────────────── */
+    fx_engine_t *ea = fx_engine_create(44100.0f);
+
+    /* Set amp model and params */
+    fx_amp_set_model(ea, FX_CHAIN_DEFAULT, FX_AMP_BRIT_CRUNCH);
+    fx_amp_set_param(ea, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.7f);
+    fx_amp_set_param(ea, FX_CHAIN_DEFAULT, FX_AMP_PARAM_BASS, 0.4f);
+    fx_amp_set_param(ea, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MID, 0.6f);
+    fx_amp_set_param(ea, FX_CHAIN_DEFAULT, FX_AMP_PARAM_TREBLE, 0.8f);
+    fx_chain_set_mix(ea, FX_CHAIN_DEFAULT, 0.9f);
+
+    /* Add pre-pedals */
+    fx_pedal_id pr_od = fx_chain_add_pedal(ea, FX_PEDAL_JADE_DRIVE, FX_CHAIN_POS_PRE);
+    fx_pedal_set_param(ea, pr_od, 0, 0.65f);  /* drive */
+    fx_pedal_set_param(ea, pr_od, 1, 0.5f);   /* tone */
+    fx_pedal_set_param(ea, pr_od, 2, 0.8f);   /* level */
+    fx_pedal_set_bypass(ea, pr_od, true);
+
+    /* Add post-pedal */
+    fx_pedal_id pr_dly = fx_chain_add_pedal(ea, FX_PEDAL_ECHO_DELAY, FX_CHAIN_POS_POST);
+    fx_pedal_set_param(ea, pr_dly, 0, 0.3f);  /* time */
+    fx_pedal_set_param(ea, pr_dly, 1, 0.4f);  /* feedback */
+    fx_pedal_set_param(ea, pr_dly, 2, 0.25f); /* mix */
+
+    /* Save preset */
+    bool saved = fx_preset_save(ea, tmpfile);
+    ASSERT(saved, "preset save should succeed");
+
+    /* ── Load into engine B ───────────────────────────────────── */
+    fx_engine_t *eb = fx_engine_create(44100.0f);
+    bool loaded = fx_preset_load(eb, tmpfile);
+    ASSERT(loaded, "preset load should succeed");
+
+    /* Verify amp model */
+    ASSERT(fx_amp_get_model(eb, FX_CHAIN_DEFAULT) == FX_AMP_BRIT_CRUNCH,
+           "loaded amp should be Brit Crunch");
+
+    /* Verify amp params */
+    ASSERT(fabsf(fx_amp_get_param(eb, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN) - 0.7f) < 0.01f,
+           "loaded gain should be ~0.7");
+    ASSERT(fabsf(fx_amp_get_param(eb, FX_CHAIN_DEFAULT, FX_AMP_PARAM_BASS) - 0.4f) < 0.01f,
+           "loaded bass should be ~0.4");
+    ASSERT(fabsf(fx_amp_get_param(eb, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MID) - 0.6f) < 0.01f,
+           "loaded mid should be ~0.6");
+    ASSERT(fabsf(fx_amp_get_param(eb, FX_CHAIN_DEFAULT, FX_AMP_PARAM_TREBLE) - 0.8f) < 0.01f,
+           "loaded treble should be ~0.8");
+
+    /* Verify chain mix */
+    ASSERT(fabsf(fx_chain_get_mix(eb, FX_CHAIN_DEFAULT) - 0.9f) < 0.01f,
+           "loaded mix should be ~0.9");
+
+    /* Verify chain count */
+    ASSERT(fx_chain_get_count(eb) == 1, "should have 1 chain");
+
+    /* Verify pedal counts */
+    ASSERT(fx_chain_get_pedal_count(eb, FX_CHAIN_POS_PRE) == 1,
+           "should have 1 pre-pedal after load");
+    ASSERT(fx_chain_get_pedal_count(eb, FX_CHAIN_POS_POST) == 1,
+           "should have 1 post-pedal after load");
+
+    /* ── Process audio through both, compare output ───────────── */
+    fx_engine_t *ea2 = fx_engine_create(44100.0f);
+    fx_preset_load(ea2, tmpfile);
+
+    float pr_input[512];
+    for (int i = 0; i < 512; i++) {
+        pr_input[i] = 0.3f * sinf(2.0f * 3.14159f * 440.0f * (float)i / 44100.0f);
+    }
+
+    float out_a[512], out_b[512];
+    fx_engine_process(ea2, pr_input, out_a, 512);
+    fx_engine_process(eb, pr_input, out_b, 512);
+
+    /* Output should be identical (both loaded from same preset, same DSP state) */
+    float max_diff = 0.0f;
+    for (int i = 0; i < 512; i++) {
+        float d = fabsf(out_a[i] - out_b[i]);
+        if (d > max_diff) max_diff = d;
+    }
+    ASSERT(max_diff < 1e-4f, "both engines should produce identical output");
+    printf("    max output diff = %.8f\n", max_diff);
+
+    fx_engine_destroy(ea);
+    fx_engine_destroy(ea2);
+    fx_engine_destroy(eb);
+
+    /* Clean up temp file */
+    remove(tmpfile);
+
+    printf("  OK\n");
+}
+
+/* ── Test: preset fuzzing (invalid inputs) ───────────────────── */
+
+static void test_preset_fuzz(void) {
+    printf("test_preset_fuzz...\n");
+
+    fx_engine_t *e_fz = fx_engine_create(44100.0f);
+
+    /* Load from nonexistent file */
+    ASSERT(!fx_preset_load(e_fz, "/tmp/0xfx_does_not_exist.0xfx"),
+           "load nonexistent should fail");
+
+    /* Load empty file */
+    {
+        FILE *fp = fopen("/tmp/0xfx_empty.0xfx", "w");
+        if (fp) fclose(fp);
+        ASSERT(!fx_preset_load(e_fz, "/tmp/0xfx_empty.0xfx"),
+               "load empty file should fail");
+        remove("/tmp/0xfx_empty.0xfx");
+    }
+
+    /* Load invalid JSON */
+    {
+        FILE *fp = fopen("/tmp/0xfx_bad.0xfx", "w");
+        if (fp) { fputs("{not valid json!!!", fp); fclose(fp); }
+        ASSERT(!fx_preset_load(e_fz, "/tmp/0xfx_bad.0xfx"),
+               "load invalid JSON should fail");
+        remove("/tmp/0xfx_bad.0xfx");
+    }
+
+    /* Load valid JSON but wrong format */
+    {
+        FILE *fp = fopen("/tmp/0xfx_wrong.0xfx", "w");
+        if (fp) { fputs("{\"format\":\"not_0xfx\"}", fp); fclose(fp); }
+        ASSERT(!fx_preset_load(e_fz, "/tmp/0xfx_wrong.0xfx"),
+               "load wrong format should fail");
+        remove("/tmp/0xfx_wrong.0xfx");
+    }
+
+    /* Load JSON with missing signal_chain */
+    {
+        FILE *fp = fopen("/tmp/0xfx_nosig.0xfx", "w");
+        if (fp) { fputs("{\"format\":\"0xfx\",\"version\":\"1.0\"}", fp); fclose(fp); }
+        ASSERT(!fx_preset_load(e_fz, "/tmp/0xfx_nosig.0xfx"),
+               "load missing signal_chain should fail");
+        remove("/tmp/0xfx_nosig.0xfx");
+    }
+
+    /* Load JSON with out-of-range values (should clamp, not crash) */
+    {
+        const char *json =
+            "{\"format\":\"0xfx\",\"version\":\"1.0\","
+            "\"signal_chain\":{"
+            "\"input\":{\"noise_gate\":{\"threshold_db\":999,\"attack_ms\":-5}},"
+            "\"pre_pedals\":[{\"type\":\"jade_drive\",\"bypass\":false,"
+            "\"params\":{\"drive\":99.0,\"tone\":-1.0,\"level\":0.5}}],"
+            "\"chains\":[{\"amp\":{\"model\":\"fullerton_clean\","
+            "\"params\":{\"gain\":5.0,\"bass\":-2.0}},\"cab\":{\"bypass\":false},"
+            "\"mix\":3.0}],"
+            "\"post_pedals\":[]}}";
+        FILE *fp = fopen("/tmp/0xfx_range.0xfx", "w");
+        if (fp) { fputs(json, fp); fclose(fp); }
+        bool fz_ok = fx_preset_load(e_fz, "/tmp/0xfx_range.0xfx");
+        ASSERT(fz_ok, "load with out-of-range should succeed (clamped)");
+
+        /* Verify values were clamped */
+        ASSERT(fx_amp_get_param(e_fz, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN) <= 1.0f,
+               "gain should be clamped to <=1.0");
+        ASSERT(fx_chain_get_mix(e_fz, FX_CHAIN_DEFAULT) <= 1.0f,
+               "mix should be clamped to <=1.0");
+        remove("/tmp/0xfx_range.0xfx");
+    }
+
+    /* Load JSON with unknown pedal type (should skip gracefully) */
+    {
+        const char *json =
+            "{\"format\":\"0xfx\",\"version\":\"1.0\","
+            "\"signal_chain\":{"
+            "\"pre_pedals\":[{\"type\":\"nonexistent_pedal\",\"bypass\":false,\"params\":{}}],"
+            "\"chains\":[{\"amp\":{\"model\":\"fullerton_clean\",\"params\":{}},"
+            "\"cab\":{\"bypass\":false},\"mix\":1.0}],"
+            "\"post_pedals\":[]}}";
+        FILE *fp = fopen("/tmp/0xfx_unk.0xfx", "w");
+        if (fp) { fputs(json, fp); fclose(fp); }
+        bool fz_ok = fx_preset_load(e_fz, "/tmp/0xfx_unk.0xfx");
+        ASSERT(fz_ok, "load with unknown pedal type should succeed (skip)");
+        remove("/tmp/0xfx_unk.0xfx");
+    }
+
+    /* NULL args */
+    ASSERT(!fx_preset_save(NULL, "/tmp/x.0xfx"), "save NULL engine should fail");
+    ASSERT(!fx_preset_save(e_fz, NULL), "save NULL path should fail");
+    ASSERT(!fx_preset_load(NULL, "/tmp/x.0xfx"), "load NULL engine should fail");
+    ASSERT(!fx_preset_load(e_fz, NULL), "load NULL path should fail");
+
+    fx_engine_destroy(e_fz);
+    printf("  OK\n");
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -688,6 +885,8 @@ int main(void) {
     test_pedal_param_names();
     test_tuner();
     test_cab_ir();
+    test_preset_roundtrip();
+    test_preset_fuzz();
 
     printf("\n═══ Results: %d passed, %d failed ═══\n",
            tests_passed, tests_failed);
