@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC -g -fsanitize=address -shared  -o 0xfx_vst3.so CMakeFiles/0xfx_vst3.dir/src/plugin/plugin.c.o CMakeFiles/0xfx_vst3.dir/deps/cplug/src/cplug_vst3.c.o  libfx_engine.a -lm -lpthread -ldl 

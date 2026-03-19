@@ -1,1 +1,0 @@
-/usr/bin/c++ -g -fsanitize=address CMakeFiles/0xfx_gui.dir/src/gui/gui_main.cpp.o CMakeFiles/0xfx_gui.dir/src/gui/knobs.cpp.o CMakeFiles/0xfx_gui.dir/src/audio/audio_device.c.o -o 0xfx_gui  libfx_engine.a libfx_core.a libimgui.a -lm /usr/lib/x86_64-linux-gnu/libSDL2.so -lGL -lpthread -ldl 

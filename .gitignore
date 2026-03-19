@@ -5,6 +5,8 @@
 # Build
 build/
 build_win/
+build_asan/
+__pycache__/
 
 # IDE
 .vscode/

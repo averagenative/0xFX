@@ -1,2 +1,0 @@
-/usr/bin/ar qc libfx_core.a CMakeFiles/fx_core.dir/src/core/log.c.o CMakeFiles/fx_core.dir/src/core/crash.c.o
-/usr/bin/ranlib libfx_core.a
