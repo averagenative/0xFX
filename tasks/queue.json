@@ -1188,7 +1188,7 @@
     "title": "Implement Drift Vibrato (true pitch vibrato)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1209,7 +1209,7 @@
     "title": "Implement Jet Flanger (through-zero flanging)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1230,7 +1230,7 @@
     "title": "Implement Plate Verb + Shimmer Verb + Cloud Verb",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"

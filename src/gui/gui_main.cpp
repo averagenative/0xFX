@@ -453,8 +453,13 @@ int main(int argc, char *argv[]) {
                 { FX_PEDAL_GRIT_CRUSH,     "Grit Crush (Bitcrusher)" },
                 { FX_PEDAL_RING_TONE,      "Ring Tone (Ring Mod)" },
                 { FX_PEDAL_WARM_TAPE,      "Warm Tape (Tape Sat)" },
+                { FX_PEDAL_DRIFT_VIBRATO,  "Drift Vibrato (Pitch Vibrato)" },
+                { FX_PEDAL_JET_FLANGER,    "Jet Flanger (Through-Zero)" },
+                { FX_PEDAL_PLATE_VERB,     "Plate Verb (Plate Reverb)" },
+                { FX_PEDAL_SHIMMER_VERB,   "Shimmer Verb (Octave Shimmer)" },
+                { FX_PEDAL_CLOUD_VERB,     "Cloud Verb (Ambient/Freeze)" },
             };
-            static const int pedal_menu_count = 15;
+            static const int pedal_menu_count = 20;
 
             /* Draw a pedal section (pre or post amp) */
             auto draw_pedal_section = [&](const char *label, fx_chain_pos_t pos,

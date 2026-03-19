@@ -2195,6 +2195,11 @@ void fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
         case FX_PEDAL_GRIT_CRUSH:      grit_crush_process(p, buf, n, sr);      break;
         case FX_PEDAL_RING_TONE:       ring_tone_process(p, buf, n, sr);       break;
         case FX_PEDAL_WARM_TAPE:       warm_tape_process(p, buf, n, sr);       break;
+        case FX_PEDAL_DRIFT_VIBRATO:   drift_vibrato_process(p, buf, n, sr);   break;
+        case FX_PEDAL_JET_FLANGER:     jet_flanger_process(p, buf, n, sr);     break;
+        case FX_PEDAL_PLATE_VERB:      plate_verb_process(p, buf, n, sr);      break;
+        case FX_PEDAL_SHIMMER_VERB:    shimmer_verb_process(p, buf, n, sr);    break;
+        case FX_PEDAL_CLOUD_VERB:      cloud_verb_process(p, buf, n, sr);      break;
         default:
             /* Unimplemented pedals: passthrough (no state, caught above) */
             break;
