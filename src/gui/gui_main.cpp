@@ -150,13 +150,88 @@ int main(int argc, char *argv[]) {
             ImGui::SameLine(100);
 
             /* Tuner */
-            float freq = fx_tuner_get_frequency(engine);
-            if (freq > 20.0f) {
-                const char *note = fx_tuner_get_note_name(engine);
-                float cents = fx_tuner_get_cents(engine);
-                ImGui::Text("Tuner: %s  %.0f Hz  %+.0f cents", note, freq, cents);
-            } else {
-                ImGui::TextDisabled("Tuner: ---");
+            {
+                float freq = fx_tuner_get_frequency(engine);
+                bool active = (freq > 20.0f);
+                const char *note = active ? fx_tuner_get_note_name(engine) : "--";
+                float cents = active ? fx_tuner_get_cents(engine) : 0.0f;
+
+                /* Note name color: green if |cents|<5, yellow if <15, red otherwise */
+                ImVec4 note_color;
+                if (!active) {
+                    note_color = ImVec4(0.45f, 0.40f, 0.35f, 1.0f); /* disabled gray */
+                } else if (cents < 0.0f ? -cents < 5.0f : cents < 5.0f) {
+                    note_color = ImVec4(0.20f, 0.90f, 0.30f, 1.0f); /* green */
+                } else if (cents < 0.0f ? -cents < 15.0f : cents < 15.0f) {
+                    note_color = ImVec4(0.95f, 0.85f, 0.10f, 1.0f); /* yellow */
+                } else {
+                    note_color = ImVec4(0.95f, 0.25f, 0.20f, 1.0f); /* red */
+                }
+
+                /* Note name in large text */
+                ImGui::PushStyleColor(ImGuiCol_Text, note_color);
+                ImGui::SetWindowFontScale(1.4f);
+                ImGui::Text("%s", note);
+                ImGui::SetWindowFontScale(1.0f);
+                ImGui::PopStyleColor();
+
+                ImGui::SameLine();
+
+                /* Cents bar — drawn with the window draw list */
+                {
+                    const float bar_w    = 200.0f;
+                    const float bar_h    = 10.0f;
+                    const float dot_r    = 6.0f;
+                    const float padding  = dot_r; /* room for dot to extend past bar edge */
+
+                    /* Reserve a region tall enough for bar + dot */
+                    ImVec2 cursor = ImGui::GetCursorScreenPos();
+                    /* Vertically centre the bar+dot in the toolbar (toolbar h=50) */
+                    float toolbar_top = ImGui::GetWindowPos().y;
+                    float bar_cx_y   = toolbar_top + 25.0f; /* mid-point of toolbar */
+                    float bar_top_y  = bar_cx_y - bar_h * 0.5f;
+                    float bar_bot_y  = bar_cx_y + bar_h * 0.5f;
+
+                    float bar_x0 = cursor.x + padding;
+                    float bar_x1 = bar_x0 + bar_w;
+
+                    ImDrawList *dl = ImGui::GetWindowDrawList();
+
+                    /* Background track */
+                    dl->AddRectFilled(
+                        ImVec2(bar_x0, bar_top_y),
+                        ImVec2(bar_x1, bar_bot_y),
+                        IM_COL32(50, 45, 40, 255), 3.0f
+                    );
+
+                    /* Centre tick mark */
+                    float mid_x = bar_x0 + bar_w * 0.5f;
+                    dl->AddRectFilled(
+                        ImVec2(mid_x - 1.0f, bar_top_y - 2.0f),
+                        ImVec2(mid_x + 1.0f, bar_bot_y + 2.0f),
+                        IM_COL32(120, 110, 90, 255)
+                    );
+
+                    /* Indicator dot */
+                    if (active) {
+                        /* Map cents [-50, +50] → [bar_x0, bar_x1] */
+                        float t        = (cents + 50.0f) / 100.0f;
+                        if (t < 0.0f) t = 0.0f;
+                        if (t > 1.0f) t = 1.0f;
+                        float dot_x = bar_x0 + t * bar_w;
+
+                        ImU32 dot_col = IM_COL32(
+                            (int)(note_color.x * 255),
+                            (int)(note_color.y * 255),
+                            (int)(note_color.z * 255),
+                            255
+                        );
+                        dl->AddCircleFilled(ImVec2(dot_x, bar_cx_y), dot_r, dot_col);
+                    }
+
+                    /* Advance cursor past the bar area */
+                    ImGui::Dummy(ImVec2(bar_w + padding * 2.0f, bar_h + dot_r * 2.0f));
+                }
             }
 
             ImGui::SameLine(400);

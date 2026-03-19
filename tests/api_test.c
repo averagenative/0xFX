@@ -1109,6 +1109,74 @@ static void test_preset_fuzz(void) {
     printf("  OK\n");
 }
 
+/* ── Test: default presets load and produce audio ─────────────── */
+
+static void test_default_presets(void) {
+    printf("test_default_presets...\n");
+
+    /* Try both paths: running from project root or from build/ */
+    const char *preset_files[] = {
+        "presets/clean_sparkle.0xfx",
+        "presets/classic_crunch.0xfx",
+        "presets/modern_high_gain.0xfx",
+        "presets/chimey_british.0xfx",
+        "presets/bluesy_tweed.0xfx",
+    };
+    const char *preset_files_alt[] = {
+        "../presets/clean_sparkle.0xfx",
+        "../presets/classic_crunch.0xfx",
+        "../presets/modern_high_gain.0xfx",
+        "../presets/chimey_british.0xfx",
+        "../presets/bluesy_tweed.0xfx",
+    };
+    const char *preset_names[] = {
+        "Clean Sparkle",
+        "Classic Crunch",
+        "Modern High Gain",
+        "Chimey British",
+        "Bluesy Tweed",
+    };
+    const int num_presets = 5;
+
+    /* Generate a test input signal: 440Hz sine at moderate level */
+    float input[1024];
+    for (int i = 0; i < 1024; i++) {
+        input[i] = 0.3f * sinf(2.0f * 3.14159f * 440.0f * (float)i / 44100.0f);
+    }
+
+    for (int p = 0; p < num_presets; p++) {
+        fx_engine_t *e = fx_engine_create(44100.0f);
+        ASSERT(e != NULL, "engine should be created");
+
+        bool loaded = fx_preset_load(e, preset_files[p]);
+        if (!loaded) loaded = fx_preset_load(e, preset_files_alt[p]);
+        char msg[128];
+        snprintf(msg, sizeof(msg), "%s should load", preset_names[p]);
+        ASSERT(loaded, msg);
+
+        if (loaded) {
+            /* Process audio through the preset */
+            float output[1024];
+            fx_engine_process(e, input, output, 1024);
+
+            /* Verify it produces output with energy */
+            float peak = 0.0f;
+            for (int i = 0; i < 1024; i++) {
+                float a = fabsf(output[i]);
+                if (a > peak) peak = a;
+            }
+            snprintf(msg, sizeof(msg), "%s should produce output (peak=%.4f)",
+                     preset_names[p], peak);
+            ASSERT(peak > 0.001f, msg);
+            printf("    %s: peak=%.4f\n", preset_names[p], peak);
+        }
+
+        fx_engine_destroy(e);
+    }
+
+    printf("  OK\n");
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -1133,6 +1201,7 @@ int main(void) {
     test_cab_load_api();
     test_preset_roundtrip();
     test_preset_fuzz();
+    test_default_presets();
 
     printf("\n═══ Results: %d passed, %d failed ═══\n",
            tests_passed, tests_failed);

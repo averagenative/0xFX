@@ -1,49 +1,36 @@
 {
-	"format":	"0xfx",
-	"version":	"1.0",
-	"name":	"Bluesy Tweed",
-	"signal_chain":	{
-		"input":	{
-			"noise_gate":	{
-				"threshold_db":	-55,
-				"attack_ms":	1,
-				"release_ms":	50,
-				"hold_ms":	10
-			}
-		},
-		"pre_pedals":	[{
-			"type":	"squeeze_box",
-			"bypass":	false,
-			"params":	{
-				"output":	0.6,
-				"sensitivity":	0.6
-			}
-		}],
-		"chains":	[{
-			"amp":	{
-				"model":	"tweed_blues",
-				"params":	{
-					"gain":	0.5,
-					"volume":	0.7,
-					"bass":	0.6,
-					"mid":	0.55,
-					"treble":	0.5,
-					"presence":	0.5
-				}
-			},
-			"cab":	{
-				"bypass":	false
-			},
-			"mix":	1.0
-		}],
-		"post_pedals":	[{
-			"type":	"drip_verb",
-			"bypass":	false,
-			"params":	{
-				"param_1":	0.5,
-				"param_2":	0.4,
-				"param_3":	0.3
-			}
-		}]
-	}
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Bluesy Tweed",
+  "author": "0xFX",
+  "tags": ["blues", "tweed", "warm", "overdrive"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -52, "attack_ms": 1, "release_ms": 60, "hold_ms": 15 }
+    },
+    "pre_pedals": [
+      {
+        "type": "gold_drive",
+        "bypass": false,
+        "params": { "gain": 0.35, "treble": 0.55, "output": 0.7 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "tweed_blues",
+          "params": { "gain": 0.55, "volume": 0.6, "bass": 0.55, "mid": 0.5, "treble": 0.5, "presence": 0.45 }
+        },
+        "cab": { "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "hall_verb",
+        "bypass": false,
+        "params": { "decay": 0.3, "damping": 0.5, "mix": 0.15 }
+      }
+    ]
+  }
 }

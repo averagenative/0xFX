@@ -170,8 +170,37 @@ const char  *fx_amp_get_type_name(fx_amp_type_t type);
 
 /* ── Cabinet IR — per chain ───────────────────────────────────── */
 
+/* Cabinet type for synthetic IR generation */
+typedef enum {
+    FX_CAB_1X12_OPEN = 0,    /* 1x12 open back — bright, chimey */
+    FX_CAB_2X12_CLOSED,      /* 2x12 closed back — tighter, focused */
+    FX_CAB_4X12_STRAIGHT,    /* 4x12 straight — classic rock, full */
+    FX_CAB_4X12_SLANT,       /* 4x12 slant — slightly brighter top */
+    FX_CAB_DIRECT,           /* direct/flat — minimal coloring */
+    FX_CAB_TYPE_COUNT
+} fx_cab_type_t;
+
+/* Microphone position for synthetic IR */
+typedef enum {
+    FX_MIC_ON_AXIS = 0,     /* on-axis — brighter, more presence */
+    FX_MIC_OFF_AXIS,        /* off-axis — darker, smoother */
+    FX_MIC_EDGE,            /* edge of cone — scooped mids */
+    FX_MIC_POS_COUNT
+} fx_mic_pos_t;
+
+/* Parameters for synthetic IR generation */
+typedef struct {
+    fx_cab_type_t cab_type;     /* cabinet type */
+    fx_mic_pos_t  mic_pos;      /* microphone position */
+    float         speaker_fs;   /* speaker resonant frequency (Hz), 60-120 typical */
+    float         brightness;   /* 0.0 = dark, 1.0 = bright */
+    float         resonance;    /* 0.0 = flat, 1.0 = resonant */
+} fx_cab_params_t;
+
 bool         fx_cab_load_ir(fx_engine_t *engine, fx_chain_id chain,
                             const char *wav_path);
+bool         fx_cab_generate_ir(fx_engine_t *engine, fx_chain_id chain,
+                                const fx_cab_params_t *params);
 void         fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain,
                                bool bypass);
 bool         fx_cab_get_bypass(fx_engine_t *engine, fx_chain_id chain);

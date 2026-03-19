@@ -628,7 +628,7 @@
     "title": "Tuner display in toolbar",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-026"
@@ -803,7 +803,7 @@
     "title": "Create 5 default presets",
     "domain": "infra",
     "phase": 4,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "preset-gen-agent",
     "depends": [
       "TASK-042"

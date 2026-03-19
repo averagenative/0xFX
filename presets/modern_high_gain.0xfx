@@ -1,53 +1,36 @@
 {
-	"format":	"0xfx",
-	"version":	"1.0",
-	"name":	"Modern High Gain",
-	"signal_chain":	{
-		"input":	{
-			"noise_gate":	{
-				"threshold_db":	-40,
-				"attack_ms":	0.5,
-				"release_ms":	30,
-				"hold_ms":	20
-			}
-		},
-		"pre_pedals":	[{
-			"type":	"noise_gate",
-			"bypass":	false,
-			"params":	{
-				"param_1":	0.5,
-				"param_2":	0.5,
-				"param_3":	0.5,
-				"param_4":	0.5
-			}
-		}],
-		"chains":	[{
-			"amp":	{
-				"model":	"southwest_lead",
-				"params":	{
-					"gain":	0.9,
-					"volume":	0.6,
-					"bass":	0.5,
-					"mid":	0.55,
-					"treble":	0.6,
-					"presence":	0.7,
-					"sag":	0.2,
-					"master":	0.7
-				}
-			},
-			"cab":	{
-				"bypass":	false
-			},
-			"mix":	1.0
-		}],
-		"post_pedals":	[{
-			"type":	"hall_verb",
-			"bypass":	false,
-			"params":	{
-				"decay":	0.4,
-				"damping":	0.5,
-				"mix":	0.2
-			}
-		}]
-	}
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Modern High Gain",
+  "author": "0xFX",
+  "tags": ["high-gain", "metal", "modern", "tight"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -40, "attack_ms": 0.5, "release_ms": 30, "hold_ms": 15 }
+    },
+    "pre_pedals": [
+      {
+        "type": "squeeze_box",
+        "bypass": false,
+        "params": { "output": 0.6, "sensitivity": 0.4 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "southwest_lead",
+          "params": { "gain": 0.8, "volume": 0.5, "bass": 0.45, "mid": 0.5, "treble": 0.6, "presence": 0.65, "sag": 0.15, "master": 0.5 }
+        },
+        "cab": { "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "echo_delay",
+        "bypass": false,
+        "params": { "time": 0.3, "feedback": 0.2, "mix": 0.1 }
+      }
+    ]
+  }
 }
