@@ -1,0 +1,1 @@
+/usr/bin/cc -fPIC -g -fsanitize=address -shared  -o 0xfx_clap.clap CMakeFiles/0xfx_clap.dir/src/plugin/plugin.c.o CMakeFiles/0xfx_clap.dir/deps/cplug/src/cplug_clap.c.o  libfx_engine.a -lm -lpthread -ldl 

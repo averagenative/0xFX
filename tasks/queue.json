@@ -1147,7 +1147,7 @@
     "title": "CLAP parameter automation",
     "domain": "infra",
     "phase": 6,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-068"
@@ -1180,6 +1180,192 @@
     ],
     "files": [
       "README.md"
+    ]
+  },
+  {
+    "id": "TASK-064",
+    "priority": "MEDIUM",
+    "title": "Implement Drift Vibrato (true pitch vibrato)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Pitch modulation (not amplitude)",
+      "Rate/Depth params",
+      "Distinct from chorus"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-063",
+    "priority": "MEDIUM",
+    "title": "Implement Jet Flanger (through-zero flanging)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Short modulated delay with negative feedback option",
+      "Rate/depth/feedback/mix params",
+      "Through-zero sweep"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-049",
+    "priority": "MEDIUM",
+    "title": "Implement Plate Verb + Shimmer Verb + Cloud Verb",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 30000,
+    "acceptanceCriteria": [
+      "Plate: dense diffusion network",
+      "Shimmer: octave-up pitch in feedback",
+      "Cloud: infinite decay/freeze mode",
+      "Each with correct params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-084",
+    "priority": "MEDIUM",
+    "title": "Implement Octave Engine (polyphonic octave)",
+    "domain": "engine",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Sub-octave + octave-up tracking",
+      "Works on chords (polyphonic)",
+      "Sub/dry/up level params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-086",
+    "priority": "MEDIUM",
+    "title": "Implement Loop Station (looper)",
+    "domain": "engine",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "Record/overdub/play/stop/undo",
+      "Up to 5 minutes loop time",
+      "Pre-allocated buffer (no malloc in audio path)"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-087",
+    "priority": "LOW",
+    "title": "Implement Infinite Hold (freeze pedal)",
+    "domain": "engine",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Capture audio frame, loop as drone",
+      "Momentary and latch modes",
+      "Decay/rise params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-088",
+    "priority": "LOW",
+    "title": "Implement Grain Cloud (granular delay)",
+    "domain": "engine",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Chop audio into grains",
+      "Pitch/density/size manipulation",
+      "Time/pitch/density/mix params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-103",
+    "priority": "MEDIUM",
+    "title": "Effect DSP tests (all 20+ pedals)",
+    "domain": "testing",
+    "phase": 11,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 30000,
+    "acceptanceCriteria": [
+      "Each pedal type: create engine, add pedal, process audio, verify output has energy",
+      "Verify bypass produces different output",
+      "Verify each pedal changes the signal"
+    ],
+    "files": [
+      "tests/api_test.c"
+    ]
+  },
+  {
+    "id": "TASK-106",
+    "priority": "MEDIUM",
+    "title": "ASAN build + test run",
+    "domain": "testing",
+    "phase": 11,
+    "status": "done",
+    "claimedBy": "claude-agent",
+    "depends": [],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "cmake -DENABLE_ASAN=ON builds",
+      "All tests pass under ASAN",
+      "No memory errors"
+    ],
+    "files": [
+      "CMakeLists.txt"
     ]
   }
 ]

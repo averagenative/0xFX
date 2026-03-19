@@ -182,6 +182,70 @@ static const float tone_sculptor_freqs[TONE_SCULPTOR_BANDS] = {
     100.0f, 200.0f, 400.0f, 800.0f, 1600.0f, 3200.0f, 6400.0f
 };
 
+/* Drift Vibrato — true pitch vibrato via modulated delay line */
+#define DRIFT_BUF_LEN 512  /* ~11ms at 44.1kHz, plenty for 5ms vibrato */
+
+typedef struct {
+    float buffer[DRIFT_BUF_LEN];
+    int   write_pos;
+    float lfo_phase;
+} drift_vibrato_state_t;
+
+/* Jet Flanger — through-zero flanging with negative feedback */
+#define FLANGER_BUF_LEN 320  /* ~7.3ms at 44.1kHz */
+
+typedef struct {
+    float buffer[FLANGER_BUF_LEN];
+    int   write_pos;
+    float lfo_phase;
+} jet_flanger_state_t;
+
+/* Plate Verb — dense plate reverb (4 allpass + 2 parallel feedback delay with LP) */
+#define PLATE_NUM_ALLPASS 4
+#define PLATE_NUM_DELAYS  2
+
+typedef struct {
+    float *ap_buf[PLATE_NUM_ALLPASS];
+    int    ap_len[PLATE_NUM_ALLPASS];
+    int    ap_pos[PLATE_NUM_ALLPASS];
+    float *dl_buf[PLATE_NUM_DELAYS];
+    int    dl_len[PLATE_NUM_DELAYS];
+    int    dl_pos[PLATE_NUM_DELAYS];
+    float  dl_filt[PLATE_NUM_DELAYS];  /* LP state in feedback */
+    float  dl_fb[PLATE_NUM_DELAYS];    /* feedback sample */
+} plate_verb_state_t;
+
+/* Shimmer Verb — hall-style reverb with octave-up pitch shift in feedback */
+#define SHIMMER_NUM_COMBS   4
+#define SHIMMER_NUM_ALLPASS 2
+
+typedef struct {
+    float *comb_buf[SHIMMER_NUM_COMBS];
+    int    comb_len[SHIMMER_NUM_COMBS];
+    int    comb_pos[SHIMMER_NUM_COMBS];
+    float  comb_filt[SHIMMER_NUM_COMBS];
+    float *ap_buf[SHIMMER_NUM_ALLPASS];
+    int    ap_len[SHIMMER_NUM_ALLPASS];
+    int    ap_pos[SHIMMER_NUM_ALLPASS];
+    /* Pitch shift state: read pointer advances at 2x for octave up */
+    float  pitch_read_pos;   /* fractional read position in comb_buf[0] */
+} shimmer_verb_state_t;
+
+/* Cloud Verb — long ambient reverb with freeze/near-infinite feedback */
+#define CLOUD_NUM_COMBS   4
+#define CLOUD_NUM_ALLPASS 2
+
+typedef struct {
+    float *comb_buf[CLOUD_NUM_COMBS];
+    int    comb_len[CLOUD_NUM_COMBS];
+    int    comb_pos[CLOUD_NUM_COMBS];
+    float  comb_filt[CLOUD_NUM_COMBS];
+    float *ap_buf[CLOUD_NUM_ALLPASS];
+    int    ap_len[CLOUD_NUM_ALLPASS];
+    int    ap_pos[CLOUD_NUM_ALLPASS];
+    float  lp_state;  /* one-pole LP on wet output */
+} cloud_verb_state_t;
+
 /* ══════════════════════════════════════════════════════════════════
  * DC blocker helper (shared by drive pedals)
  * ══════════════════════════════════════════════════════════════════ */
@@ -1417,6 +1481,434 @@ static void warm_tape_process(fx_pedal_instance_t *p, float *buf, int n, float s
 }
 
 /* ══════════════════════════════════════════════════════════════════
+ * DRIFT VIBRATO — true pitch vibrato (100% wet, no dry signal)
+ * Modulated delay line: LFO varies delay time → pitch wobble
+ * Params: [0] rate (0.5-8Hz), [1] depth (0-1, up to ~5ms mod)
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void drift_vibrato_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    drift_vibrato_state_t *s = (drift_vibrato_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    memset(s->buffer, 0, sizeof(s->buffer));
+    s->write_pos = 0;
+    s->lfo_phase = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.3f;  /* rate */
+    p->params[1] = 0.5f;  /* depth */
+}
+
+static void drift_vibrato_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    drift_vibrato_state_t *s = (drift_vibrato_state_t *)p->state;
+    if (!s) return;
+
+    /* Rate: 0.5-8Hz */
+    float rate  = 0.5f + p->params[0] * 7.5f;
+    float depth = p->params[1];
+
+    float lfo_inc = (float)(2.0 * M_PI * rate / sr);
+
+    /* Base delay: ~5ms, depth modulates up to another ~5ms */
+    float base_delay  = sr * 0.005f;
+    float depth_samps = depth * sr * 0.005f;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        s->lfo_phase += lfo_inc;
+        if (s->lfo_phase > (float)(2.0 * M_PI)) s->lfo_phase -= (float)(2.0 * M_PI);
+        float lfo = sinf(s->lfo_phase);
+
+        /* Modulated delay (always positive: base ± depth, clamped) */
+        float delay_f = base_delay + lfo * depth_samps;
+        if (delay_f < 1.0f) delay_f = 1.0f;
+
+        int   delay_i = (int)delay_f;
+        float frac    = delay_f - (float)delay_i;
+
+        /* Linear interpolation from circular buffer */
+        int r0 = s->write_pos - delay_i;
+        if (r0 < 0) r0 += DRIFT_BUF_LEN;
+        int r1 = r0 - 1;
+        if (r1 < 0) r1 += DRIFT_BUF_LEN;
+
+        float wet = s->buffer[r0] * (1.0f - frac) + s->buffer[r1] * frac;
+
+        s->buffer[s->write_pos] = dry;
+        s->write_pos = (s->write_pos + 1) % DRIFT_BUF_LEN;
+
+        /* 100% wet — pure pitch vibrato, NO dry signal */
+        buf[i] = wet;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * JET FLANGER — through-zero flanging
+ * Short modulated delay (0.1-7ms) with feedback (can go negative)
+ * Params: [0] rate (0.1-2Hz), [1] depth, [2] feedback (-0.9 to 0.9),
+ *         [3] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void jet_flanger_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    jet_flanger_state_t *s = (jet_flanger_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    memset(s->buffer, 0, sizeof(s->buffer));
+    s->write_pos = 0;
+    s->lfo_phase = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.2f;   /* rate */
+    p->params[1] = 0.7f;   /* depth */
+    p->params[2] = 0.7f;   /* feedback (0.7 → negative: through-zero) */
+    p->params[3] = 0.5f;   /* mix */
+}
+
+static void jet_flanger_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    jet_flanger_state_t *s = (jet_flanger_state_t *)p->state;
+    if (!s) return;
+
+    /* Rate: 0.1-2Hz */
+    float rate     = 0.1f + p->params[0] * 1.9f;
+    float depth    = p->params[1];
+    /* Feedback: param 0-1 → -0.9 to +0.9 (0.5 = 0) */
+    float feedback = (p->params[2] - 0.5f) * 1.8f;
+    float mix      = p->params[3];
+
+    float lfo_inc = (float)(2.0 * M_PI * rate / sr);
+
+    /* Delay sweeps 0.1ms to 7ms */
+    float delay_min_samps = sr * 0.0001f;
+    float delay_max_samps = sr * 0.007f;
+    if (delay_max_samps >= (float)(FLANGER_BUF_LEN - 2))
+        delay_max_samps = (float)(FLANGER_BUF_LEN - 2);
+
+    float delay_range = (delay_max_samps - delay_min_samps) * depth;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        s->lfo_phase += lfo_inc;
+        if (s->lfo_phase > (float)(2.0 * M_PI)) s->lfo_phase -= (float)(2.0 * M_PI);
+        /* Use sine LFO: 0-1 sweep for classic jet effect */
+        float lfo = 0.5f + 0.5f * sinf(s->lfo_phase);
+
+        float delay_f = delay_min_samps + lfo * delay_range;
+        if (delay_f < 0.1f) delay_f = 0.1f;
+
+        int   delay_i = (int)delay_f;
+        float frac    = delay_f - (float)delay_i;
+
+        int r0 = s->write_pos - delay_i;
+        if (r0 < 0) r0 += FLANGER_BUF_LEN;
+        int r1 = r0 - 1;
+        if (r1 < 0) r1 += FLANGER_BUF_LEN;
+
+        float delayed = s->buffer[r0] * (1.0f - frac) + s->buffer[r1] * frac;
+
+        /* Write input + feedback (negative feedback → through-zero jet sweep) */
+        s->buffer[s->write_pos] = dry + delayed * feedback;
+        s->write_pos = (s->write_pos + 1) % FLANGER_BUF_LEN;
+
+        buf[i] = dry * (1.0f - mix) + delayed * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * PLATE VERB — dense plate reverb
+ * 4 allpass diffusers in series → 2 parallel feedback delay lines
+ * with lowpass damping in each feedback path
+ * Params: [0] decay (0.5-0.98), [1] damping (LP in feedback), [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* Allpass and feedback delay lengths at 44.1kHz */
+static const int plate_ap_lens_44k[PLATE_NUM_ALLPASS] = { 210, 322, 441, 583 };
+/* Longer delays than spring/hall for plate character */
+static const int plate_dl_lens_44k[PLATE_NUM_DELAYS]  = { 2053, 2389 };
+
+static void plate_verb_init(fx_pedal_instance_t *p, float sr) {
+    plate_verb_state_t *s = (plate_verb_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    float scale = sr / 44100.0f;
+
+    for (int i = 0; i < PLATE_NUM_ALLPASS; i++) {
+        s->ap_len[i] = (int)((float)plate_ap_lens_44k[i] * scale) + 1;
+        s->ap_buf[i] = (float *)calloc((size_t)s->ap_len[i], sizeof(float));
+        s->ap_pos[i] = 0;
+    }
+    for (int i = 0; i < PLATE_NUM_DELAYS; i++) {
+        s->dl_len[i] = (int)((float)plate_dl_lens_44k[i] * scale) + 1;
+        s->dl_buf[i] = (float *)calloc((size_t)s->dl_len[i], sizeof(float));
+        s->dl_pos[i] = 0;
+        s->dl_filt[i] = 0.0f;
+        s->dl_fb[i]   = 0.0f;
+    }
+
+    p->state = s;
+    p->params[0] = 0.6f;  /* decay */
+    p->params[1] = 0.5f;  /* damping */
+    p->params[2] = 0.3f;  /* mix */
+}
+
+static void plate_verb_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    plate_verb_state_t *s = (plate_verb_state_t *)p->state;
+    if (!s) return;
+    (void)sr;
+
+    float decay  = 0.5f + p->params[0] * 0.48f; /* 0.5-0.98 */
+    float damp   = p->params[1] * 0.5f;          /* 0-0.5 LP coefficient */
+    float mix    = p->params[2];
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Feed input + cross-feedback from both delay lines into diffusers */
+        float x = dry + s->dl_fb[0] * 0.5f + s->dl_fb[1] * 0.5f;
+
+        /* 4 series allpass diffusers (coefficient 0.5) */
+        for (int a = 0; a < PLATE_NUM_ALLPASS; a++) {
+            float *ab  = s->ap_buf[a];
+            int    pos = s->ap_pos[a];
+            float  out = ab[pos];
+            float  in  = x + out * 0.5f;
+            ab[pos] = in;
+            x = out - in * 0.5f;
+            s->ap_pos[a] = (pos + 1) % s->ap_len[a];
+        }
+
+        /* Two parallel feedback delay lines with LP damping */
+        float wet = 0.0f;
+        for (int d = 0; d < PLATE_NUM_DELAYS; d++) {
+            float *db  = s->dl_buf[d];
+            int    pos = s->dl_pos[d];
+            float  out = db[pos];
+
+            /* LP damp in feedback */
+            s->dl_filt[d] = out * (1.0f - damp) + s->dl_filt[d] * damp;
+            db[pos] = x + s->dl_filt[d] * decay;
+            s->dl_pos[d] = (pos + 1) % s->dl_len[d];
+
+            s->dl_fb[d] = out;
+            wet += out;
+        }
+        wet *= 0.5f;
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+static void plate_verb_free(fx_pedal_instance_t *p) {
+    plate_verb_state_t *s = (plate_verb_state_t *)p->state;
+    if (s) {
+        for (int i = 0; i < PLATE_NUM_ALLPASS; i++) free(s->ap_buf[i]);
+        for (int i = 0; i < PLATE_NUM_DELAYS;  i++) free(s->dl_buf[i]);
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * SHIMMER VERB — hall reverb with octave-up shimmer in feedback
+ * Simple octave shift: read comb buffer at 2x speed (pitch up 1 octave)
+ * and blend shimmer amount back into the feedback
+ * Params: [0] decay, [1] shimmer (0-1 amount), [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static const int shimmer_comb_lens_44k[SHIMMER_NUM_COMBS]     = { 1557, 1617, 1791, 1873 };
+static const int shimmer_allpass_lens_44k[SHIMMER_NUM_ALLPASS] = { 556, 441 };
+
+static void shimmer_verb_init(fx_pedal_instance_t *p, float sr) {
+    shimmer_verb_state_t *s = (shimmer_verb_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    float scale = sr / 44100.0f;
+
+    for (int i = 0; i < SHIMMER_NUM_COMBS; i++) {
+        s->comb_len[i] = (int)((float)shimmer_comb_lens_44k[i] * scale) + 1;
+        s->comb_buf[i] = (float *)calloc((size_t)s->comb_len[i], sizeof(float));
+        s->comb_pos[i] = 0;
+        s->comb_filt[i] = 0.0f;
+    }
+    for (int i = 0; i < SHIMMER_NUM_ALLPASS; i++) {
+        s->ap_len[i] = (int)((float)shimmer_allpass_lens_44k[i] * scale) + 1;
+        s->ap_buf[i] = (float *)calloc((size_t)s->ap_len[i], sizeof(float));
+        s->ap_pos[i] = 0;
+    }
+    s->pitch_read_pos = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.6f;  /* decay */
+    p->params[1] = 0.4f;  /* shimmer */
+    p->params[2] = 0.3f;  /* mix */
+}
+
+static void shimmer_verb_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    shimmer_verb_state_t *s = (shimmer_verb_state_t *)p->state;
+    if (!s) return;
+    (void)sr;
+
+    float feedback = 0.7f + p->params[0] * 0.28f;  /* 0.7-0.98 */
+    float shimmer  = p->params[1];                   /* 0-1 */
+    float mix      = p->params[2];
+
+    /* Use comb_buf[0] as the octave-shift source buffer */
+    int   pitch_buf_len = s->comb_len[0];
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+        float wet = 0.0f;
+
+        /* Read octave-up: advance read pointer at 2x write speed */
+        s->pitch_read_pos += 2.0f;
+        if (s->pitch_read_pos >= (float)pitch_buf_len)
+            s->pitch_read_pos -= (float)pitch_buf_len;
+
+        /* Interpolated read for pitch-shifted signal */
+        int   pr0    = (int)s->pitch_read_pos;
+        float pr_frc = s->pitch_read_pos - (float)pr0;
+        int   pr1    = (pr0 + 1) % pitch_buf_len;
+        float pitched = s->comb_buf[0][pr0] * (1.0f - pr_frc)
+                       + s->comb_buf[0][pr1] * pr_frc;
+
+        /* Parallel comb filters; first comb gets shimmer mixed in */
+        for (int c = 0; c < SHIMMER_NUM_COMBS; c++) {
+            float *cb  = s->comb_buf[c];
+            int    pos = s->comb_pos[c];
+            float  out = cb[pos];
+
+            s->comb_filt[c] = out * 0.6f + s->comb_filt[c] * 0.4f;
+
+            /* Feedback signal: normal verb feedback + shimmer (pitched) signal */
+            float fb_in = dry + s->comb_filt[c] * feedback;
+            if (c == 0) {
+                fb_in += pitched * shimmer * feedback * 0.5f;
+            }
+            cb[pos] = fb_in;
+            s->comb_pos[c] = (pos + 1) % s->comb_len[c];
+
+            wet += out;
+        }
+        wet *= (1.0f / SHIMMER_NUM_COMBS);
+
+        /* Series allpass diffusion */
+        for (int a = 0; a < SHIMMER_NUM_ALLPASS; a++) {
+            float *ab  = s->ap_buf[a];
+            int    pos = s->ap_pos[a];
+            float  ap_out = ab[pos];
+            float  ap_in  = wet + ap_out * 0.5f;
+            ab[pos] = ap_in;
+            wet = ap_out - ap_in * 0.5f;
+            s->ap_pos[a] = (pos + 1) % s->ap_len[a];
+        }
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+static void shimmer_verb_free(fx_pedal_instance_t *p) {
+    shimmer_verb_state_t *s = (shimmer_verb_state_t *)p->state;
+    if (s) {
+        for (int i = 0; i < SHIMMER_NUM_COMBS;   i++) free(s->comb_buf[i]);
+        for (int i = 0; i < SHIMMER_NUM_ALLPASS; i++) free(s->ap_buf[i]);
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * CLOUD VERB — ambient reverb with near-infinite / freeze feedback
+ * Long comb filters + allpass diffusion + LP filter on wet
+ * Params: [0] decay (up to 0.998 for freeze), [1] filter (LP on wet),
+ *         [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* Longer delay lines than hall for ambient wash */
+static const int cloud_comb_lens_44k[CLOUD_NUM_COMBS]     = { 3163, 3571, 3947, 4327 };
+static const int cloud_allpass_lens_44k[CLOUD_NUM_ALLPASS] = { 743, 611 };
+
+static void cloud_verb_init(fx_pedal_instance_t *p, float sr) {
+    cloud_verb_state_t *s = (cloud_verb_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    float scale = sr / 44100.0f;
+
+    for (int i = 0; i < CLOUD_NUM_COMBS; i++) {
+        s->comb_len[i] = (int)((float)cloud_comb_lens_44k[i] * scale) + 1;
+        s->comb_buf[i] = (float *)calloc((size_t)s->comb_len[i], sizeof(float));
+        s->comb_pos[i] = 0;
+        s->comb_filt[i] = 0.0f;
+    }
+    for (int i = 0; i < CLOUD_NUM_ALLPASS; i++) {
+        s->ap_len[i] = (int)((float)cloud_allpass_lens_44k[i] * scale) + 1;
+        s->ap_buf[i] = (float *)calloc((size_t)s->ap_len[i], sizeof(float));
+        s->ap_pos[i] = 0;
+    }
+    s->lp_state = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.7f;  /* decay */
+    p->params[1] = 0.4f;  /* filter */
+    p->params[2] = 0.4f;  /* mix */
+}
+
+static void cloud_verb_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    cloud_verb_state_t *s = (cloud_verb_state_t *)p->state;
+    if (!s) return;
+    (void)sr;
+
+    /* Decay: 0-1 maps to 0.85-0.998 (near-freeze at top) */
+    float feedback = 0.85f + p->params[0] * 0.148f;
+    /* Filter: one-pole LP coefficient on wet output (0=bright, 1=dark) */
+    float lp_coeff = p->params[1] * 0.92f;
+    float mix      = p->params[2];
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+        float wet = 0.0f;
+
+        /* Parallel comb filters with mild internal LP (gentle damping) */
+        for (int c = 0; c < CLOUD_NUM_COMBS; c++) {
+            float *cb  = s->comb_buf[c];
+            int    pos = s->comb_pos[c];
+            float  out = cb[pos];
+
+            /* Mild LP in comb feedback (keeps highs from ringing forever) */
+            s->comb_filt[c] = out * 0.7f + s->comb_filt[c] * 0.3f;
+            cb[pos] = dry + s->comb_filt[c] * feedback;
+            s->comb_pos[c] = (pos + 1) % s->comb_len[c];
+
+            wet += out;
+        }
+        wet *= (1.0f / CLOUD_NUM_COMBS);
+
+        /* Series allpass diffusion */
+        for (int a = 0; a < CLOUD_NUM_ALLPASS; a++) {
+            float *ab  = s->ap_buf[a];
+            int    pos = s->ap_pos[a];
+            float  ap_out = ab[pos];
+            float  ap_in  = wet + ap_out * 0.5f;
+            ab[pos] = ap_in;
+            wet = ap_out - ap_in * 0.5f;
+            s->ap_pos[a] = (pos + 1) % s->ap_len[a];
+        }
+
+        /* Filter param: one-pole LP on wet signal */
+        s->lp_state = s->lp_state * lp_coeff + wet * (1.0f - lp_coeff);
+        wet = s->lp_state;
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+static void cloud_verb_free(fx_pedal_instance_t *p) {
+    cloud_verb_state_t *s = (cloud_verb_state_t *)p->state;
+    if (s) {
+        for (int i = 0; i < CLOUD_NUM_COMBS;   i++) free(s->comb_buf[i]);
+        for (int i = 0; i < CLOUD_NUM_ALLPASS; i++) free(s->ap_buf[i]);
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
  * Pedal metadata
  * ══════════════════════════════════════════════════════════════════ */
 
@@ -1474,6 +1966,11 @@ static const char *chaos_fuzz_params[]     = { "Volume", "Gate", "Drive", "Stab"
 static const char *grit_crush_params[]     = { "Bits", "Rate", "Mix" };
 static const char *ring_tone_params[]      = { "Freq", "Mix" };
 static const char *warm_tape_params[]      = { "Drive", "Warmth", "Mix" };
+static const char *drift_vibrato_params[]  = { "Rate", "Depth" };
+static const char *jet_flanger_params[]    = { "Rate", "Depth", "Feedback", "Mix" };
+static const char *plate_verb_params[]     = { "Decay", "Damping", "Mix" };
+static const char *shimmer_verb_params[]   = { "Decay", "Shimmer", "Mix" };
+static const char *cloud_verb_params[]     = { "Decay", "Filter", "Mix" };
 
 const char *fx_pedal_get_type_name(fx_pedal_type_t type) {
     if (type < 0 || type >= FX_PEDAL_TYPE_COUNT) return "?";
@@ -1504,6 +2001,11 @@ int fx_pedal_get_param_count(fx_pedal_type_t type) {
         case FX_PEDAL_GRIT_CRUSH:      return 3;
         case FX_PEDAL_RING_TONE:       return 2;
         case FX_PEDAL_WARM_TAPE:       return 3;
+        case FX_PEDAL_DRIFT_VIBRATO:   return 2;
+        case FX_PEDAL_JET_FLANGER:     return 4;
+        case FX_PEDAL_PLATE_VERB:      return 3;
+        case FX_PEDAL_SHIMMER_VERB:    return 3;
+        case FX_PEDAL_CLOUD_VERB:      return 3;
         default: return 3;
     }
 }
@@ -1575,6 +2077,21 @@ const char *fx_pedal_get_param_name(fx_pedal_type_t type, int param) {
         case FX_PEDAL_WARM_TAPE:
             if (param < 3) return warm_tape_params[param];
             break;
+        case FX_PEDAL_DRIFT_VIBRATO:
+            if (param < 2) return drift_vibrato_params[param];
+            break;
+        case FX_PEDAL_JET_FLANGER:
+            if (param < 4) return jet_flanger_params[param];
+            break;
+        case FX_PEDAL_PLATE_VERB:
+            if (param < 3) return plate_verb_params[param];
+            break;
+        case FX_PEDAL_SHIMMER_VERB:
+            if (param < 3) return shimmer_verb_params[param];
+            break;
+        case FX_PEDAL_CLOUD_VERB:
+            if (param < 3) return cloud_verb_params[param];
+            break;
         default:
             break;
     }
@@ -1621,6 +2138,11 @@ void fx_pedal_init_state(fx_pedal_instance_t *p, float sr) {
         case FX_PEDAL_GRIT_CRUSH:      grit_crush_init(p, sr);      break;
         case FX_PEDAL_RING_TONE:       ring_tone_init(p, sr);       break;
         case FX_PEDAL_WARM_TAPE:       warm_tape_init(p, sr);       break;
+        case FX_PEDAL_DRIFT_VIBRATO:   drift_vibrato_init(p, sr);   break;
+        case FX_PEDAL_JET_FLANGER:     jet_flanger_init(p, sr);     break;
+        case FX_PEDAL_PLATE_VERB:      plate_verb_init(p, sr);      break;
+        case FX_PEDAL_SHIMMER_VERB:    shimmer_verb_init(p, sr);    break;
+        case FX_PEDAL_CLOUD_VERB:      cloud_verb_init(p, sr);      break;
         default:
             /* Unimplemented pedals: passthrough */
             break;
@@ -1638,6 +2160,9 @@ void fx_pedal_free_state(fx_pedal_instance_t *p) {
             case FX_PEDAL_DRIP_VERB:    drip_verb_free(p);    break;
             case FX_PEDAL_CARBON_DELAY: carbon_delay_free(p); break;
             case FX_PEDAL_TAPE_MACHINE: tape_machine_free(p); break;
+            case FX_PEDAL_PLATE_VERB:   plate_verb_free(p);   break;
+            case FX_PEDAL_SHIMMER_VERB: shimmer_verb_free(p); break;
+            case FX_PEDAL_CLOUD_VERB:   cloud_verb_free(p);   break;
             default: break;
         }
         free(p->state);

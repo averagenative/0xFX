@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address CMakeFiles/0xfx_standalone.dir/src/standalone/main.c.o CMakeFiles/0xfx_standalone.dir/src/audio/audio_device.c.o -o 0xfx_standalone  libfx_engine.a libfx_core.a -lm -lpthread -ldl 

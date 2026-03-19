@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fsanitize=address CMakeFiles/fx_api_test.dir/tests/api_test.c.o -o fx_api_test  libfx_engine.a -lm 

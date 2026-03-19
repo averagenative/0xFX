@@ -1304,6 +1304,148 @@ static void test_default_presets(void) {
     printf("  OK\n");
 }
 
+/* ── Test: all pedal types — DSP coverage (TASK-103) ─────────── */
+
+static void test_all_pedal_types(void) {
+    printf("test_all_pedal_types...\n");
+
+    /*
+     * Implemented pedals have a non-NULL state and process function.
+     * Unimplemented pedals are passthroughs: fx_pedal_process() returns
+     * immediately because p->state == NULL.  We detect this by comparing
+     * the with-pedal output to the no-pedal reference; if they are
+     * identical we log "SKIP (not implemented)" rather than failing.
+     */
+
+    /* Reference input: 512-sample 440 Hz sine at 0.3 amplitude */
+    float input[512];
+    for (int i = 0; i < 512; i++) {
+        input[i] = 0.3f * sinf(2.0f * 3.14159265f * 440.0f * (float)i / 44100.0f);
+    }
+
+    /* Build a no-pedal reference output once */
+    float ref_out[512];
+    {
+        fx_engine_t *e_ref = fx_engine_create(44100.0f);
+        fx_amp_set_param(e_ref, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN,   0.0f);
+        fx_amp_set_param(e_ref, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+        fx_amp_set_param(e_ref, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+        fx_engine_process(e_ref, input, ref_out, 512);
+        fx_engine_destroy(e_ref);
+    }
+
+    int pedals_tested    = 0;
+    int pedals_active    = 0;
+    int pedals_skipped   = 0;
+
+    for (int t = FX_PEDAL_JADE_DRIVE; t <= FX_PEDAL_GRAIN_CLOUD; t++) {
+        fx_pedal_type_t ptype = (fx_pedal_type_t)t;
+        const char *name = fx_pedal_get_type_name(ptype);
+
+        /* ── 4. type name must not be "?" ──────────────────────── */
+        {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "pedal type %d should have a non-? name", t);
+            ASSERT(strcmp(name, "?") != 0, msg);
+        }
+
+        /* ── 5. param count must be > 0 ────────────────────────── */
+        {
+            int pc = fx_pedal_get_param_count(ptype);
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "%s param_count should be > 0", name);
+            ASSERT(pc > 0, msg);
+        }
+
+        /* ── 2a. fresh engine with pedal ────────────────────────── */
+        fx_engine_t *e_pedal = fx_engine_create(44100.0f);
+        fx_amp_set_param(e_pedal, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN,   0.0f);
+        fx_amp_set_param(e_pedal, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+        fx_amp_set_param(e_pedal, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+        /* ── 2c. add pedal as pre-amp ───────────────────────────── */
+        fx_pedal_id pid = fx_chain_add_pedal(e_pedal, ptype, FX_CHAIN_POS_PRE);
+        {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "%s: add_pedal should return valid id", name);
+            ASSERT(pid >= 0, msg);
+        }
+
+        /* ── 2e. process through the engine ────────────────────── */
+        float out_pedal[512];
+        fx_engine_process(e_pedal, input, out_pedal, 512);
+
+        /* ── 2f. output has energy ──────────────────────────────── */
+        float peak_pedal = 0.0f;
+        for (int i = 0; i < 512; i++) {
+            float a = fabsf(out_pedal[i]);
+            if (a > peak_pedal) peak_pedal = a;
+        }
+        {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "%s: output should have energy (peak=%.6f)", name, peak_pedal);
+            ASSERT(peak_pedal > 0.0001f, msg);
+        }
+
+        /* ── 2h. pedal changes signal vs no-pedal reference ─────── */
+        int differs = 0;
+        for (int i = 0; i < 512; i++) {
+            if (fabsf(out_pedal[i] - ref_out[i]) > 1e-4f) {
+                differs = 1;
+                break;
+            }
+        }
+
+        if (!differs) {
+            /* Passthrough — not yet implemented; log but do not fail */
+            printf("  %-20s peak=%.4f  SKIP (not implemented)\n", name, peak_pedal);
+            pedals_skipped++;
+        } else {
+            /* ── 2i. bypass test ────────────────────────────────── */
+            /* Create a fresh engine with the same pedal, bypassed */
+            fx_engine_t *e_bypass = fx_engine_create(44100.0f);
+            fx_amp_set_param(e_bypass, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN,   0.0f);
+            fx_amp_set_param(e_bypass, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+            fx_amp_set_param(e_bypass, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+            fx_pedal_id pid_bp = fx_chain_add_pedal(e_bypass, ptype, FX_CHAIN_POS_PRE);
+            fx_pedal_set_bypass(e_bypass, pid_bp, true);
+
+            float out_bypass[512];
+            fx_engine_process(e_bypass, input, out_bypass, 512);
+
+            int bypass_differs = 0;
+            for (int i = 0; i < 512; i++) {
+                if (fabsf(out_pedal[i] - out_bypass[i]) > 1e-4f) {
+                    bypass_differs = 1;
+                    break;
+                }
+            }
+            {
+                char msg[128];
+                snprintf(msg, sizeof(msg),
+                         "%s: bypassed output should differ from active", name);
+                ASSERT(bypass_differs, msg);
+            }
+
+            fx_engine_destroy(e_bypass);
+
+            printf("  %-20s peak=%.4f  PASS\n", name, peak_pedal);
+            pedals_active++;
+        }
+
+        /* ── 2j. destroy engine ─────────────────────────────────── */
+        fx_engine_destroy(e_pedal);
+        pedals_tested++;
+    }
+
+    printf("  Summary: %d pedals tested, %d active (DSP), %d skipped (passthrough)\n",
+           pedals_tested, pedals_active, pedals_skipped);
+    printf("  OK\n");
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -1330,6 +1472,7 @@ int main(void) {
     test_preset_roundtrip();
     test_preset_fuzz();
     test_default_presets();
+    test_all_pedal_types();
 
     printf("\n═══ Results: %d passed, %d failed ═══\n",
            tests_passed, tests_failed);

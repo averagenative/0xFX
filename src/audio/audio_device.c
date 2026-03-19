@@ -27,9 +27,13 @@ typedef struct {
     int            num_playback;
     int            num_capture;
 
-    /* Combined device list for the public API (capture devices) */
-    char           device_names[MAX_DEVICES][256];
-    int            num_devices;
+    /* Device name lists for the public API */
+    char           capture_names[MAX_DEVICES][256];
+    char           playback_names[MAX_DEVICES][256];
+
+    /* Selected indices */
+    int            selected_capture;
+    int            selected_playback;
 
     /* Settings */
     int            buffer_frames;
@@ -74,31 +78,50 @@ static void enumerate_devices(void) {
     g_audio.num_capture = (int)(capture_count < MAX_DEVICES ? capture_count : MAX_DEVICES);
     for (int i = 0; i < g_audio.num_capture; i++) {
         g_audio.capture_devices[i] = capture_infos[i];
-        snprintf(g_audio.device_names[i], 256, "%s", capture_infos[i].name);
+        snprintf(g_audio.capture_names[i], 256, "%s", capture_infos[i].name);
     }
-    g_audio.num_devices = g_audio.num_capture;
 
-    /* Store playback devices */
+    /* Store playback devices (speakers, headphones, monitors) */
     g_audio.num_playback = (int)(playback_count < MAX_DEVICES ? playback_count : MAX_DEVICES);
     for (int i = 0; i < g_audio.num_playback; i++) {
         g_audio.playback_devices[i] = playback_infos[i];
+        snprintf(g_audio.playback_names[i], 256, "%s", playback_infos[i].name);
     }
 }
 
 /* ── Public API ───────────────────────────────────────────────── */
 
+/* ── Input device API ─────────────────────────────────────────── */
+
 int fx_audio_get_device_count(void) {
-    return g_audio.num_devices;
+    return g_audio.num_capture;
 }
 
 const char *fx_audio_get_device_name(int index) {
-    if (index < 0 || index >= g_audio.num_devices) return NULL;
-    return g_audio.device_names[index];
+    if (index < 0 || index >= g_audio.num_capture) return NULL;
+    return g_audio.capture_names[index];
 }
 
-bool fx_audio_set_device(fx_engine_t *engine, int index) {
-    if (index < 0 || index >= g_audio.num_capture) return false;
+/* ── Output device API ────────────────────────────────────────── */
 
+int fx_audio_get_output_count(void) {
+    return g_audio.num_playback;
+}
+
+const char *fx_audio_get_output_name(int index) {
+    if (index < 0 || index >= g_audio.num_playback) return NULL;
+    return g_audio.playback_names[index];
+}
+
+void fx_audio_set_output(int index) {
+    if (index >= 0 && index < g_audio.num_playback) {
+        g_audio.selected_playback = index;
+    }
+}
+
+/* ── Open duplex device (input + output) ──────────────────────── */
+
+static bool open_audio_device(fx_engine_t *engine) {
     /* Stop existing device if running */
     if (g_audio.device_init) {
         ma_device_uninit(&g_audio.device);
@@ -107,10 +130,19 @@ bool fx_audio_set_device(fx_engine_t *engine, int index) {
 
     g_audio.engine = engine;
 
+    int cap_idx = g_audio.selected_capture;
+    int play_idx = g_audio.selected_playback;
+
+    if (cap_idx < 0 || cap_idx >= g_audio.num_capture) return false;
+
     ma_device_config config = ma_device_config_init(ma_device_type_duplex);
-    config.capture.pDeviceID  = &g_audio.capture_devices[index].id;
+    config.capture.pDeviceID  = &g_audio.capture_devices[cap_idx].id;
     config.capture.format     = ma_format_f32;
     config.capture.channels   = 1;
+    /* Set output device (if valid index, otherwise system default) */
+    if (play_idx >= 0 && play_idx < g_audio.num_playback) {
+        config.playback.pDeviceID = &g_audio.playback_devices[play_idx].id;
+    }
     config.playback.format    = ma_format_f32;
     config.playback.channels  = 1;
     config.sampleRate         = (ma_uint32)g_audio.sample_rate;
@@ -119,8 +151,9 @@ bool fx_audio_set_device(fx_engine_t *engine, int index) {
     config.pUserData          = &g_audio;
 
     if (ma_device_init(&g_audio.context, &config, &g_audio.device) != MA_SUCCESS) {
-        fprintf(stderr, "[0xFX] Failed to init audio device: %s\n",
-                g_audio.capture_devices[index].name);
+        fprintf(stderr, "[0xFX] Failed to init audio device: in=%s out=%s\n",
+                g_audio.capture_names[cap_idx],
+                play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)");
         return false;
     }
 
@@ -133,10 +166,17 @@ bool fx_audio_set_device(fx_engine_t *engine, int index) {
         return false;
     }
 
-    printf("[0xFX] Audio device started: %s (%.0f Hz, %d frames)\n",
-           g_audio.capture_devices[index].name,
+    printf("[0xFX] Audio started: in=%s out=%s (%.0f Hz, %d frames)\n",
+           g_audio.capture_names[cap_idx],
+           play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)",
            g_audio.sample_rate, g_audio.buffer_frames);
     return true;
+}
+
+bool fx_audio_set_device(fx_engine_t *engine, int index) {
+    if (index < 0 || index >= g_audio.num_capture) return false;
+    g_audio.selected_capture = index;
+    return open_audio_device(engine);
 }
 
 bool fx_audio_set_buffer_size(fx_engine_t *engine, int frames) {
@@ -166,10 +206,15 @@ bool fx_audio_init(void) {
 
     enumerate_devices();
 
-    printf("[0xFX] Audio initialized. Found %d input device(s):\n",
-           g_audio.num_devices);
-    for (int i = 0; i < g_audio.num_devices; i++) {
-        printf("  [%d] %s\n", i, g_audio.device_names[i]);
+    printf("[0xFX] Audio initialized. Found %d input, %d output device(s):\n",
+           g_audio.num_capture, g_audio.num_playback);
+    printf("  Input devices:\n");
+    for (int i = 0; i < g_audio.num_capture; i++) {
+        printf("    [%d] %s\n", i, g_audio.capture_names[i]);
+    }
+    printf("  Output devices:\n");
+    for (int i = 0; i < g_audio.num_playback; i++) {
+        printf("    [%d] %s\n", i, g_audio.playback_names[i]);
     }
 
     return true;

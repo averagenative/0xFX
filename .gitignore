@@ -20,6 +20,7 @@ resources/theme/*.png
 resources/reference/*.png
 resources/cables/*.png
 resources/leds/*.png
+resources/logo/*.png
 
 # OS
 .DS_Store
