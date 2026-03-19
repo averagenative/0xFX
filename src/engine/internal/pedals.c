@@ -1468,6 +1468,12 @@ static const char *phase_sweep_params[]    = { "Rate", "Depth", "Feedback", "Mix
 static const char *pulse_trem_params[]     = { "Rate", "Depth", "Wave" };
 static const char *tone_sculptor_params[]  = { "100Hz", "200Hz", "400Hz", "800Hz",
                                                "1.6kHz", "3.2kHz", "6.4kHz", "Output" };
+static const char *mammoth_fuzz_params[]   = { "Sustain", "Tone", "Volume" };
+static const char *round_fuzz_params[]     = { "Fuzz", "Volume" };
+static const char *chaos_fuzz_params[]     = { "Volume", "Gate", "Drive", "Stab" };
+static const char *grit_crush_params[]     = { "Bits", "Rate", "Mix" };
+static const char *ring_tone_params[]      = { "Freq", "Mix" };
+static const char *warm_tape_params[]      = { "Drive", "Warmth", "Mix" };
 
 const char *fx_pedal_get_type_name(fx_pedal_type_t type) {
     if (type < 0 || type >= FX_PEDAL_TYPE_COUNT) return "?";
@@ -1492,6 +1498,12 @@ int fx_pedal_get_param_count(fx_pedal_type_t type) {
         case FX_PEDAL_SQUEEZE_BOX:   return 2;
         case FX_PEDAL_NOISE_GATE:      return 4;
         case FX_PEDAL_TONE_SCULPTOR:   return 8;
+        case FX_PEDAL_MAMMOTH_FUZZ:    return 3;
+        case FX_PEDAL_ROUND_FUZZ:      return 2;
+        case FX_PEDAL_CHAOS_FUZZ:      return 4;
+        case FX_PEDAL_GRIT_CRUSH:      return 3;
+        case FX_PEDAL_RING_TONE:       return 2;
+        case FX_PEDAL_WARM_TAPE:       return 3;
         default: return 3;
     }
 }
@@ -1545,6 +1557,24 @@ const char *fx_pedal_get_param_name(fx_pedal_type_t type, int param) {
         case FX_PEDAL_TONE_SCULPTOR:
             if (param < 8) return tone_sculptor_params[param];
             break;
+        case FX_PEDAL_MAMMOTH_FUZZ:
+            if (param < 3) return mammoth_fuzz_params[param];
+            break;
+        case FX_PEDAL_ROUND_FUZZ:
+            if (param < 2) return round_fuzz_params[param];
+            break;
+        case FX_PEDAL_CHAOS_FUZZ:
+            if (param < 4) return chaos_fuzz_params[param];
+            break;
+        case FX_PEDAL_GRIT_CRUSH:
+            if (param < 3) return grit_crush_params[param];
+            break;
+        case FX_PEDAL_RING_TONE:
+            if (param < 2) return ring_tone_params[param];
+            break;
+        case FX_PEDAL_WARM_TAPE:
+            if (param < 3) return warm_tape_params[param];
+            break;
         default:
             break;
     }
@@ -1585,6 +1615,12 @@ void fx_pedal_init_state(fx_pedal_instance_t *p, float sr) {
         case FX_PEDAL_PHASE_SWEEP:   phase_sweep_init(p, sr);   break;
         case FX_PEDAL_PULSE_TREM:      pulse_trem_init(p, sr);      break;
         case FX_PEDAL_TONE_SCULPTOR:   tone_sculptor_init(p, sr);   break;
+        case FX_PEDAL_MAMMOTH_FUZZ:    mammoth_fuzz_init(p, sr);    break;
+        case FX_PEDAL_ROUND_FUZZ:      round_fuzz_init(p, sr);      break;
+        case FX_PEDAL_CHAOS_FUZZ:      chaos_fuzz_init(p, sr);      break;
+        case FX_PEDAL_GRIT_CRUSH:      grit_crush_init(p, sr);      break;
+        case FX_PEDAL_RING_TONE:       ring_tone_init(p, sr);       break;
+        case FX_PEDAL_WARM_TAPE:       warm_tape_init(p, sr);       break;
         default:
             /* Unimplemented pedals: passthrough */
             break;
@@ -1628,6 +1664,12 @@ void fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
         case FX_PEDAL_PHASE_SWEEP:   phase_sweep_process(p, buf, n, sr);   break;
         case FX_PEDAL_PULSE_TREM:      pulse_trem_process(p, buf, n, sr);      break;
         case FX_PEDAL_TONE_SCULPTOR:   tone_sculptor_process(p, buf, n, sr);   break;
+        case FX_PEDAL_MAMMOTH_FUZZ:    mammoth_fuzz_process(p, buf, n, sr);    break;
+        case FX_PEDAL_ROUND_FUZZ:      round_fuzz_process(p, buf, n, sr);      break;
+        case FX_PEDAL_CHAOS_FUZZ:      chaos_fuzz_process(p, buf, n, sr);      break;
+        case FX_PEDAL_GRIT_CRUSH:      grit_crush_process(p, buf, n, sr);      break;
+        case FX_PEDAL_RING_TONE:       ring_tone_process(p, buf, n, sr);       break;
+        case FX_PEDAL_WARM_TAPE:       warm_tape_process(p, buf, n, sr);       break;
         default:
             /* Unimplemented pedals: passthrough (no state, caught above) */
             break;

@@ -225,6 +225,88 @@ TEXTURE_DEFS = {
 def texture_prompt(name):
     return f"{TEXTURE_DEFS[name]}, dark moody lighting, high detail macro photography, {STYLE_LOCK}"
 
+# ── Cable prompts ───────────────────────────────────────────────
+
+CABLE_DEFS = {
+    "patch_cable_short": {
+        "desc": "short 6-inch guitar patch cable",
+        "color": "black braided cloth",
+        "shape": "right-angle pancake plugs on both ends, tightly coiled between pedals",
+    },
+    "patch_cable_medium": {
+        "desc": "12-inch guitar patch cable",
+        "color": "dark gray rubber",
+        "shape": "right-angle plugs, gentle S-curve drape",
+    },
+    "instrument_cable": {
+        "desc": "guitar instrument cable, 10-foot coiled",
+        "color": "black with dark red braided cloth wrap",
+        "shape": "straight plug on one end, right-angle on other, coiled spring shape",
+    },
+    "speaker_cable": {
+        "desc": "heavy-gauge speaker cable between amp head and cabinet",
+        "color": "thick black rubber jacket",
+        "shape": "straight 1/4-inch plugs, thick stiff cable with slight curve",
+    },
+    "cable_bundle": {
+        "desc": "tangled mess of 5-6 patch cables behind a pedalboard",
+        "color": "mix of black, dark gray, and dark red cables",
+        "shape": "cables overlapping and crossing, zip-tied in spots, slightly messy",
+    },
+}
+
+def cable_prompt(name):
+    d = CABLE_DEFS[name]
+    return (
+        f"{d['desc']}, {d['color']}, {d['shape']}, "
+        f"worn connectors with patina on the metal jacks, "
+        f"cable slightly scuffed from use, lying on dark pedalboard surface, "
+        f"top-down view, {STYLE_LOCK}"
+    )
+
+# ── LED glow prompts ───────────────────────────────────────────
+
+LED_DEFS = {
+    "led_red_on": {
+        "color": "bright red",
+        "desc": "glowing intensely with soft red halo bloom",
+    },
+    "led_red_off": {
+        "color": "dark red",
+        "desc": "unlit, dark translucent red plastic dome, no glow",
+    },
+    "led_green_on": {
+        "color": "bright green",
+        "desc": "glowing intensely with soft green halo bloom",
+    },
+    "led_green_off": {
+        "color": "dark green",
+        "desc": "unlit, dark translucent green plastic dome, no glow",
+    },
+    "led_amber_on": {
+        "color": "bright amber/orange",
+        "desc": "glowing warmly with soft amber halo bloom, like a tube amp pilot light",
+    },
+    "led_amber_off": {
+        "color": "dark amber",
+        "desc": "unlit, dark translucent amber plastic dome, no glow",
+    },
+    "led_blue_on": {
+        "color": "bright ice blue",
+        "desc": "glowing intensely with soft blue halo bloom",
+    },
+}
+
+def led_prompt(name):
+    d = LED_DEFS[name]
+    return (
+        f"extreme close-up macro photograph of a single small {d['color']} LED indicator light "
+        f"on a guitar effects pedal, {d['desc']}, "
+        f"mounted in scuffed dark metal enclosure surface, "
+        f"surrounding metal has scratches and grime, "
+        f"black background, very shallow depth of field, {STYLE_LOCK}"
+    )
+
 # ── Reference prompts ───────────────────────────────────────────
 
 REFERENCE_PROMPTS = [

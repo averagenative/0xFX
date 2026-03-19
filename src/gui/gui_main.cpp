@@ -438,8 +438,14 @@ int main(int argc, char *argv[]) {
                 { FX_PEDAL_SQUEEZE_BOX,    "Squeeze Box (Compressor)" },
                 { FX_PEDAL_NOISE_GATE,     "Noise Gate" },
                 { FX_PEDAL_TONE_SCULPTOR,  "Tone Sculptor (Graphic EQ)" },
+                { FX_PEDAL_MAMMOTH_FUZZ,   "Mammoth Fuzz (Big Muff)" },
+                { FX_PEDAL_ROUND_FUZZ,     "Round Fuzz (Germanium)" },
+                { FX_PEDAL_CHAOS_FUZZ,     "Chaos Fuzz (Gated)" },
+                { FX_PEDAL_GRIT_CRUSH,     "Grit Crush (Bitcrusher)" },
+                { FX_PEDAL_RING_TONE,      "Ring Tone (Ring Mod)" },
+                { FX_PEDAL_WARM_TAPE,      "Warm Tape (Tape Sat)" },
             };
-            static const int pedal_menu_count = 9;
+            static const int pedal_menu_count = 15;
 
             /* Draw a pedal section (pre or post amp) */
             auto draw_pedal_section = [&](const char *label, fx_chain_pos_t pos,

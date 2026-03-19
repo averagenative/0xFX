@@ -1026,7 +1026,7 @@
     "title": "Implement Big Muff fuzz (Mammoth Fuzz)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1046,7 +1046,7 @@
     "title": "Implement germanium fuzz (Round Fuzz)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1107,7 +1107,7 @@
     "title": "Implement gated fuzz (Chaos Fuzz)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1127,7 +1127,7 @@
     "title": "Port remaining utility effects",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
