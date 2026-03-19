@@ -1464,7 +1464,10 @@
       "SINGLE/DUAL chain toggle (like BIAS FX)",
       "Available pedals sidebar or shelf that you can add from",
       "Drag-and-drop to reorder pedals in the chain",
-      "Remove pedal by dragging out or X button"
+      "Remove pedal by dragging out or X button",
+      "Y-split node: signal can split to 2-4 parallel amp+cab paths (uses engine multi-chain)",
+      "All nodes rendered as PNG textures via texture manager (ImGui::Image), with fallback rectangles",
+      "Node sizes accommodate PNG aspect ratios from generated assets"
     ],
     "files": [
       "src/gui/gui_main.cpp"
@@ -1666,6 +1669,386 @@
       "Clicking amp node opens amp detail view with full knob panel",
       "Clicking cab node opens cab selector with IR browser",
       "Amp model selector dropdown in detail view"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-200",
+    "priority": "HIGH",
+    "title": "Generate knobless pedal body images",
+    "domain": "infra",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-074"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Each pedal type has a _body.png with empty knob holes (no knobs rendered)",
+      "Transparent background versions via rembg",
+      "Prompt template specifies 'empty knob mounting holes, no knobs installed'",
+      "Visual consistency with existing pedal assets"
+    ],
+    "files": [
+      "tools/generate_assets.py",
+      "resources/pedals/"
+    ]
+  },
+  {
+    "id": "TASK-201",
+    "priority": "HIGH",
+    "title": "Generate knobless amp panel images",
+    "domain": "infra",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-074"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Each amp model has a _body.png panel with empty knob posts (no knobs)",
+      "Transparent background versions",
+      "Pilot light visible but knob positions are bare metal posts"
+    ],
+    "files": [
+      "tools/generate_assets.py",
+      "resources/amps/"
+    ]
+  },
+  {
+    "id": "TASK-202",
+    "priority": "HIGH",
+    "title": "Pedal layout descriptor system",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-200",
+      "TASK-027"
+    ],
+    "estimatedTokens": 30000,
+    "acceptanceCriteria": [
+      "fx_pedal_layout_t struct defined with body_image, knob slots (x,y,size,param_index,style), LED position, stomp position",
+      "Static layout table covering all implemented pedal types",
+      "Knob positions are normalized (0-1) relative to pedal body dimensions",
+      "Each knob slot maps to a specific engine param index",
+      "LED slot specifies on/off image names"
+    ],
+    "files": [
+      "src/gui/pedal_layout.h",
+      "src/gui/pedal_layout.c"
+    ]
+  },
+  {
+    "id": "TASK-203",
+    "priority": "HIGH",
+    "title": "Texture-mapped knob rendering (rotatable sprite)",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-027",
+      "TASK-202"
+    ],
+    "estimatedTokens": 30000,
+    "acceptanceCriteria": [
+      "Load knob PNG as OpenGL texture",
+      "Render knob sprite at layout position, rotated to match param value (0-1 -> 135 to -135 degrees)",
+      "Mouse drag on knob area changes param via fx_pedal_set_param()",
+      "Shift+drag for fine control, double-click to reset",
+      "Multiple knob styles supported (chicken, skirted, dome, pointer)",
+      "Knob arc indicator drawn on top of sprite (reuse knobs.cpp arc code)"
+    ],
+    "files": [
+      "src/gui/knobs.cpp",
+      "src/gui/knobs.h",
+      "src/gui/texture_loader.h"
+    ]
+  },
+  {
+    "id": "TASK-204",
+    "priority": "HIGH",
+    "title": "LED on/off rendering tied to bypass state",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-202"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "LED sprite rendered at layout-defined position on each pedal",
+      "Active pedal (bypass=false) shows LED on image (e.g., led_red_on)",
+      "Bypassed pedal (bypass=true) shows LED off image (e.g., led_red_off)",
+      "LED state updates immediately on bypass toggle",
+      "Optional: on-image has glow/bloom effect via additive blending"
+    ],
+    "files": [
+      "src/gui/pedalboard.c"
+    ]
+  },
+  {
+    "id": "TASK-205",
+    "priority": "HIGH",
+    "title": "Stomp footswitch toggle (click to bypass/activate)",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-202",
+      "TASK-204"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Click on footswitch area toggles pedal bypass via fx_pedal_set_bypass()",
+      "Visual feedback: footswitch depresses slightly on click",
+      "LED updates immediately (TASK-204)",
+      "Bypassed pedal body dims (alpha multiply ~0.5) to show inactive state",
+      "Active pedal renders at full brightness"
+    ],
+    "files": [
+      "src/gui/pedalboard.c"
+    ]
+  },
+  {
+    "id": "TASK-206",
+    "priority": "HIGH",
+    "title": "Composite pedal renderer (body + knobs + LED + stomp)",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-202",
+      "TASK-203",
+      "TASK-204",
+      "TASK-205"
+    ],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "Single function renders a complete pedal: body image, N knobs at mapped positions, LED, footswitch",
+      "Knob rotation reflects live param values from engine",
+      "LED reflects live bypass state from engine",
+      "Bypassed pedals are visually dimmed but still in chain",
+      "Pedal can be re-ordered (drag) while maintaining all visual state",
+      "Works for all implemented pedal types via layout table lookup"
+    ],
+    "files": [
+      "src/gui/pedalboard.c"
+    ]
+  },
+  {
+    "id": "TASK-207",
+    "priority": "MEDIUM",
+    "title": "Amp panel layout descriptors + composite renderer",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-201",
+      "TASK-203"
+    ],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "fx_amp_layout_t struct with panel_image, knob slots, pilot light position",
+      "Layout table for all 5 amp models with correct knob-to-param mapping",
+      "Composite renderer: panel body + rotated knob sprites + pilot light",
+      "Knob interaction updates amp params via fx_amp_set_param()"
+    ],
+    "files": [
+      "src/gui/amp_panel.c",
+      "src/gui/pedal_layout.h"
+    ]
+  },
+  {
+    "id": "TASK-208",
+    "priority": "MEDIUM",
+    "title": "Signal chain cable rendering between components",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-206"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Visual cable connections between: input -> pedal -> pedal -> amp -> cab -> output",
+      "Cables drawn as textured bezier curves or cable sprite segments",
+      "Cables connect to jack positions on pedal/amp/cab layouts",
+      "Cable redraws when pedals are reordered (drag-and-drop)",
+      "Optional: cable sag/drape physics for natural look"
+    ],
+    "files": [
+      "src/gui/pedalboard.c",
+      "src/gui/cable_renderer.c"
+    ]
+  },
+  {
+    "id": "TASK-209",
+    "priority": "MEDIUM",
+    "title": "OpenGL texture loader for asset PNGs",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-026"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Load PNG files as OpenGL textures (RGBA, pre-multiplied alpha)",
+      "Texture cache: load once, return GL texture ID on subsequent calls",
+      "Support transparent backgrounds (_nobg.png files)",
+      "Helper to draw a textured quad at position with rotation and alpha",
+      "Free all textures on shutdown"
+    ],
+    "files": [
+      "src/gui/texture_loader.h",
+      "src/gui/texture_loader.c"
+    ]
+  },
+  {
+    "id": "TASK-310",
+    "priority": "CRITICAL",
+    "title": "Y-split visual: parallel amp chains in signal flow",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 30000,
+    "acceptanceCriteria": [
+      "Visual Y-split node in signal chain \u2014 signal splits to 2+ parallel paths",
+      "Each path has its own amp + cab nodes",
+      "Paths merge at a mixer node with per-path level/blend",
+      "Add/remove parallel paths via UI",
+      "Wired to existing engine multi-chain API (fx_chain_create/set_mix)",
+      "Post-split pedals can be added per-path"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-311",
+    "priority": "HIGH",
+    "title": "Texture manager: load PNGs as OpenGL textures",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Load .png files from resources/ into OpenGL textures",
+      "Texture cache: load once, return GL texture ID on subsequent calls",
+      "Support transparency (RGBA)",
+      "stb_image.h for PNG decoding (single-header, vendor into deps/)",
+      "API: GLuint fx_texture_load(const char *path) \u2014 returns cached texture ID"
+    ],
+    "files": [
+      "src/gui/texture.c",
+      "src/gui/texture.h"
+    ]
+  },
+  {
+    "id": "TASK-312",
+    "priority": "HIGH",
+    "title": "Render pedal nodes using PNG assets",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-311",
+      "TASK-300"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Each pedal type maps to a .png in resources/pedals/",
+      "Signal chain renders pedal nodes as ImGui::Image() with the pedal PNG",
+      "Fallback: colored rectangle with text label if PNG not found",
+      "Pedal PNG scaled to fit node size in chain view",
+      "Selected pedal highlighted (glow border or brightness)"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-313",
+    "priority": "HIGH",
+    "title": "Render amp/cab nodes using PNG assets",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-311",
+      "TASK-300"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Amp node renders amp face PNG from resources/amps/",
+      "Cab node renders cabinet PNG from resources/cabs/",
+      "Amp detail view shows large amp face with knobs overlaid",
+      "Fallback rendering if PNG missing"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-314",
+    "priority": "MEDIUM",
+    "title": "Textured knob rendering (PNG rotation)",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-311"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Knob widget renders a knob .png rotated by current value",
+      "Resources/knobs/ contains knob textures (chicken-head, dome, etc.)",
+      "UV rotation in the shader or pre-rotated sprite sheet",
+      "Falls back to current arc-drawing if PNG not found"
+    ],
+    "files": [
+      "src/gui/knobs.cpp"
+    ]
+  },
+  {
+    "id": "TASK-315",
+    "priority": "MEDIUM",
+    "title": "Background textures and theme surfaces",
+    "domain": "frontend",
+    "phase": 7,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-311"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Pedalboard surface texture (dark metal/wood) as tiled background",
+      "Amp rack background texture",
+      "Detail view panel background texture",
+      "Loaded from resources/theme/"
     ],
     "files": [
       "src/gui/gui_main.cpp"

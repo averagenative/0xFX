@@ -245,6 +245,32 @@ def pedal_prompt(name):
         f"top-down flat-lay view on dark pedalboard surface, {STYLE_LOCK}"
     )
 
+def pedal_body_prompt(name):
+    """Knobless pedal body — for composite rendering with separate knob sprites."""
+    d = PEDAL_DEFS[name]
+    return (
+        f"{d['color']} guitar effects {d['desc']}, die-cast aluminum enclosure, "
+        f"NO KNOBS INSTALLED — {d['knobs']} empty round knob mounting holes with "
+        f"bare metal potentiometer shafts visible, single footswitch with rubber cap, "
+        f"scuffed paint showing bare metal at edges and corners, "
+        f"fingerprint smudges on surface, dust around empty mounting holes, "
+        f"small scratches across faceplate, tiny unlit LED bezel, "
+        f"top-down flat-lay view on dark pedalboard surface, {STYLE_LOCK}"
+    )
+
+def amp_body_prompt(name):
+    """Knobless amp panel — for composite rendering with separate knob sprites."""
+    d = AMP_DEFS[name]
+    return (
+        f"vintage guitar amplifier front control panel, {d['style']} aesthetic, "
+        f"aged {d['covering']} covering with wear marks, "
+        f"NO KNOBS INSTALLED — {d['knobs']} empty bare metal potentiometer shafts "
+        f"protruding from faceplate where knobs should be, "
+        f"printed white control labels slightly faded, chrome input jacks with patina, "
+        f"pilot light glowing amber, scratched {d['faceplate']} faceplate, "
+        f"wide landscape panel aspect ratio, straight-on front view, {STYLE_LOCK}"
+    )
+
 # ── Amp panel prompts ───────────────────────────────────────────
 
 AMP_DEFS = {
@@ -601,6 +627,27 @@ def cmd_led(name):
         generate_image(led_prompt(n), out, size="1024x1024")
         print()
 
+def cmd_body(target):
+    """Generate knobless body images for composite rendering."""
+    if target == "pedals" or target == "all":
+        print(f"═══ Generating knobless pedal bodies ═══\n")
+        outdir = ROOT / "resources" / "pedals"
+        for n in PEDAL_DEFS:
+            out = outdir / f"{n}_body.png"
+            if not out.exists():
+                generate_image(pedal_body_prompt(n), out)
+                print()
+    if target == "amps" or target == "all":
+        print(f"═══ Generating knobless amp panel bodies ═══\n")
+        outdir = ROOT / "resources" / "amps"
+        for n in AMP_DEFS:
+            out = outdir / f"{n}_body.png"
+            if not out.exists():
+                generate_image(amp_body_prompt(n), out, size="1536x1024")
+                print()
+    if target not in ("pedals", "amps", "all"):
+        print(f"Usage: body <pedals|amps|all>")
+
 def cmd_batch():
     """Generate ALL missing assets."""
     print("═══ BATCH: Generating all missing assets ═══\n")
@@ -609,6 +656,12 @@ def cmd_batch():
         out = ROOT / "resources" / "pedals" / f"{n}.png"
         if not out.exists():
             generate_image(pedal_prompt(n), out)
+            print()
+    # Amps
+    for n in AMP_DEFS:
+        out = ROOT / "resources" / "amps" / f"{n}.png"
+        if not out.exists():
+            generate_image(amp_prompt(n), out, size="1536x1024")
             print()
     # Cabs
     for n in CAB_DEFS:
@@ -631,6 +684,23 @@ def cmd_batch():
         out = outdir / f"{n}.png"
         if not out.exists():
             generate_image(led_prompt(n), out, size="1024x1024")
+            print()
+    # Textures
+    for n in TEXTURE_DEFS:
+        out = ROOT / "resources" / "theme" / f"{n}.png"
+        if not out.exists():
+            generate_image(texture_prompt(n), out)
+            print()
+    # Knobless bodies
+    for n in PEDAL_DEFS:
+        out = ROOT / "resources" / "pedals" / f"{n}_body.png"
+        if not out.exists():
+            generate_image(pedal_body_prompt(n), out)
+            print()
+    for n in AMP_DEFS:
+        out = ROOT / "resources" / "amps" / f"{n}_body.png"
+        if not out.exists():
+            generate_image(amp_body_prompt(n), out, size="1536x1024")
             print()
     print("═══ Batch complete ═══")
 
@@ -666,6 +736,9 @@ def main():
     elif cmd == "led":
         if not arg: print("Usage: led <name|all>"); return
         cmd_led(arg)
+    elif cmd == "body":
+        if not arg: print("Usage: body <pedals|amps|all>"); return
+        cmd_body(arg)
     elif cmd == "batch":
         cmd_batch()
     else:

@@ -116,6 +116,66 @@
 
 ---
 
+## Phase 7: Pedal Skin System (Composite Rendering)
+
+### TASK-209: OpenGL texture loader for asset PNGs
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-026
+- **Notes**: Load PNGs as GL textures. Cache by path. Support RGBA transparency. Draw textured quad with rotation + alpha. See docs/PEDAL_SKIN_SYSTEM.md.
+
+### TASK-202: Pedal layout descriptor system
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-200, TASK-027
+- **Notes**: fx_pedal_layout_t struct: body_image, knob slots (x,y,size,param_index,style), LED position (on/off images), stomp position. Static table for all pedal types. Normalized coords (0-1).
+
+### TASK-203: Texture-mapped knob rendering (rotatable sprite)
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-027, TASK-202
+- **Notes**: Load knob PNG as texture, render rotated to match param value (0-1 → 135° to -135°). Mouse drag to adjust via fx_pedal_set_param(). Shift+drag fine control. Multiple knob styles.
+
+### TASK-204: LED on/off rendering tied to bypass state
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-202
+- **Notes**: LED sprite at layout position. Active (bypass=false) → on image with glow. Bypassed → off image. Optional additive blend for bloom.
+
+### TASK-205: Stomp footswitch toggle (click to bypass/activate)
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-202, TASK-204
+- **Notes**: Click footswitch area → fx_pedal_set_bypass(). Visual: depress on click, LED updates. Bypassed pedal body dims (alpha ~0.5). Active = full brightness.
+
+### TASK-206: Composite pedal renderer (body + knobs + LED + stomp)
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-202, TASK-203, TASK-204, TASK-205
+- **Notes**: Single function renders complete pedal. Knob rotation reflects live params. LED reflects bypass. Dimmed when bypassed but still in chain. Works for all types via layout table.
+
+### TASK-207: Amp panel layout descriptors + composite renderer
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-201, TASK-203
+- **Notes**: fx_amp_layout_t: panel_image, knob slots, pilot light. 5 amp models mapped. Composite: panel + rotated knobs + pilot light.
+
+### TASK-208: Signal chain cable rendering between components
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-206
+- **Notes**: Visual cables: input → pedals → amp → cab → output. Textured bezier curves or cable sprites. Redraws on pedal reorder. Optional sag physics.
+
+---
+
 ## Phase 6: Plugin GUI Embedding
 
 ### TASK-071: GUI embedding for CLAP

@@ -145,6 +145,20 @@
 - **Depends**: TASK-076
 - **Notes**: Pedalboard surface, metal, leather, grime overlays.
 
+### TASK-200: Generate knobless pedal body images
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-074
+- **Notes**: Each pedal type gets a _body.png with empty knob mounting holes (no knobs rendered). Transparent bg via rembg. For composite rendering — knobs are placed as separate rotatable sprites by the GUI.
+
+### TASK-201: Generate knobless amp panel images
+- **Status**: queued
+- **Phase**: 7
+- **Priority**: P2
+- **Depends**: TASK-074
+- **Notes**: Each amp model gets a _body.png panel with bare knob posts (no knobs). Pilot light visible. For composite rendering.
+
 ---
 
 ## Phase 11: CI/CD + Packaging
