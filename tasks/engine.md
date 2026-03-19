@@ -167,18 +167,18 @@
 - **Notes**: Loads .wav via dr_wav. Handles 16/24/32-bit, mono/stereo downmix, 44.1/48kHz. Caps at 4096 samples.
 
 ### TASK-036: Synthetic IR generation
-- **Status**: in_progress
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-034
-- **Notes**: Agent working on fx_cab_generate_ir(). Parametric speaker/cabinet/mic modeling.
+- **Notes**: fx_cab_generate_ir() + fx_cab_load_buffer() + fx_cab_synth_ir_generate(). Parametric speaker/cabinet/mic. Minimum-phase reconstruction via cepstral method. 2048 samples at 48kHz.
 
 ### TASK-037: Generate bundled synthetic IRs
-- **Status**: in_progress
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-036
-- **Notes**: Agent working on 5 bundled IRs via fx_cab_load_bundled().
+- **Notes**: fx_cab_load_bundled() with 5 presets: 1x12 open, 2x12 closed, 4x12 straight, 4x12 slant, direct/flat. All tested.
 
 ---
 

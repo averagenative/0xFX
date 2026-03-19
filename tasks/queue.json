@@ -265,8 +265,8 @@
     ],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
-      "Signal flow: input → gate → pre-pedals → amp → post-pedals → output",
-      "Multi-chain: split → per-chain amp+cab → sum with mix",
+      "Signal flow: input \u2192 gate \u2192 pre-pedals \u2192 amp \u2192 post-pedals \u2192 output",
+      "Multi-chain: split \u2192 per-chain amp+cab \u2192 sum with mix",
       "Test: all 5 amp models produce unique output"
     ],
     "files": [
@@ -307,7 +307,7 @@
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
       "Pedal add/remove/move/bypass API works",
-      "Internal dispatch table maps type → init/process/free",
+      "Internal dispatch table maps type \u2192 init/process/free",
       "Test: add pedal, set param, verify param"
     ],
     "files": [
@@ -317,7 +317,7 @@
   {
     "id": "TASK-018",
     "priority": "HIGH",
-    "title": "Port overdrive → Jade Drive",
+    "title": "Port overdrive \u2192 Jade Drive",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -380,7 +380,7 @@
   {
     "id": "TASK-021",
     "priority": "HIGH",
-    "title": "Port delay → Echo Delay",
+    "title": "Port delay \u2192 Echo Delay",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -402,7 +402,7 @@
   {
     "id": "TASK-022",
     "priority": "HIGH",
-    "title": "Port reverb → Hall Verb",
+    "title": "Port reverb \u2192 Hall Verb",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -424,7 +424,7 @@
   {
     "id": "TASK-023",
     "priority": "HIGH",
-    "title": "Port compressor → Squeeze Box",
+    "title": "Port compressor \u2192 Squeeze Box",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -561,8 +561,8 @@
     "title": "Pedalboard view",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "main-agent",
     "depends": [
       "TASK-027",
       "TASK-017"
@@ -584,8 +584,8 @@
     "title": "Drag-and-drop pedal reordering",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "main-agent",
     "depends": [
       "TASK-029"
     ],
@@ -606,8 +606,8 @@
     "title": "Audio device selector in GUI",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "device-agent",
     "depends": [
       "TASK-026",
       "TASK-006"
@@ -658,7 +658,7 @@
     "acceptanceCriteria": [
       "Load .wav IR via dr_wav",
       "FFT via KissFFT",
-      "Per-block: FFT input → complex multiply → IFFT → overlap-add",
+      "Per-block: FFT input \u2192 complex multiply \u2192 IFFT \u2192 overlap-add",
       "Test: convolve impulse with known IR, verify output"
     ],
     "files": [
@@ -791,7 +791,7 @@
       "Parse .0xfx JSON",
       "Reconstruct engine state",
       "Validate all fields, clamp out-of-range",
-      "Test: save → load → process → identical output"
+      "Test: save \u2192 load \u2192 process \u2192 identical output"
     ],
     "files": [
       "src/engine/internal/preset.c"
@@ -823,8 +823,8 @@
     "title": "Vendor CPLUG dependency",
     "domain": "infra",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "cplug-agent",
     "depends": [
       "TASK-003"
     ],
@@ -871,7 +871,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Wraps fx_engine_process()",
-      "Mono in → engine → stereo out",
+      "Mono in \u2192 engine \u2192 stereo out",
       "CLAP loads in Reaper/Bitwig"
     ],
     "files": [
