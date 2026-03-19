@@ -1,0 +1,29 @@
+# Build
+build/
+build_win/
+*.o
+*.a
+*.so
+*.dll
+*.exe
+*.vst3
+*.clap
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Generated
+*.wav
+*.mp3
+*.flac
+
+# OS
+Thumbs.db
