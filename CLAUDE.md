@@ -172,14 +172,16 @@ cat tasks/queue.json | jq '.[] | select(.status=="queued") | {id, priority, titl
 
 When working through the roadmap autonomously, follow this cycle:
 
-1. **Read** `tasks/queue.json` — find highest-priority `queued` task with all dependencies `done`
-2. **Claim** — set `status: "claimed"` + `claimedBy: "your-name"` in queue.json. This is a lock.
-3. **Start** — set `status: "in_progress"`. Read `acceptanceCriteria` — these define done.
-4. **Implement** the code (only touch files listed in `files` field unless necessary)
-5. **Write tests** that verify each acceptance criterion. Tests are non-negotiable.
-6. **Run tests** — `cmake --build build -j$(nproc) && ./build/fx_api_test`. All must pass.
-7. **Done** — set `status: "done"` in queue.json + corresponding .md file
-8. **Repeat** from step 1
+1. **Sync** — `git pull --rebase` to get latest from remote
+2. **Read** `tasks/queue.json` — find highest-priority `queued` task with all dependencies `done`
+3. **Claim** — set `status: "claimed"` + `claimedBy: "your-name"` in queue.json. This is a lock.
+4. **Start** — set `status: "in_progress"`. Read `acceptanceCriteria` — these define done.
+5. **Implement** the code (only touch files listed in `files` field unless necessary)
+6. **Write tests** that verify each acceptance criterion. Tests are non-negotiable.
+7. **Run tests** — `cmake --build build -j$(nproc) && ./build/fx_api_test`. All must pass.
+8. **Done** — set `status: "done"` in queue.json + corresponding .md file
+9. **Commit + push** — `git add <files> && git commit && git push`. If push fails, `git pull --rebase`, resolve conflicts, re-test, then push.
+10. **Repeat** from step 1
 
 ### Parallel Agent Coordination
 
@@ -192,16 +194,33 @@ Multiple agents may work simultaneously. The claim system in queue.json prevents
 - **Build before commit** — if another agent's changes broke the build, investigate before overwriting.
 - **Stale claims** — a `claimed` task with no progress after 10 minutes can be reclaimed by another agent.
 
+### Git Discipline
+
+All work happens on `master` unless explicitly working a release branch. Keep the repo in sync:
+
+1. **Pull before starting work**: `git pull --rebase` before picking up a task. If another agent pushed, you need their changes.
+2. **Commit after each completed task**: Don't batch multiple tasks into one commit. One task = one commit (or a small focused series).
+3. **Push after each commit**: `git push` immediately. Don't sit on local commits — other agents need to see your changes.
+4. **Resolve merge conflicts immediately**: If `git push` fails due to divergence:
+   ```bash
+   git pull --rebase     # rebase your commit on top of remote
+   # resolve any conflicts
+   cmake --build build -j$(nproc) && ./build/fx_api_test  # verify build+tests still pass
+   git push
+   ```
+5. **Never force push to master**: If rebase produces a mess, ask the user before `--force`.
+6. **Commit messages**: Use the format from previous commits — summary line, bullet points for changes, test count, co-author tag.
+
 ### Quality Gates (Per-Commit)
 
 Every commit must pass all gates. No exceptions.
 
 | Gate | Command | Checks |
 |------|---------|--------|
+| Pull latest | `git pull --rebase` | Up to date with remote |
 | Unit tests | `cmake --build build --target test` | All test_*.c pass |
 | Build (Linux) | `cmake --build build` | No errors or warnings |
-| Build (MinGW) | `cmake --build build_win` | Cross-compile succeeds |
-| ASAN | `cmake -DENABLE_ASAN=ON && build && test` | No memory errors |
+| Push | `git push` | Remote updated |
 
 ### Testing Rules
 

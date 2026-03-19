@@ -122,25 +122,25 @@
 ## Phase 4 Tests
 
 ### TEST-013: IR convolution test
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-034
-- **Notes**: Convolve impulse with known IR, verify output matches expected. Test with different IR lengths.
+- **Notes**: test_cab_ir + test_cab_load_api — writes temp .wav IR, loads, verifies convolution output differs from no-cab. Bypass test included.
 
 ### TEST-014: Preset round-trip test
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-042, TASK-043
-- **Notes**: Save complex rig (multi-chain, multiple pedals), reload, process audio, verify identical output.
+- **Notes**: test_preset_roundtrip — save rig with Jade Drive + Brit Crunch + delay, reload, verify identical audio output.
 
 ### TEST-015: Preset fuzzing
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-043
-- **Notes**: Random/corrupt JSON, extreme values, missing fields. No crashes.
+- **Notes**: test_preset_fuzz — nonexistent file, empty, invalid JSON, wrong format, missing signal_chain, out-of-range values, unknown pedal types, NULL args. All handled without crash.
 
 ---
 

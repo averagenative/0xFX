@@ -163,6 +163,8 @@ void fx_cab_init(fx_cab_state_t *cab);
 void fx_cab_free(fx_cab_state_t *cab);
 bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size);
 bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, int block_size);
+void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int ir_len,
+                               float sample_rate);
 bool fx_cab_load_bundled(fx_cab_state_t *cab, int preset_idx, int block_size);
 void fx_cab_process(fx_cab_state_t *cab, float *buf, int n);
 

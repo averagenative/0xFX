@@ -315,6 +315,24 @@ bool fx_cab_load_ir(fx_engine_t *engine, fx_chain_id chain,
                            FX_MAX_BLOCK_SIZE);
 }
 
+bool fx_cab_generate_ir(fx_engine_t *engine, fx_chain_id chain,
+                         const fx_cab_params_t *params) {
+    if (!engine || chain < 0 || chain >= engine->num_chains || !params)
+        return false;
+
+    #define SYNTH_IR_GEN_LEN 2048
+    float *ir_buf = (float *)malloc(sizeof(float) * SYNTH_IR_GEN_LEN);
+    if (!ir_buf) return false;
+
+    fx_cab_synth_ir_generate(params, ir_buf, SYNTH_IR_GEN_LEN,
+                              engine->sample_rate);
+    bool ok = fx_cab_load_buffer(&engine->chains[chain].cab, ir_buf,
+                                  SYNTH_IR_GEN_LEN, FX_MAX_BLOCK_SIZE);
+    free(ir_buf);
+    return ok;
+    #undef SYNTH_IR_GEN_LEN
+}
+
 void fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain, bool bypass) {
     if (!engine || chain < 0 || chain >= engine->num_chains) return;
     engine->chains[chain].cab.bypass = bypass;

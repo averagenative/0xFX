@@ -132,6 +132,373 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
     return true;
 }
 
+/* ── Load IR from raw float buffer ───────────────────────────── */
+
+bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, int block_size) {
+    if (!cab || !ir_data || ir_len <= 0 || block_size <= 0) return false;
+
+    /* Free any previous IR */
+    fx_cab_free(cab);
+
+    if (ir_len > 4096) ir_len = 4096;  /* cap IR length */
+
+    /* Compute FFT size: next power of 2 >= block_size + ir_len - 1 */
+    int fft_size = next_power_of_2(block_size + ir_len - 1);
+    int n_bins = fft_size / 2 + 1;
+
+    /* Allocate all buffers */
+    kiss_fft_cpx *ir_fft     = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
+    kiss_fft_cpx *fft_buf    = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
+    float        *overlap    = (float *)calloc((size_t)fft_size, sizeof(float));
+    float        *time_buf   = (float *)calloc((size_t)fft_size, sizeof(float));
+    kiss_fftr_cfg fft_cfg    = kiss_fftr_alloc(fft_size, 0, NULL, NULL);
+    kiss_fftr_cfg ifft_cfg   = kiss_fftr_alloc(fft_size, 1, NULL, NULL);
+
+    if (!ir_fft || !fft_buf || !overlap || !time_buf || !fft_cfg || !ifft_cfg) {
+        free(ir_fft); free(fft_buf); free(overlap); free(time_buf);
+        if (fft_cfg)  kiss_fftr_free(fft_cfg);
+        if (ifft_cfg) kiss_fftr_free(ifft_cfg);
+        return false;
+    }
+
+    /* Zero-pad IR and compute its FFT */
+    memset(time_buf, 0, sizeof(float) * (size_t)fft_size);
+    memcpy(time_buf, ir_data, sizeof(float) * (size_t)ir_len);
+    kiss_fftr(fft_cfg, time_buf, ir_fft);
+
+    /* Store state */
+    cab->ir_fft     = ir_fft;
+    cab->fft_buf    = fft_buf;
+    cab->overlap_buf = overlap;
+    cab->time_buf   = time_buf;
+    cab->fft_cfg    = fft_cfg;
+    cab->ifft_cfg   = ifft_cfg;
+    cab->fft_size   = fft_size;
+    cab->ir_len     = ir_len;
+    cab->block_size = block_size;
+    cab->loaded     = true;
+    cab->bypass     = false;
+
+    return true;
+}
+
+/* ── Synthetic IR generation ────────────────────────────────── */
+
+/*
+ * Approach:
+ * 1. Build a frequency-domain magnitude response:
+ *    - Speaker resonant lowpass based on Fs
+ *    - Cabinet: open-back adds comb filtering from rear path
+ *    - Microphone: SM57-style presence bump ~5kHz, roll-off >10kHz
+ * 2. Minimum-phase reconstruction via log-magnitude -> Hilbert -> exp
+ * 3. IFFT to time domain, window to 2048 samples
+ */
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#define SYNTH_IR_LEN   2048
+#define SYNTH_FFT_SIZE 4096  /* must be >= 2 * SYNTH_IR_LEN */
+
+void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int ir_len,
+                               float sample_rate) {
+    int fft_size = SYNTH_FFT_SIZE;
+    int n_bins = fft_size / 2 + 1;
+
+    /* Allocate scratch for frequency domain work */
+    float *mag = (float *)calloc((size_t)n_bins, sizeof(float));
+    float *phase = (float *)calloc((size_t)n_bins, sizeof(float));
+    kiss_fft_cpx *spectrum = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
+    float *time_buf = (float *)calloc((size_t)fft_size, sizeof(float));
+    kiss_fftr_cfg ifft_cfg = kiss_fftr_alloc(fft_size, 1, NULL, NULL);
+
+    if (!mag || !phase || !spectrum || !time_buf || !ifft_cfg) {
+        free(mag); free(phase); free(spectrum); free(time_buf);
+        if (ifft_cfg) kiss_fftr_free(ifft_cfg);
+        /* Output a unit impulse as fallback */
+        memset(ir_out, 0, sizeof(float) * (size_t)ir_len);
+        ir_out[0] = 1.0f;
+        return;
+    }
+
+    float fs = params->speaker_fs;
+    if (fs < 30.0f)  fs = 80.0f;
+    if (fs > 200.0f) fs = 200.0f;
+
+    float brightness = params->brightness;
+    if (brightness < 0.0f) brightness = 0.5f;
+    if (brightness > 1.0f) brightness = 1.0f;
+
+    float resonance = params->resonance;
+    if (resonance < 0.0f) resonance = 0.5f;
+    if (resonance > 1.0f) resonance = 1.0f;
+
+    /* ── Step 1: Build magnitude response ──────────────────── */
+
+    for (int i = 0; i < n_bins; i++) {
+        float freq = (float)i * sample_rate / (float)fft_size;
+        float m = 1.0f;
+
+        /* Speaker: 2nd-order resonant lowpass at Fs
+         * H(f) = 1 / sqrt(1 + (f/fc)^4) with resonant bump */
+        {
+            float fc = fs * (1.5f + brightness * 2.0f);  /* cutoff: 90-360Hz range */
+            float ratio = freq / fc;
+            float ratio2 = ratio * ratio;
+            /* Resonant bump near Fs */
+            float q = 0.5f + resonance * 3.0f;  /* Q: 0.5 to 3.5 */
+            float denom = (1.0f - ratio2) * (1.0f - ratio2) + ratio2 / (q * q);
+            if (denom < 0.001f) denom = 0.001f;
+            m *= 1.0f / sqrtf(denom);
+        }
+
+        /* Speaker high-frequency rolloff (12dB/oct above speaker bandwidth) */
+        {
+            float hf_cutoff = 4000.0f + brightness * 4000.0f;  /* 4-8kHz */
+            if (freq > hf_cutoff) {
+                float ratio = freq / hf_cutoff;
+                m *= 1.0f / (ratio * ratio);
+            }
+        }
+
+        /* Cabinet type modeling */
+        switch (params->cab_type) {
+        case FX_CAB_1X12_OPEN: {
+            /* Open back: comb filter from rear wave path (~0.3ms delay) */
+            float delay_sec = 0.0003f;
+            float comb_freq = freq * delay_sec * 2.0f * (float)M_PI;
+            float comb = 1.0f - 0.3f * cosf(comb_freq);
+            m *= comb;
+            /* Open back has less bass reinforcement */
+            if (freq < 120.0f) {
+                m *= 0.6f + 0.4f * (freq / 120.0f);
+            }
+            break;
+        }
+        case FX_CAB_2X12_CLOSED: {
+            /* Closed back: tighter bass, slight mid focus */
+            if (freq < 80.0f) {
+                m *= 0.8f + 0.2f * (freq / 80.0f);
+            }
+            /* Mid focus bump around 800Hz */
+            float mid_ratio = (freq - 800.0f) / 400.0f;
+            m *= 1.0f + 0.15f * expf(-mid_ratio * mid_ratio);
+            break;
+        }
+        case FX_CAB_4X12_STRAIGHT: {
+            /* 4x12 straight: full bass, classic mid scoop */
+            if (freq < 60.0f) {
+                m *= 0.9f + 0.1f * (freq / 60.0f);
+            }
+            /* Slight mid scoop around 400Hz */
+            float mid_ratio = (freq - 400.0f) / 200.0f;
+            m *= 1.0f - 0.1f * expf(-mid_ratio * mid_ratio);
+            /* Presence bump around 2.5kHz */
+            float pres_ratio = (freq - 2500.0f) / 800.0f;
+            m *= 1.0f + 0.2f * expf(-pres_ratio * pres_ratio);
+            break;
+        }
+        case FX_CAB_4X12_SLANT: {
+            /* 4x12 slant: like straight but brighter top end */
+            if (freq < 60.0f) {
+                m *= 0.9f + 0.1f * (freq / 60.0f);
+            }
+            /* Broader presence bump */
+            float pres_ratio = (freq - 3500.0f) / 1200.0f;
+            m *= 1.0f + 0.25f * expf(-pres_ratio * pres_ratio);
+            break;
+        }
+        case FX_CAB_DIRECT:
+        default: {
+            /* Flat/direct: gentle highpass + gentle lowpass */
+            if (freq < 60.0f) {
+                m *= freq / 60.0f;
+            }
+            if (freq > 16000.0f) {
+                m *= 16000.0f / freq;
+            }
+            break;
+        }
+        }
+
+        /* Microphone modeling: SM57-style */
+        switch (params->mic_pos) {
+        case FX_MIC_ON_AXIS: {
+            /* Presence bump ~5kHz, brighter overall */
+            float pres_ratio = (freq - 5000.0f) / 1500.0f;
+            m *= 1.0f + 0.3f * expf(-pres_ratio * pres_ratio);
+            /* Roll-off above 12kHz */
+            if (freq > 12000.0f) {
+                float ratio = freq / 12000.0f;
+                m *= 1.0f / (ratio * ratio);
+            }
+            break;
+        }
+        case FX_MIC_OFF_AXIS: {
+            /* Darker, smoother — reduced presence */
+            float pres_ratio = (freq - 5000.0f) / 2000.0f;
+            m *= 1.0f - 0.15f * expf(-pres_ratio * pres_ratio);
+            /* Earlier roll-off above 8kHz */
+            if (freq > 8000.0f) {
+                float ratio = freq / 8000.0f;
+                m *= 1.0f / (ratio * ratio);
+            }
+            break;
+        }
+        case FX_MIC_EDGE:
+        default: {
+            /* Edge of cone: scooped mids, less presence */
+            float mid_ratio = (freq - 2000.0f) / 1000.0f;
+            m *= 1.0f - 0.2f * expf(-mid_ratio * mid_ratio);
+            /* Roll-off above 10kHz */
+            if (freq > 10000.0f) {
+                float ratio = freq / 10000.0f;
+                m *= 1.0f / (ratio * ratio);
+            }
+            break;
+        }
+        }
+
+        /* Clamp magnitude to avoid zeros (for log) */
+        if (m < 1e-6f) m = 1e-6f;
+        mag[i] = m;
+    }
+
+    /* ── Step 2: Minimum-phase reconstruction ──────────────── */
+    /* Phase = -Hilbert(log(|H(f)|))
+     * Simplified: use the cepstral method.
+     * log_mag -> IFFT -> causal window -> FFT -> imag part = min phase */
+    {
+        /* Compute log-magnitude */
+        float *log_mag = (float *)calloc((size_t)n_bins, sizeof(float));
+        if (!log_mag) {
+            /* Fallback: linear phase (just use magnitude, zero phase) */
+            for (int i = 0; i < n_bins; i++) phase[i] = 0.0f;
+        } else {
+            for (int i = 0; i < n_bins; i++) {
+                log_mag[i] = logf(mag[i]);
+            }
+
+            /* Build symmetric log-magnitude spectrum for real IFFT */
+            kiss_fft_cpx *log_spec = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
+            float *cepstrum = (float *)calloc((size_t)fft_size, sizeof(float));
+            kiss_fftr_cfg cep_ifft = kiss_fftr_alloc(fft_size, 1, NULL, NULL);
+            kiss_fftr_cfg cep_fft  = kiss_fftr_alloc(fft_size, 0, NULL, NULL);
+
+            if (log_spec && cepstrum && cep_ifft && cep_fft) {
+                /* log-mag as real part, zero imaginary */
+                for (int i = 0; i < n_bins; i++) {
+                    log_spec[i].r = log_mag[i];
+                    log_spec[i].i = 0.0f;
+                }
+
+                /* IFFT to get cepstrum */
+                kiss_fftri(cep_ifft, log_spec, cepstrum);
+
+                /* Scale by 1/N */
+                float scale = 1.0f / (float)fft_size;
+                for (int i = 0; i < fft_size; i++) {
+                    cepstrum[i] *= scale;
+                }
+
+                /* Apply causal window: keep n=0, double n=1..N/2-1, zero n=N/2..N-1 */
+                /* cepstrum[0] stays as is */
+                for (int i = 1; i < fft_size / 2; i++) {
+                    cepstrum[i] *= 2.0f;
+                }
+                /* cepstrum[fft_size/2] stays as is (Nyquist) */
+                for (int i = fft_size / 2 + 1; i < fft_size; i++) {
+                    cepstrum[i] = 0.0f;
+                }
+
+                /* FFT back: result has log-mag in real, min-phase in imag */
+                kiss_fftr(cep_fft, cepstrum, log_spec);
+
+                /* Extract phase from imaginary part */
+                for (int i = 0; i < n_bins; i++) {
+                    phase[i] = log_spec[i].i;
+                }
+            } else {
+                for (int i = 0; i < n_bins; i++) phase[i] = 0.0f;
+            }
+
+            free(log_spec);
+            free(cepstrum);
+            if (cep_ifft) kiss_fftr_free(cep_ifft);
+            if (cep_fft)  kiss_fftr_free(cep_fft);
+            free(log_mag);
+        }
+    }
+
+    /* ── Step 3: Reconstruct complex spectrum and IFFT ─────── */
+    for (int i = 0; i < n_bins; i++) {
+        spectrum[i].r = mag[i] * cosf(phase[i]);
+        spectrum[i].i = mag[i] * sinf(phase[i]);
+    }
+
+    kiss_fftri(ifft_cfg, spectrum, time_buf);
+
+    /* Scale by 1/N */
+    float scale = 1.0f / (float)fft_size;
+    for (int i = 0; i < fft_size; i++) {
+        time_buf[i] *= scale;
+    }
+
+    /* ── Step 4: Window to ir_len samples ──────────────────── */
+    /* Apply half-Hann fade-out over last 256 samples */
+    int fade_len = 256;
+    if (fade_len > ir_len / 2) fade_len = ir_len / 2;
+
+    /* Normalize: find peak */
+    float peak = 0.0f;
+    for (int i = 0; i < ir_len; i++) {
+        float a = fabsf(time_buf[i]);
+        if (a > peak) peak = a;
+    }
+    float norm = (peak > 1e-6f) ? (1.0f / peak) : 1.0f;
+
+    for (int i = 0; i < ir_len; i++) {
+        float w = 1.0f;
+        if (i >= ir_len - fade_len) {
+            /* Half-Hann window for fade-out */
+            float t = (float)(i - (ir_len - fade_len)) / (float)fade_len;
+            w = 0.5f * (1.0f + cosf((float)M_PI * t));
+        }
+        ir_out[i] = time_buf[i] * norm * w;
+    }
+
+    free(mag);
+    free(phase);
+    free(spectrum);
+    free(time_buf);
+    kiss_fftr_free(ifft_cfg);
+}
+
+/* ── Bundled preset IRs ─────────────────────────────────────── */
+
+static const fx_cab_params_t bundled_presets[5] = {
+    /* 0: 1x12 open back — bright, chimey */
+    { FX_CAB_1X12_OPEN,    FX_MIC_ON_AXIS,  75.0f, 0.8f, 0.6f },
+    /* 1: 2x12 closed — tighter, more focused */
+    { FX_CAB_2X12_CLOSED,  FX_MIC_ON_AXIS,  80.0f, 0.5f, 0.5f },
+    /* 2: 4x12 straight — classic rock, full */
+    { FX_CAB_4X12_STRAIGHT, FX_MIC_ON_AXIS, 70.0f, 0.5f, 0.6f },
+    /* 3: 4x12 slant — slightly brighter top */
+    { FX_CAB_4X12_SLANT,   FX_MIC_ON_AXIS,  70.0f, 0.65f, 0.5f },
+    /* 4: direct/flat — bypass-like, minimal coloring */
+    { FX_CAB_DIRECT,       FX_MIC_ON_AXIS,  80.0f, 0.5f, 0.3f },
+};
+
+bool fx_cab_load_bundled(fx_cab_state_t *cab, int preset_idx, int block_size) {
+    if (!cab || preset_idx < 0 || preset_idx >= 5 || block_size <= 0)
+        return false;
+
+    float ir_buf[SYNTH_IR_LEN];
+    fx_cab_synth_ir_generate(&bundled_presets[preset_idx], ir_buf, SYNTH_IR_LEN, 48000.0f);
+    return fx_cab_load_buffer(cab, ir_buf, SYNTH_IR_LEN, block_size);
+}
+
 /* ── Per-block overlap-add convolution (real-time safe) ───────── */
 
 void fx_cab_process(fx_cab_state_t *cab, float *buf, int n) {

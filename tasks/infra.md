@@ -33,25 +33,25 @@
 ## Phase 4C: Preset System
 
 ### TASK-042: Implement fx_preset_save()
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-024 (engine - pedal chain wired)
-- **Notes**: Serialize complete rig to .0xfx JSON. Input, pre-pedals, chains, output, metadata.
+- **Notes**: Full implementation in preset.c. Serializes gate, pre-pedals, chains (amp+cab+mix), post-pedals.
 
 ### TASK-043: Implement fx_preset_load()
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-042
-- **Notes**: Parse .0xfx JSON, reconstruct engine state. Validate + clamp values.
+- **Notes**: Full implementation in preset.c. Validates format, clamps values, handles unknown pedal types gracefully.
 
 ### TASK-044: Create 5 default presets
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-042
-- **Notes**: Clean Sparkle, Classic Crunch, Modern High Gain, Chimey British, Bluesy Tweed.
+- **Notes**: 5 presets in presets/: clean_sparkle, classic_crunch, modern_high_gain, chimey_british, bluesy_tweed. All tested — load and produce audio.
 
 ---
 

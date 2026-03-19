@@ -912,6 +912,133 @@ static void test_cab_load_api(void) {
     printf("  OK\n");
 }
 
+/* ── Test: synthetic IR generation (TASK-036 + TASK-037) ──────── */
+
+static void test_synthetic_ir(void) {
+    printf("test_synthetic_ir...\n");
+
+    const float sr = 48000.0f;
+    const int block = 256;
+
+    /* ── Test fx_cab_generate_ir with each cab type ──────────── */
+    fx_cab_params_t params;
+    params.mic_pos = FX_MIC_ON_AXIS;
+    params.speaker_fs = 80.0f;
+    params.brightness = 0.5f;
+    params.resonance = 0.5f;
+
+    for (int cab_type = 0; cab_type < FX_CAB_TYPE_COUNT; cab_type++) {
+        params.cab_type = (fx_cab_type_t)cab_type;
+
+        fx_engine_t *e = fx_engine_create(sr);
+        ASSERT(e != NULL, "engine should be created");
+
+        /* Set amp to minimal processing */
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+        bool gen_ok = fx_cab_generate_ir(e, FX_CHAIN_DEFAULT, &params);
+        char msg[128];
+        snprintf(msg, sizeof(msg), "generate_ir should succeed for cab_type=%d", cab_type);
+        ASSERT(gen_ok, msg);
+
+        if (gen_ok) {
+            /* Generate test input: 440Hz sine burst */
+            float input_sig[256];
+            for (int i = 0; i < block; i++) {
+                input_sig[i] = 0.4f * sinf(2.0f * 3.14159f * 440.0f * (float)i / sr);
+            }
+
+            float out_with_cab[256];
+            fx_engine_process(e, input_sig, out_with_cab, block);
+
+            /* Output should have energy */
+            float peak = 0.0f;
+            for (int i = 0; i < block; i++) {
+                float a = fabsf(out_with_cab[i]);
+                if (a > peak) peak = a;
+            }
+            snprintf(msg, sizeof(msg),
+                     "synth cab type=%d output should have energy (peak=%.4f)",
+                     cab_type, peak);
+            ASSERT(peak > 0.001f, msg);
+            printf("    cab_type=%d peak=%.4f\n", cab_type, peak);
+
+            /* Compare with no-cab engine to verify cab changes the signal */
+            fx_engine_t *e_nocab = fx_engine_create(sr);
+            fx_amp_set_param(e_nocab, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+            fx_amp_set_param(e_nocab, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+            fx_amp_set_param(e_nocab, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+            float out_no_cab[256];
+            fx_engine_process(e_nocab, input_sig, out_no_cab, block);
+
+            int differs = 0;
+            for (int i = 0; i < block; i++) {
+                if (fabsf(out_with_cab[i] - out_no_cab[i]) > 1e-4f) {
+                    differs = 1;
+                    break;
+                }
+            }
+            snprintf(msg, sizeof(msg),
+                     "synth cab type=%d should differ from no-cab", cab_type);
+            ASSERT(differs, msg);
+
+            fx_engine_destroy(e_nocab);
+        }
+
+        fx_engine_destroy(e);
+    }
+
+    /* ── Test different mic positions produce different results ── */
+    fx_engine_t *e_on = fx_engine_create(sr);
+    fx_engine_t *e_off = fx_engine_create(sr);
+    fx_amp_set_param(e_on, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e_on, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e_on, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+    fx_amp_set_param(e_off, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e_off, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e_off, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+    fx_cab_params_t p_on = { FX_CAB_4X12_STRAIGHT, FX_MIC_ON_AXIS, 80.0f, 0.5f, 0.5f };
+    fx_cab_params_t p_off = { FX_CAB_4X12_STRAIGHT, FX_MIC_OFF_AXIS, 80.0f, 0.5f, 0.5f };
+    fx_cab_generate_ir(e_on, FX_CHAIN_DEFAULT, &p_on);
+    fx_cab_generate_ir(e_off, FX_CHAIN_DEFAULT, &p_off);
+
+    float mic_input[256];
+    for (int i = 0; i < block; i++) {
+        mic_input[i] = 0.4f * sinf(2.0f * 3.14159f * 440.0f * (float)i / sr);
+    }
+    float out_on[256], out_off[256];
+    fx_engine_process(e_on, mic_input, out_on, block);
+    fx_engine_process(e_off, mic_input, out_off, block);
+
+    int mic_differs = 0;
+    for (int i = 0; i < block; i++) {
+        if (fabsf(out_on[i] - out_off[i]) > 1e-4f) {
+            mic_differs = 1;
+            break;
+        }
+    }
+    ASSERT(mic_differs, "on-axis vs off-axis mic should produce different output");
+
+    fx_engine_destroy(e_on);
+    fx_engine_destroy(e_off);
+
+    /* ── Test NULL/invalid params ────────────────────────────── */
+    fx_engine_t *e_null = fx_engine_create(sr);
+    ASSERT(!fx_cab_generate_ir(NULL, FX_CHAIN_DEFAULT, &p_on),
+           "generate_ir with NULL engine should fail");
+    ASSERT(!fx_cab_generate_ir(e_null, FX_CHAIN_DEFAULT, NULL),
+           "generate_ir with NULL params should fail");
+    ASSERT(!fx_cab_generate_ir(e_null, -1, &p_on),
+           "generate_ir with invalid chain should fail");
+    fx_engine_destroy(e_null);
+
+    printf("  OK\n");
+}
+
 /* ── Test: preset roundtrip (save + load) ─────────────────────── */
 
 static void test_preset_roundtrip(void) {
@@ -1199,6 +1326,7 @@ int main(void) {
     test_cab_ir();
     test_parallel_chain_routing();
     test_cab_load_api();
+    test_synthetic_ir();
     test_preset_roundtrip();
     test_preset_fuzz();
     test_default_presets();

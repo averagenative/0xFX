@@ -153,50 +153,50 @@
 ## Phase 4A: Cabinet IR
 
 ### TASK-034: Overlap-add FFT convolution
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-002 (KissFFT dep)
-- **Notes**: Load .wav IR, zero-pad, pre-compute IR FFT, per-block convolve.
+- **Notes**: Full overlap-add in cab_ir.c. KissFFT real-to-complex. Pre-computed IR FFT, per-block convolve.
 
 ### TASK-035: fx_cab_load_ir() API
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-034
-- **Notes**: Load .wav IR files (44.1/48 kHz, 16/24/32-bit, mono, up to 4096 samples).
+- **Notes**: Loads .wav via dr_wav. Handles 16/24/32-bit, mono/stereo downmix, 44.1/48kHz. Caps at 4096 samples.
 
 ### TASK-036: Synthetic IR generation
-- **Status**: queued
+- **Status**: in_progress
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-034
-- **Notes**: fx_cab_generate_ir() from parametric description. Speaker Thiele-Small, cabinet type, mic model.
+- **Notes**: Agent working on fx_cab_generate_ir(). Parametric speaker/cabinet/mic modeling.
 
 ### TASK-037: Generate bundled synthetic IRs
-- **Status**: queued
+- **Status**: in_progress
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-036
-- **Notes**: 5 IRs: 1x12 open, 2x12 closed, 4x12 straight, 4x12 slant, direct.
+- **Notes**: Agent working on 5 bundled IRs via fx_cab_load_bundled().
 
 ---
 
 ## Phase 4B: Multi-Amp Routing
 
 ### TASK-039: Parallel chain routing
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-024
-- **Notes**: fx_chain_create() adds parallel amp+cab+post-fx chain. Mix per chain. Max 4.
+- **Notes**: Already wired in engine.c. fx_chain_create/destroy, per-chain amp+cab, mix levels. test_parallel_chain_routing passes.
 
 ### TASK-040: Update process for multi-chain
-- **Status**: queued
+- **Status**: done
 - **Phase**: 4
 - **Priority**: P1
 - **Depends**: TASK-039
-- **Notes**: pre-pedals → split → per-chain (amp→cab→post-fx) → sum with mix → output.
+- **Notes**: Implemented in engine.c. Single-chain fast path + multi-chain split/mix. Global post-pedals after mix.
 
 ---
 

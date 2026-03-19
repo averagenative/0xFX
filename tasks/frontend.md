@@ -8,25 +8,25 @@
 ## Phase 3B: GUI — Pedalboard + Amp Panel + Knobs [MVP]
 
 ### TASK-025: Vendor ImGui + SDL2+OpenGL backend
-- **Status**: queued
+- **Status**: done
 - **Phase**: 3
 - **Priority**: P0
 - **Depends**: TASK-003 (infra - CMakeLists)
-- **Notes**: Add to deps/, wire into CMakeLists.txt.
+- **Notes**: ImGui vendored in deps/imgui/. SDL2+OpenGL3 backends. CMake imgui target.
 
 ### TASK-026: GUI main window + render loop
-- **Status**: queued
+- **Status**: done
 - **Phase**: 3
 - **Priority**: P0
 - **Depends**: TASK-025
-- **Notes**: SDL2 window 1400x800, OpenGL context, ImGui init, frame timing.
+- **Notes**: gui_main.cpp — SDL2 window, OpenGL 3.3, ImGui render loop, "worn grime" dark theme.
 
 ### TASK-027: Rotary knob widget
-- **Status**: queued
+- **Status**: done
 - **Phase**: 3
 - **Priority**: P0
 - **Depends**: TASK-026
-- **Notes**: Click-drag rotate, arc indicator, value label, double-click reset, shift+drag fine adjust. Port from 0x808.
+- **Notes**: knobs.cpp/h — arc rendering, vertical drag, shift+fine, double-click reset. knob_float, knob_mini, knob_inline, knob_core_ext.
 
 ### TASK-028: Amp panel (skeuomorphic)
 - **Status**: queued
