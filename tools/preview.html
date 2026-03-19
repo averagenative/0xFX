@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>0xFX Asset Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #141210; color: #D9CDB8; font-family: monospace; padding: 20px; }
+  h1 { color: #CC8822; margin-bottom: 8px; }
+  h2 { color: #E6A030; margin: 30px 0 12px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+  .card {
+    background: #1e1b17; border: 1px solid #333; border-radius: 6px;
+    padding: 8px; text-align: center; width: 220px;
+  }
+  .card img { max-width: 200px; max-height: 200px; border-radius: 4px; }
+  .card.wide { width: 460px; }
+  .card.wide img { max-width: 440px; max-height: 300px; }
+  .card p { margin-top: 6px; font-size: 12px; color: #B3A894; }
+  .missing { color: #664; font-style: italic; padding: 40px 10px; }
+  .refresh { color: #884; font-size: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>0xFX Asset Preview</h1>
+<p class="refresh">Open this file directly in a browser: <code>file:///path/to/0xFX/tools/preview.html</code></p>
+
+<h2>Style References</h2>
+<div class="grid" id="refs"></div>
+
+<h2>Pedals</h2>
+<div class="grid" id="pedals"></div>
+
+<h2>Amp Panels</h2>
+<div class="grid" id="amps"></div>
+
+<h2>Cabinets</h2>
+<div class="grid" id="cabs"></div>
+
+<h2>Theme Textures</h2>
+<div class="grid" id="textures"></div>
+
+<script>
+const assets = {
+  refs: {
+    dir: "../resources/reference",
+    files: ["ref_01_pedal_aesthetic","ref_02_amp_aesthetic","ref_03_grime_closeup"],
+    wide: true,
+  },
+  pedals: {
+    dir: "../resources/pedals",
+    files: [
+      "jade_drive","gold_drive","blues_grit","rodent","mammoth_fuzz","round_fuzz",
+      "echo_delay","carbon_delay","tape_machine","drip_verb","hall_verb",
+      "liquid_chorus","phase_sweep","squeeze_box","howl_wah","noise_gate",
+      "jade_drive_test"
+    ],
+  },
+  amps: {
+    dir: "../resources/amps",
+    files: ["fullerton_clean","brit_crunch","southwest_lead","essex_chime","tweed_blues"],
+    wide: true,
+  },
+  cabs: {
+    dir: "../resources/cabs",
+    files: ["1x12_open","2x12_closed","4x12_straight","4x12_slant","direct_flat"],
+  },
+  textures: {
+    dir: "../resources/theme",
+    files: ["pedalboard_surface","metal_panel","tolex_surface","dark_wood"],
+  },
+};
+
+for (const [section, cfg] of Object.entries(assets)) {
+  const container = document.getElementById(section);
+  for (const name of cfg.files) {
+    const card = document.createElement("div");
+    card.className = "card" + (cfg.wide ? " wide" : "");
+    const img = document.createElement("img");
+    img.src = `${cfg.dir}/${name}.png`;
+    img.alt = name;
+    img.onerror = function() {
+      this.style.display = "none";
+      card.querySelector(".missing").style.display = "block";
+    };
+    const label = document.createElement("p");
+    label.textContent = name.replace(/_/g, " ");
+    const missing = document.createElement("p");
+    missing.className = "missing";
+    missing.style.display = "none";
+    missing.textContent = "not generated yet";
+    card.appendChild(img);
+    card.appendChild(missing);
+    card.appendChild(label);
+    container.appendChild(card);
+  }
+}
+</script>
+</body>
+</html>

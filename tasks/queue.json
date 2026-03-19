@@ -863,8 +863,8 @@
     "title": "CLAP process callback",
     "domain": "infra",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "main-agent",
     "depends": [
       "TASK-068"
     ],
@@ -1086,7 +1086,7 @@
     "title": "Implement graphic EQ (Tone Sculptor)",
     "domain": "engine",
     "phase": 5,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1099,6 +1099,87 @@
     ],
     "files": [
       "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-059",
+    "priority": "MEDIUM",
+    "title": "Implement gated fuzz (Chaos Fuzz)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Sputtery gated decay, oscillation control",
+      "Volume/gate/drive/stab params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-065",
+    "priority": "MEDIUM",
+    "title": "Port remaining utility effects",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Grit Crush (bitcrusher), Ring Tone (ring mod), Warm Tape (tape sat) all process audio",
+      "Each has correct param names"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-070",
+    "priority": "MEDIUM",
+    "title": "CLAP parameter automation",
+    "domain": "infra",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-068"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "All amp+pedal params exposed as CLAP params",
+      "Thread-safe param updates",
+      "Host can automate params"
+    ],
+    "files": [
+      "src/plugin/plugin.c"
+    ]
+  },
+  {
+    "id": "TASK-115",
+    "priority": "MEDIUM",
+    "title": "README.md with screenshots and build instructions",
+    "domain": "infra",
+    "phase": 11,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Feature list",
+      "Build instructions Linux+Windows",
+      "Architecture diagram",
+      "Trademark disclaimer"
+    ],
+    "files": [
+      "README.md"
     ]
   }
 ]

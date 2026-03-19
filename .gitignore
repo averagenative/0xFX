@@ -12,6 +12,13 @@ build_win/
 *.swp
 *~
 
+# Generated assets (preview locally, commit only when integrated into GUI)
+resources/pedals/*.png
+resources/amps/*.png
+resources/cabs/*.png
+resources/theme/*.png
+resources/reference/*.png
+
 # OS
 .DS_Store
 Thumbs.db

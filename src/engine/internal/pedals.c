@@ -134,6 +134,54 @@ typedef struct {
     float lfo_phase;
 } pulse_trem_state_t;
 
+/* Mammoth Fuzz — Big Muff-style 4-stage fuzz */
+typedef struct {
+    float dc_z1[4];        /* DC blocker state per stage */
+    fx_biquad_t tone_lp;   /* scooped-mid: lowpass path */
+    fx_biquad_t tone_hp;   /* scooped-mid: highpass path */
+} mammoth_fuzz_state_t;
+
+/* Round Fuzz — germanium Fuzz Face-style */
+typedef struct {
+    float dc_z1;
+} round_fuzz_state_t;
+
+/* Chaos Fuzz — gated/sputtery fuzz */
+typedef struct {
+    float feedback_z1;     /* feedback from output to input */
+} chaos_fuzz_state_t;
+
+/* Grit Crush — bitcrusher + sample-and-hold */
+typedef struct {
+    float hold_sample;
+    int   hold_counter;
+} grit_crush_state_t;
+
+/* Ring Tone — ring modulator */
+typedef struct {
+    float phase;           /* sine oscillator phase */
+} ring_tone_state_t;
+
+/* Warm Tape — tape saturation + warmth LP */
+typedef struct {
+    float warmth_z1;       /* one-pole LP filter state */
+} warm_tape_state_t;
+
+/* Tone Sculptor — 7-band graphic EQ */
+#define TONE_SCULPTOR_BANDS 7
+
+typedef struct {
+    fx_biquad_t bands[TONE_SCULPTOR_BANDS];
+    float       cached_gains[TONE_SCULPTOR_BANDS];  /* detect param changes */
+    float       cached_output;
+    float       cached_sr;
+} tone_sculptor_state_t;
+
+/* Fixed band center frequencies (Hz) */
+static const float tone_sculptor_freqs[TONE_SCULPTOR_BANDS] = {
+    100.0f, 200.0f, 400.0f, 800.0f, 1600.0f, 3200.0f, 6400.0f
+};
+
 /* ══════════════════════════════════════════════════════════════════
  * DC blocker helper (shared by drive pedals)
  * ══════════════════════════════════════════════════════════════════ */
@@ -1026,6 +1074,349 @@ static void pulse_trem_process(fx_pedal_instance_t *p, float *buf, int n, float 
 }
 
 /* ══════════════════════════════════════════════════════════════════
+ * TONE SCULPTOR — 7-band graphic EQ
+ * Biquad peak filters at fixed frequencies with variable gain
+ * Q = 1.4 (standard graphic EQ bandwidth)
+ * Params: [0-6] band gains (100Hz-6.4kHz), [7] output level
+ *   0.0 = -12dB, 0.5 = 0dB (flat), 1.0 = +12dB
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void tone_sculptor_init(fx_pedal_instance_t *p, float sr) {
+    tone_sculptor_state_t *s = (tone_sculptor_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->cached_sr = sr;
+    for (int b = 0; b < TONE_SCULPTOR_BANDS; b++) {
+        /* Init all bands flat (0dB) */
+        fx_biquad_peak(&s->bands[b], tone_sculptor_freqs[b], 0.0f, 1.4f, sr);
+        s->cached_gains[b] = 0.5f;
+    }
+    s->cached_output = 0.5f;
+
+    p->state = s;
+    /* Params [0-6]: band gains (default 0.5 = flat) */
+    for (int b = 0; b < TONE_SCULPTOR_BANDS; b++) p->params[b] = 0.5f;
+    /* Param [7]: output level (default 0.5 = unity) */
+    p->params[7] = 0.5f;
+}
+
+static void tone_sculptor_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    tone_sculptor_state_t *s = (tone_sculptor_state_t *)p->state;
+    if (!s) return;
+
+    /* Recalculate band coefficients only when params change */
+    int sr_changed = (s->cached_sr != sr);
+    for (int b = 0; b < TONE_SCULPTOR_BANDS; b++) {
+        float gain_param = p->params[b];
+        if (sr_changed || gain_param != s->cached_gains[b]) {
+            /* Map 0-1 to -12dB to +12dB */
+            float gain_db = (gain_param - 0.5f) * 24.0f;
+            fx_biquad_peak(&s->bands[b], tone_sculptor_freqs[b], gain_db, 1.4f, sr);
+            s->cached_gains[b] = gain_param;
+        }
+    }
+    s->cached_sr = sr;
+    s->cached_output = p->params[7];
+
+    /* Output level: 0 = silence, 0.5 = unity gain, 1.0 = +6dB */
+    float output = s->cached_output * 2.0f;
+
+    for (int i = 0; i < n; i++) {
+        float x = buf[i];
+        for (int b = 0; b < TONE_SCULPTOR_BANDS; b++) {
+            x = fx_biquad_process(&s->bands[b], x);
+        }
+        buf[i] = x * output;
+    }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+ * MAMMOTH FUZZ — Big Muff-style 4-stage fuzz
+ * 4 cascaded tanh soft-clip stages, scooped-mid tone control
+ * Params: [0] sustain (gain 1-50x), [1] tone (scoop 0-1), [2] volume
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void mammoth_fuzz_init(fx_pedal_instance_t *p, float sr) {
+    mammoth_fuzz_state_t *s = (mammoth_fuzz_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    /* Scooped-mid tone control: parallel LP + HP */
+    fx_biquad_lowpass(&s->tone_lp, 500.0f, 0.707f, sr);
+    fx_biquad_highpass(&s->tone_hp, 1500.0f, 0.707f, sr);
+
+    p->state = s;
+    p->params[0] = 0.5f;  /* sustain */
+    p->params[1] = 0.5f;  /* tone */
+    p->params[2] = 0.7f;  /* volume */
+}
+
+static void mammoth_fuzz_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    mammoth_fuzz_state_t *s = (mammoth_fuzz_state_t *)p->state;
+    if (!s) return;
+
+    float sustain = 1.0f + p->params[0] * 49.0f;   /* 1x-50x */
+    float scoop   = p->params[1];                    /* 0=flat, 1=full scoop */
+    float volume  = p->params[2];
+
+    /* Update tone biquads based on scoop amount */
+    float lp_freq = 200.0f + (1.0f - scoop) * 800.0f;  /* LP: 200-1000Hz */
+    float hp_freq = 1000.0f + scoop * 2000.0f;           /* HP: 1000-3000Hz */
+    fx_biquad_lowpass(&s->tone_lp, lp_freq, 0.707f, sr);
+    fx_biquad_highpass(&s->tone_hp, hp_freq, 0.707f, sr);
+
+    float dc_R = 1.0f - (2.0f * (float)M_PI * 10.0f / sr);
+
+    for (int i = 0; i < n; i++) {
+        float x = buf[i] * sustain;
+
+        /* 4 cascaded tanh soft-clip stages, each ~3x gain */
+        for (int stage = 0; stage < 4; stage++) {
+            x *= 3.0f;
+            x = tanhf(x);
+            x = dc_block(x, &s->dc_z1[stage], dc_R);
+        }
+
+        /* Scooped-mid tone control: parallel LP + HP */
+        float lp_out = fx_biquad_process(&s->tone_lp, x);
+        float hp_out = fx_biquad_process(&s->tone_hp, x);
+        /* scoop=0: flat signal, scoop=1: maximum mid-cut */
+        float flat    = x * 0.5f;
+        float scooped = (lp_out + hp_out) * 0.5f;
+        x = flat * (1.0f - scoop) + scooped * scoop;
+
+        buf[i] = x * volume;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * ROUND FUZZ — germanium Fuzz Face-style
+ * Asymmetric soft clipping (positive clips softer), cleans up with input
+ * Params: [0] fuzz (gain 1-30x), [1] volume
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void round_fuzz_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    round_fuzz_state_t *s = (round_fuzz_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->dc_z1 = 0.0f;
+    p->state = s;
+    p->params[0] = 0.5f;  /* fuzz */
+    p->params[1] = 0.7f;  /* volume */
+}
+
+static void round_fuzz_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    round_fuzz_state_t *s = (round_fuzz_state_t *)p->state;
+    if (!s) return;
+
+    float fuzz   = 1.0f + p->params[0] * 29.0f;  /* 1x-30x */
+    float volume = p->params[1];
+
+    float dc_R = 1.0f - (2.0f * (float)M_PI * 10.0f / sr);
+
+    for (int i = 0; i < n; i++) {
+        float x = buf[i] * fuzz;
+
+        /* Asymmetric clipping: positive softer (germanium transistor) */
+        if (x > 0.0f)
+            x = tanhf(x * 0.7f);
+        else
+            x = tanhf(x);
+
+        x = dc_block(x, &s->dc_z1, dc_R);
+
+        buf[i] = x * volume;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * CHAOS FUZZ — gated/sputtery fuzz
+ * Hard clip + noise gate + oscillation feedback
+ * Params: [0] volume, [1] gate (threshold 0-1), [2] drive (gain), [3] stab (0-1)
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void chaos_fuzz_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    chaos_fuzz_state_t *s = (chaos_fuzz_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->feedback_z1 = 0.0f;
+    p->state = s;
+    p->params[0] = 0.7f;  /* volume */
+    p->params[1] = 0.3f;  /* gate */
+    p->params[2] = 0.5f;  /* drive */
+    p->params[3] = 0.8f;  /* stab (high = stable) */
+}
+
+static void chaos_fuzz_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    chaos_fuzz_state_t *s = (chaos_fuzz_state_t *)p->state;
+    if (!s) return;
+    (void)sr;
+
+    float volume   = p->params[0];
+    float gate_thr = p->params[1] * 0.5f;          /* threshold 0-0.5 */
+    float drive    = 1.0f + p->params[2] * 29.0f;  /* 1x-30x */
+    float stab     = p->params[3];
+    /* Low stab = strong feedback (oscillation) */
+    float fb_amount = (1.0f - stab) * 0.6f;
+
+    for (int i = 0; i < n; i++) {
+        /* Inject feedback from previous output (oscillation) */
+        float x = buf[i] + s->feedback_z1 * fb_amount;
+
+        /* Drive */
+        x *= drive;
+
+        /* Hard clip */
+        if      (x >  1.0f) x =  1.0f;
+        else if (x < -1.0f) x = -1.0f;
+
+        /* Gate: below threshold → silence (sputtery decay) */
+        if (fabsf(x) < gate_thr) x = 0.0f;
+
+        s->feedback_z1 = x;
+
+        buf[i] = x * volume;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * GRIT CRUSH — bitcrusher
+ * Reduce bit depth (quantize) + reduce sample rate (sample-and-hold)
+ * Params: [0] bits (1-16), [1] downsample (1-32 factor), [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void grit_crush_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    grit_crush_state_t *s = (grit_crush_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->hold_sample  = 0.0f;
+    s->hold_counter = 0;
+    p->state = s;
+    p->params[0] = 0.5f;  /* bits */
+    p->params[1] = 0.2f;  /* downsample */
+    p->params[2] = 1.0f;  /* mix */
+}
+
+static void grit_crush_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    grit_crush_state_t *s = (grit_crush_state_t *)p->state;
+    if (!s) return;
+    (void)sr;
+
+    /* Map params */
+    float bits_f   = 1.0f + p->params[0] * 15.0f;    /* 1-16 bits */
+    int   ds_steps = 1 + (int)(p->params[1] * 31.0f); /* 1-32x downsample */
+    float mix      = p->params[2];
+
+    /* Quantization step size (2^bits levels over -1..1) */
+    float levels = powf(2.0f, bits_f);
+    float step   = 2.0f / levels;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Sample-and-hold (rate reduction) */
+        if (s->hold_counter <= 0) {
+            s->hold_sample  = dry;
+            s->hold_counter = ds_steps;
+        }
+        s->hold_counter--;
+        float x = s->hold_sample;
+
+        /* Bit depth reduction */
+        if (step > 0.0f)
+            x = floorf(x / step + 0.5f) * step;
+
+        buf[i] = dry * (1.0f - mix) + x * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * RING TONE — ring modulator
+ * Multiply signal by sine carrier wave
+ * Params: [0] freq (20-5000Hz), [1] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void ring_tone_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    ring_tone_state_t *s = (ring_tone_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->phase = 0.0f;
+    p->state = s;
+    p->params[0] = 0.2f;  /* freq */
+    p->params[1] = 0.7f;  /* mix */
+}
+
+static void ring_tone_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    ring_tone_state_t *s = (ring_tone_state_t *)p->state;
+    if (!s) return;
+
+    /* Map 0-1 → 20Hz-5000Hz */
+    float freq = 20.0f + p->params[0] * 4980.0f;
+    float mix  = p->params[1];
+
+    float phase_inc = (float)(2.0 * M_PI * freq / sr);
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        float carrier = sinf(s->phase);
+        s->phase += phase_inc;
+        if (s->phase > (float)(2.0 * M_PI)) s->phase -= (float)(2.0 * M_PI);
+
+        float wet = dry * carrier;
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * WARM TAPE — tape saturation
+ * Gentle tanh saturation + warmth LP filter (rolls off highs)
+ * Params: [0] drive (gain 1-10x), [1] warmth (LP 20kHz→2kHz), [2] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void warm_tape_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    warm_tape_state_t *s = (warm_tape_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->warmth_z1 = 0.0f;
+    p->state = s;
+    p->params[0] = 0.4f;  /* drive */
+    p->params[1] = 0.4f;  /* warmth */
+    p->params[2] = 0.8f;  /* mix */
+}
+
+static void warm_tape_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    warm_tape_state_t *s = (warm_tape_state_t *)p->state;
+    if (!s) return;
+
+    float drive  = 1.0f + p->params[0] * 9.0f;        /* 1x-10x */
+    /* Warmth: 0=20kHz (bright), 1=2kHz (dark) */
+    float cutoff = 20000.0f - p->params[1] * 18000.0f; /* 20kHz-2kHz */
+    float mix    = p->params[2];
+
+    /* One-pole LP coefficient */
+    float rc = 1.0f / (2.0f * (float)M_PI * cutoff / sr + 1.0f);
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Tape saturation: gentle tanh with gain normalization */
+        float x = tanhf(dry * drive) / drive;
+
+        /* One-pole LP warmth filter */
+        s->warmth_z1 = s->warmth_z1 * rc + x * (1.0f - rc);
+        x = s->warmth_z1;
+
+        buf[i] = dry * (1.0f - mix) + x * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
  * Pedal metadata
  * ══════════════════════════════════════════════════════════════════ */
 
@@ -1075,6 +1466,8 @@ static const char *quack_filter_params[]   = { "Sens", "Decay", "Q", "Mix" };
 static const char *liquid_chorus_params[]  = { "Rate", "Depth", "Mix" };
 static const char *phase_sweep_params[]    = { "Rate", "Depth", "Feedback", "Mix" };
 static const char *pulse_trem_params[]     = { "Rate", "Depth", "Wave" };
+static const char *tone_sculptor_params[]  = { "100Hz", "200Hz", "400Hz", "800Hz",
+                                               "1.6kHz", "3.2kHz", "6.4kHz", "Output" };
 
 const char *fx_pedal_get_type_name(fx_pedal_type_t type) {
     if (type < 0 || type >= FX_PEDAL_TYPE_COUNT) return "?";
@@ -1097,7 +1490,8 @@ int fx_pedal_get_param_count(fx_pedal_type_t type) {
         case FX_PEDAL_PHASE_SWEEP:   return 4;
         case FX_PEDAL_PULSE_TREM:    return 3;
         case FX_PEDAL_SQUEEZE_BOX:   return 2;
-        case FX_PEDAL_NOISE_GATE:    return 4;
+        case FX_PEDAL_NOISE_GATE:      return 4;
+        case FX_PEDAL_TONE_SCULPTOR:   return 8;
         default: return 3;
     }
 }
@@ -1148,6 +1542,9 @@ const char *fx_pedal_get_param_name(fx_pedal_type_t type, int param) {
         case FX_PEDAL_PULSE_TREM:
             if (param < 3) return pulse_trem_params[param];
             break;
+        case FX_PEDAL_TONE_SCULPTOR:
+            if (param < 8) return tone_sculptor_params[param];
+            break;
         default:
             break;
     }
@@ -1186,7 +1583,8 @@ void fx_pedal_init_state(fx_pedal_instance_t *p, float sr) {
         case FX_PEDAL_QUACK_FILTER:  quack_filter_init(p, sr);  break;
         case FX_PEDAL_LIQUID_CHORUS: liquid_chorus_init(p, sr); break;
         case FX_PEDAL_PHASE_SWEEP:   phase_sweep_init(p, sr);   break;
-        case FX_PEDAL_PULSE_TREM:    pulse_trem_init(p, sr);    break;
+        case FX_PEDAL_PULSE_TREM:      pulse_trem_init(p, sr);      break;
+        case FX_PEDAL_TONE_SCULPTOR:   tone_sculptor_init(p, sr);   break;
         default:
             /* Unimplemented pedals: passthrough */
             break;
@@ -1228,7 +1626,8 @@ void fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
         case FX_PEDAL_QUACK_FILTER:  quack_filter_process(p, buf, n, sr);  break;
         case FX_PEDAL_LIQUID_CHORUS: liquid_chorus_process(p, buf, n, sr); break;
         case FX_PEDAL_PHASE_SWEEP:   phase_sweep_process(p, buf, n, sr);   break;
-        case FX_PEDAL_PULSE_TREM:    pulse_trem_process(p, buf, n, sr);    break;
+        case FX_PEDAL_PULSE_TREM:      pulse_trem_process(p, buf, n, sr);      break;
+        case FX_PEDAL_TONE_SCULPTOR:   tone_sculptor_process(p, buf, n, sr);   break;
         default:
             /* Unimplemented pedals: passthrough (no state, caught above) */
             break;

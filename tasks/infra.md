@@ -97,25 +97,25 @@
 ## Phase 7: Asset Generation Pipeline
 
 ### TASK-074: Image generation pipeline script
-- **Status**: queued
+- **Status**: done
 - **Phase**: 7
 - **Priority**: P2
 - **Depends**: none
-- **Notes**: tools/generate_assets.py. Replicate API + Flux Pro.
+- **Notes**: tools/generate_assets.py using OpenAI gpt-image-1 API. Style guide in tools/ASSET_STYLE_GUIDE.md. Commands: test, reference, pedal, amp, cab, texture.
 
 ### TASK-075: Generate style reference images
-- **Status**: queued
+- **Status**: done
 - **Phase**: 7
 - **Priority**: P2
 - **Depends**: TASK-074
-- **Notes**: 3-5 "worn grime" reference images.
+- **Notes**: 3 reference images in resources/reference/. Pedal board, amp+cab, grime closeup. All consistent with style lock.
 
-### TASK-076: Train LoRA on Replicate
-- **Status**: queued
+### TASK-076: LoRA / style consistency
+- **Status**: done
 - **Phase**: 7
 - **Priority**: P2
 - **Depends**: TASK-075
-- **Notes**: Fine-tune Flux Pro. ~$5. Document model ID + seeds.
+- **Notes**: Using prompt-based style lock instead of LoRA (OpenAI API doesn't support LoRA). Consistent results via shared style suffix, lighting, wear vocabulary. See ASSET_STYLE_GUIDE.md.
 
 ### TASK-077: Generate pedal assets (20+)
 - **Status**: queued

@@ -435,10 +435,11 @@ int main(int argc, char *argv[]) {
                 { FX_PEDAL_ECHO_DELAY,    "Echo Delay" },
                 { FX_PEDAL_HALL_VERB,     "Hall Verb (Reverb)" },
                 { FX_PEDAL_DRIP_VERB,     "Drip Verb (Spring Reverb)" },
-                { FX_PEDAL_SQUEEZE_BOX,   "Squeeze Box (Compressor)" },
-                { FX_PEDAL_NOISE_GATE,    "Noise Gate" },
+                { FX_PEDAL_SQUEEZE_BOX,    "Squeeze Box (Compressor)" },
+                { FX_PEDAL_NOISE_GATE,     "Noise Gate" },
+                { FX_PEDAL_TONE_SCULPTOR,  "Tone Sculptor (Graphic EQ)" },
             };
-            static const int pedal_menu_count = 8;
+            static const int pedal_menu_count = 9;
 
             /* Draw a pedal section (pre or post amp) */
             auto draw_pedal_section = [&](const char *label, fx_chain_pos_t pos,
