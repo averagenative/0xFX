@@ -105,6 +105,7 @@ if(HAS_GUI)
     add_executable(0xfx_gui
         src/gui/gui_main.cpp
         src/gui/knobs.cpp
+        src/gui/texture.c
         src/audio/audio_device.c
     )
     target_include_directories(0xfx_gui PRIVATE

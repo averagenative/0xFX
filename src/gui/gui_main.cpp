@@ -23,9 +23,11 @@ extern "C" {
 #include "../core/log.h"
 #include "../core/crash.h"
 #include "knobs.h"
+#include "texture.h"
 }
 
 #include <stdio.h>
+#include <cmath>
 
 /* ── Colors — "worn grime" dark theme ─────────────────────────── */
 
@@ -197,6 +199,12 @@ int main(int argc, char *argv[]) {
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init("#version 330");
 
+    /* Texture loader smoke test */
+    {
+        uintptr_t test_tex = fx_texture_load("resources/knobs/knob_chicken_cream.png");
+        if (test_tex) FX_INFO("Texture loaded: %lu", (unsigned long)test_tex);
+    }
+
     /* Audio + engine init */
     fx_audio_init();
     fx_engine_t *engine = fx_engine_create(44100.0f);
@@ -363,15 +371,68 @@ int main(int argc, char *argv[]) {
 
             ImGui::SameLine(620);
 
-            /* Audio status indicator */
-            if (s_audio_active) {
-                ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "LIVE");
-            } else {
-                ImGui::TextColored(ImVec4(0.6f, 0.3f, 0.1f, 1.0f), "MUTED");
+            /* ── LIVE button — prominent toggle ─────────────────── */
+            {
+                ImVec2 live_sz(70.0f, 30.0f);
+                if (s_audio_active) {
+                    float t = (float)ImGui::GetTime();
+                    float pulse = 0.85f + 0.15f * sinf(t * 3.0f);
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        ImVec4(0.10f * pulse, 0.55f * pulse, 0.10f * pulse, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        ImVec4(0.15f, 0.70f, 0.15f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        ImVec4(0.08f, 0.40f, 0.08f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.9f * pulse, 1.0f * pulse, 0.9f * pulse, 1.0f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        ImVec4(0.20f, 0.17f, 0.13f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        ImVec4(0.08f, 0.07f, 0.05f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.40f, 0.35f, 0.28f, 1.0f));
+                }
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                if (ImGui::Button("LIVE", live_sz)) {
+                    if (s_audio_active) {
+                        fx_audio_shutdown(); fx_audio_init();
+                        num_input_devices = fx_audio_get_device_count();
+                        num_output_devices = fx_audio_get_output_count();
+                        s_audio_active = false;
+                        FX_INFO("Audio stopped (LIVE off)");
+                    } else {
+                        if (s_selected_input < 0 && num_input_devices > 0) s_selected_input = 0;
+                        if (s_selected_output < 0 && num_output_devices > 0) s_selected_output = 0;
+                        if (s_selected_input >= 0) {
+                            if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+                            if (fx_audio_set_device(engine, s_selected_input)) {
+                                s_audio_active = true;
+                                FX_INFO("LIVE on: in=%s out=%s",
+                                    fx_audio_get_device_name(s_selected_input),
+                                    s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
+                            }
+                        }
+                    }
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(4);
+                /* Glow ring when active */
+                if (s_audio_active) {
+                    ImDrawList *dl = ImGui::GetWindowDrawList();
+                    ImVec2 bmin = ImGui::GetItemRectMin(), bmax = ImGui::GetItemRectMax();
+                    float t = (float)ImGui::GetTime();
+                    int g = (int)(120.0f * (0.3f + 0.2f * sinf(t * 3.0f)));
+                    dl->AddRect(ImVec2(bmin.x-2,bmin.y-2), ImVec2(bmax.x+2,bmax.y+2),
+                                IM_COL32(30, g, 30, g), 6.0f, 0, 2.0f);
+                }
             }
             ImGui::SameLine();
 
-            if (ImGui::SmallButton("Audio...")) {
+            /* Audio settings gear */
+            if (ImGui::SmallButton("Settings")) {
                 ImGui::OpenPopup("audio_settings_popup");
             }
 
@@ -692,8 +753,10 @@ int main(int argc, char *argv[]) {
                 { FX_PEDAL_PLATE_VERB,     "Plate Verb (Plate Reverb)" },
                 { FX_PEDAL_SHIMMER_VERB,   "Shimmer Verb (Octave Shimmer)" },
                 { FX_PEDAL_CLOUD_VERB,     "Cloud Verb (Ambient/Freeze)" },
+                { FX_PEDAL_OCTAVE_ENGINE,  "Octave Engine (Polyphonic Octave)" },
+                { FX_PEDAL_LOOP_STATION,   "Loop Station (Looper)" },
             };
-            static const int pedal_menu_count = 20;
+            static const int pedal_menu_count = 22;
 
             /* Draw a pedal section (pre or post amp) */
             auto draw_pedal_section = [&](const char *label, fx_chain_pos_t pos,

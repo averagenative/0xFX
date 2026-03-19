@@ -231,6 +231,30 @@ typedef struct {
     float  pitch_read_pos;   /* fractional read position in comb_buf[0] */
 } shimmer_verb_state_t;
 
+/* Octave Engine — polyphonic octave shifter (sub + octave-up via delay buffer) */
+#define OCTAVE_BUF_LEN 2048
+
+typedef struct {
+    float buffer[OCTAVE_BUF_LEN];
+    int   write_pos;
+    float sub_read_pos;  /* advances at 0.5x speed for sub-octave */
+    float up_read_pos;   /* advances at 2.0x speed for octave-up */
+} octave_engine_state_t;
+
+/* Loop Station — looper with record/play/overdub */
+#define LOOP_MAX_SECONDS 30
+/* max_length allocated at init based on sample rate; 30s * 44100 = 1323000 */
+#define LOOP_MAX_SAMPLES 1400000   /* headroom for up to ~31.7s @ 44.1kHz */
+
+typedef struct {
+    float *buffer;      /* heap-allocated loop buffer */
+    int    max_length;  /* size of buffer in samples */
+    int    length;      /* current recorded loop length (0 = not set) */
+    int    position;    /* current playback/record position */
+    int    mode;        /* 0=idle, 1=recording, 2=playing, 3=overdub */
+    int    prev_mode;   /* detect mode changes */
+} loop_station_state_t;
+
 /* Cloud Verb — long ambient reverb with freeze/near-infinite feedback */
 #define CLOUD_NUM_COMBS   4
 #define CLOUD_NUM_ALLPASS 2
@@ -1909,6 +1933,182 @@ static void cloud_verb_free(fx_pedal_instance_t *p) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
+ * OCTAVE ENGINE — polyphonic octave shifter
+ * Sub-octave: read delay buffer at 0.5x speed (halves frequency)
+ * Octave-up:  read delay buffer at 2.0x speed (doubles frequency)
+ * Linear interpolation for smooth pitch shifts.
+ * Params: [0] sub (sub-octave level), [1] dry, [2] up (octave-up level)
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void octave_engine_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    octave_engine_state_t *s = (octave_engine_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    memset(s->buffer, 0, sizeof(s->buffer));
+    s->write_pos    = 0;
+    s->sub_read_pos = 0.0f;
+    s->up_read_pos  = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.5f;  /* sub level */
+    p->params[1] = 0.7f;  /* dry level */
+    p->params[2] = 0.3f;  /* up level  */
+}
+
+static void octave_engine_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    (void)sr;
+    octave_engine_state_t *s = (octave_engine_state_t *)p->state;
+    if (!s) return;
+
+    float sub_level = p->params[0];
+    float dry_level = p->params[1];
+    float up_level  = p->params[2];
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Write current sample into the circular buffer */
+        s->buffer[s->write_pos] = dry;
+
+        /* --- Sub-octave: advance read pointer at 0.5x speed --- */
+        s->sub_read_pos += 0.5f;
+        if (s->sub_read_pos >= (float)OCTAVE_BUF_LEN)
+            s->sub_read_pos -= (float)OCTAVE_BUF_LEN;
+
+        int   sr0 = (int)s->sub_read_pos;
+        float srf = s->sub_read_pos - (float)sr0;
+        int   sr1 = (sr0 + 1) % OCTAVE_BUF_LEN;
+        float sub = s->buffer[sr0] * (1.0f - srf) + s->buffer[sr1] * srf;
+
+        /* --- Octave-up: advance read pointer at 2.0x speed --- */
+        s->up_read_pos += 2.0f;
+        if (s->up_read_pos >= (float)OCTAVE_BUF_LEN)
+            s->up_read_pos -= (float)OCTAVE_BUF_LEN;
+
+        int   ur0 = (int)s->up_read_pos;
+        float urf = s->up_read_pos - (float)ur0;
+        int   ur1 = (ur0 + 1) % OCTAVE_BUF_LEN;
+        float up  = s->buffer[ur0] * (1.0f - urf) + s->buffer[ur1] * urf;
+
+        s->write_pos = (s->write_pos + 1) % OCTAVE_BUF_LEN;
+
+        buf[i] = dry * dry_level + sub * sub_level + up * up_level;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * LOOP STATION — looper with record / play / overdub
+ * Mode param: 0-0.25=idle, 0.25-0.5=record, 0.5-0.75=play,
+ *             0.75-1.0=overdub
+ * Params: [0] mode, [1] level (loop playback level), [2] feedback
+ *         (overdub decay, mapped 0-1 → 0.9-1.0)
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void loop_station_init(fx_pedal_instance_t *p, float sr) {
+    loop_station_state_t *s = (loop_station_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    /* Pre-allocate the loop buffer on the heap */
+    int max_len = (int)(sr * LOOP_MAX_SECONDS) + 1;
+    if (max_len > LOOP_MAX_SAMPLES) max_len = LOOP_MAX_SAMPLES;
+
+    s->buffer     = (float *)calloc((size_t)max_len, sizeof(float));
+    s->max_length = max_len;
+    s->length     = 0;
+    s->position   = 0;
+    s->mode       = 0;
+    s->prev_mode  = 0;
+
+    p->state = s;
+    p->params[0] = 0.0f;   /* mode: idle */
+    p->params[1] = 0.8f;   /* level */
+    p->params[2] = 0.95f;  /* feedback (overdub decay) */
+}
+
+static void loop_station_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
+    (void)sr;
+    loop_station_state_t *s = (loop_station_state_t *)p->state;
+    if (!s || !s->buffer) return;
+
+    /* Decode mode param (0-1) → integer mode */
+    float mode_param = p->params[0];
+    int   mode;
+    if      (mode_param < 0.25f) mode = 0;  /* idle */
+    else if (mode_param < 0.50f) mode = 1;  /* record */
+    else if (mode_param < 0.75f) mode = 2;  /* play */
+    else                          mode = 3;  /* overdub */
+
+    float level    = p->params[1];
+    /* feedback: 0-1 param → 0.9-1.0 decay per loop iteration */
+    float feedback = 0.9f + p->params[2] * 0.1f;
+
+    /* Detect transition from record to play: lock loop length */
+    if (s->prev_mode == 1 && mode != 1) {
+        /* End of recording: lock the loop length */
+        if (s->length == 0) s->length = s->position;
+        s->position = 0;
+    }
+    s->prev_mode = mode;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        switch (mode) {
+            case 0: /* idle — pass through dry, don't touch loop buffer */
+                buf[i] = dry;
+                break;
+
+            case 1: /* recording — write to loop buffer, pass through dry */
+                if (s->position < s->max_length) {
+                    s->buffer[s->position] = dry;
+                    s->position++;
+                    s->length = s->position;  /* grow loop length while recording */
+                }
+                buf[i] = dry;
+                break;
+
+            case 2: /* playing — mix loop with dry */
+                if (s->length > 0) {
+                    int pos = s->position % s->length;
+                    float loop_out = s->buffer[pos] * level;
+                    s->position = (pos + 1) % s->length;
+                    buf[i] = dry + loop_out;
+                } else {
+                    buf[i] = dry;
+                }
+                break;
+
+            case 3: /* overdub — add input to existing loop, read + output */
+                if (s->length > 0) {
+                    int pos = s->position % s->length;
+                    float loop_out = s->buffer[pos];
+                    /* Write: existing content * feedback + new input */
+                    s->buffer[pos] = loop_out * feedback + dry;
+                    s->position = (pos + 1) % s->length;
+                    buf[i] = dry + loop_out * level;
+                } else {
+                    /* No loop recorded yet: fall back to pass-through */
+                    buf[i] = dry;
+                }
+                break;
+
+            default:
+                buf[i] = dry;
+                break;
+        }
+    }
+}
+
+static void loop_station_free(fx_pedal_instance_t *p) {
+    loop_station_state_t *s = (loop_station_state_t *)p->state;
+    if (s) {
+        free(s->buffer);
+        s->buffer = NULL;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
  * Pedal metadata
  * ══════════════════════════════════════════════════════════════════ */
 
@@ -1971,6 +2171,8 @@ static const char *jet_flanger_params[]    = { "Rate", "Depth", "Feedback", "Mix
 static const char *plate_verb_params[]     = { "Decay", "Damping", "Mix" };
 static const char *shimmer_verb_params[]   = { "Decay", "Shimmer", "Mix" };
 static const char *cloud_verb_params[]     = { "Decay", "Filter", "Mix" };
+static const char *octave_engine_params[]  = { "Sub", "Dry", "Up" };
+static const char *loop_station_params[]   = { "Mode", "Level", "Feedback" };
 
 const char *fx_pedal_get_type_name(fx_pedal_type_t type) {
     if (type < 0 || type >= FX_PEDAL_TYPE_COUNT) return "?";
@@ -2006,6 +2208,8 @@ int fx_pedal_get_param_count(fx_pedal_type_t type) {
         case FX_PEDAL_PLATE_VERB:      return 3;
         case FX_PEDAL_SHIMMER_VERB:    return 3;
         case FX_PEDAL_CLOUD_VERB:      return 3;
+        case FX_PEDAL_OCTAVE_ENGINE:   return 3;
+        case FX_PEDAL_LOOP_STATION:    return 3;
         default: return 3;
     }
 }
@@ -2092,6 +2296,12 @@ const char *fx_pedal_get_param_name(fx_pedal_type_t type, int param) {
         case FX_PEDAL_CLOUD_VERB:
             if (param < 3) return cloud_verb_params[param];
             break;
+        case FX_PEDAL_OCTAVE_ENGINE:
+            if (param < 3) return octave_engine_params[param];
+            break;
+        case FX_PEDAL_LOOP_STATION:
+            if (param < 3) return loop_station_params[param];
+            break;
         default:
             break;
     }
@@ -2143,6 +2353,8 @@ void fx_pedal_init_state(fx_pedal_instance_t *p, float sr) {
         case FX_PEDAL_PLATE_VERB:      plate_verb_init(p, sr);      break;
         case FX_PEDAL_SHIMMER_VERB:    shimmer_verb_init(p, sr);    break;
         case FX_PEDAL_CLOUD_VERB:      cloud_verb_init(p, sr);      break;
+        case FX_PEDAL_OCTAVE_ENGINE:   octave_engine_init(p, sr);   break;
+        case FX_PEDAL_LOOP_STATION:    loop_station_init(p, sr);    break;
         default:
             /* Unimplemented pedals: passthrough */
             break;
@@ -2161,8 +2373,9 @@ void fx_pedal_free_state(fx_pedal_instance_t *p) {
             case FX_PEDAL_CARBON_DELAY: carbon_delay_free(p); break;
             case FX_PEDAL_TAPE_MACHINE: tape_machine_free(p); break;
             case FX_PEDAL_PLATE_VERB:   plate_verb_free(p);   break;
-            case FX_PEDAL_SHIMMER_VERB: shimmer_verb_free(p); break;
-            case FX_PEDAL_CLOUD_VERB:   cloud_verb_free(p);   break;
+            case FX_PEDAL_SHIMMER_VERB: shimmer_verb_free(p);   break;
+            case FX_PEDAL_CLOUD_VERB:   cloud_verb_free(p);     break;
+            case FX_PEDAL_LOOP_STATION: loop_station_free(p);   break;
             default: break;
         }
         free(p->state);
@@ -2200,6 +2413,8 @@ void fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
         case FX_PEDAL_PLATE_VERB:      plate_verb_process(p, buf, n, sr);      break;
         case FX_PEDAL_SHIMMER_VERB:    shimmer_verb_process(p, buf, n, sr);    break;
         case FX_PEDAL_CLOUD_VERB:      cloud_verb_process(p, buf, n, sr);      break;
+        case FX_PEDAL_OCTAVE_ENGINE:   octave_engine_process(p, buf, n, sr);   break;
+        case FX_PEDAL_LOOP_STATION:    loop_station_process(p, buf, n, sr);    break;
         default:
             /* Unimplemented pedals: passthrough (no state, caught above) */
             break;

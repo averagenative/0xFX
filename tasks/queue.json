@@ -1252,7 +1252,7 @@
     "title": "Implement Octave Engine (polyphonic octave)",
     "domain": "engine",
     "phase": 8,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1273,7 +1273,7 @@
     "title": "Implement Loop Station (looper)",
     "domain": "engine",
     "phase": 8,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1947,7 +1947,7 @@
     "title": "Texture manager: load PNGs as OpenGL textures",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 15000,
