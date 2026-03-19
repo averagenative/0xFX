@@ -17,9 +17,41 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
 # Windows (cross-compile from Linux via MinGW)
-cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
+cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
 cmake --build build_win -j$(nproc)
 ```
+
+### Windows Test Deploy
+
+After building for Windows, copy binaries to desktop for testing:
+
+```bash
+DEST="/mnt/c/Users/Dan Michael/Desktop/0xFX-test"
+mkdir -p "$DEST"
+cp build_win/0xfx_gui.exe build_win/0xfx_standalone.exe "$DEST/"
+cp -r presets "$DEST/"
+# Run 0xfx_gui.exe from Windows — double-click or run from PowerShell
+```
+
+### Logging
+
+Uses `src/core/log.h` — industry-standard levels with timestamps:
+```c
+FX_DEBUG("detail");     // [2026-03-19 18:45:23.456] [DEBUG] [file.c:123] detail
+FX_INFO("started");     // [INFO ] green
+FX_WARN("fallback");    // [WARN ] yellow
+FX_ERROR("failed");     // [ERROR] red
+FX_FATAL("crash");      // [FATAL] red+bold
+```
+Initialize with `fx_log_init(NULL)` (stderr) or `fx_log_init("0xfx.log")` (file).
+
+### Crash Handling
+
+`fx_crash_init()` registers signal handlers for SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGBUS. On crash: logs signal via FX_FATAL, prints backtrace (Linux), re-raises for core dump.
+
+### GDB MCP Server
+
+C debugging MCP server available at `~/projects/mcp-gdb-glib/`. Can be used for breakpoint debugging of engine DSP and crash investigation.
 
 ## Architecture
 

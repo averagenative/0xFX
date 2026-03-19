@@ -14,6 +14,19 @@ if(ENABLE_ASAN)
     add_link_options(-fsanitize=address)
 endif()
 
+# ── Core library (logging + crash handler) ───────────────────
+add_library(fx_core STATIC
+    src/core/log.c
+    src/core/crash.c
+)
+target_include_directories(fx_core PUBLIC
+    ${CMAKE_SOURCE_DIR}/src/core
+)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(fx_core PRIVATE pthread)
+endif()
+set_target_properties(fx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # ── Engine library (no platform deps, pure C99) ──────────────
 add_library(fx_engine STATIC
     src/engine/internal/engine.c
@@ -38,9 +51,17 @@ target_link_libraries(fx_engine PRIVATE m)
 set_target_properties(fx_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ── ImGui library (C++) ───────────────────────────────────────
-find_package(SDL2 QUIET)
+# SDL2 detection: toolchain may set SDL2_FOUND+SDL2_INCLUDE_DIRS, else try system
+if(NOT SDL2_FOUND)
+    find_package(SDL2 QUIET)
+endif()
+if(NOT SDL2_FOUND AND EXISTS "/usr/include/SDL2/SDL.h")
+    set(SDL2_FOUND TRUE)
+    set(SDL2_INCLUDE_DIRS "/usr/include/SDL2")
+    set(SDL2_LIBRARIES SDL2)
+endif()
 
-if(SDL2_FOUND OR EXISTS "/usr/include/SDL2/SDL.h")
+if(SDL2_FOUND)
     add_library(imgui STATIC
         deps/imgui/imgui.cpp
         deps/imgui/imgui_draw.cpp
@@ -52,15 +73,10 @@ if(SDL2_FOUND OR EXISTS "/usr/include/SDL2/SDL.h")
     target_include_directories(imgui PUBLIC
         ${CMAKE_SOURCE_DIR}/deps/imgui
         ${CMAKE_SOURCE_DIR}/deps/imgui/backends
+        ${SDL2_INCLUDE_DIRS}
     )
-    # ImGui's built-in GL3 loader (imgui_impl_opengl3_loader.h) provides all GL declarations
-    if(SDL2_FOUND)
-        target_include_directories(imgui PUBLIC ${SDL2_INCLUDE_DIRS})
-    else()
-        target_include_directories(imgui PUBLIC /usr/include/SDL2)
-    endif()
     set(HAS_GUI TRUE)
-    message(STATUS "GUI enabled (SDL2 + ImGui)")
+    message(STATUS "GUI enabled (SDL2 from: ${SDL2_INCLUDE_DIRS})")
 else()
     set(HAS_GUI FALSE)
     message(STATUS "GUI disabled (SDL2 not found)")
@@ -75,7 +91,7 @@ target_include_directories(0xfx_standalone PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/deps
 )
-target_link_libraries(0xfx_standalone PRIVATE fx_engine m)
+target_link_libraries(0xfx_standalone PRIVATE fx_engine fx_core m)
 
 # Platform-specific audio deps
 if(UNIX AND NOT APPLE)
@@ -97,17 +113,22 @@ if(HAS_GUI)
         ${CMAKE_SOURCE_DIR}/deps/imgui
         ${CMAKE_SOURCE_DIR}/deps/imgui/backends
     )
-    target_link_libraries(0xfx_gui PRIVATE fx_engine imgui m)
+    target_link_libraries(0xfx_gui PRIVATE fx_engine fx_core imgui m)
     if(SDL2_FOUND)
         target_link_libraries(0xfx_gui PRIVATE ${SDL2_LIBRARIES})
     else()
         target_link_libraries(0xfx_gui PRIVATE SDL2)
     endif()
-    target_link_libraries(0xfx_gui PRIVATE GL)
-    if(UNIX AND NOT APPLE)
-        target_link_libraries(0xfx_gui PRIVATE pthread dl)
-    elseif(WIN32)
-        target_link_libraries(0xfx_gui PRIVATE opengl32 ole32 winmm)
+    if(WIN32)
+        # SDL2main provides WinMain → SDL_main wrapper
+        set(MINGW_SDL2_DIR "${CMAKE_SOURCE_DIR}/deps/SDL2-2.30.12/x86_64-w64-mingw32")
+        target_link_libraries(0xfx_gui PRIVATE
+            -static mingw32
+            "${MINGW_SDL2_DIR}/lib/libSDL2main.a"
+            ${SDL2_LIBRARIES}
+            opengl32 ole32 winmm)
+    elseif(UNIX AND NOT APPLE)
+        target_link_libraries(0xfx_gui PRIVATE GL pthread dl)
     endif()
 endif()
 

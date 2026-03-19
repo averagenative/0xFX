@@ -14,6 +14,8 @@
 extern "C" {
 #include "../engine/fx_engine.h"
 #include "../audio/audio_device.h"
+#include "../core/log.h"
+#include "../core/crash.h"
 #include "knobs.h"
 }
 
@@ -68,9 +70,14 @@ static void setup_theme(void) {
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
+    fx_log_init(NULL);
+    fx_crash_init();
+    FX_INFO("GUI started");
+
     /* SDL init */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        fprintf(stderr, "SDL_Init error: %s\n", SDL_GetError());
+        FX_ERROR("SDL_Init error: %s", SDL_GetError());
+        fx_log_shutdown();
         return 1;
     }
 
@@ -113,6 +120,7 @@ int main(int argc, char *argv[]) {
     /* Audio + engine init */
     fx_audio_init();
     fx_engine_t *engine = fx_engine_create(44100.0f);
+    FX_INFO("Engine created");
 
     /* Audio device / settings state */
     int num_devices = fx_audio_get_device_count();
@@ -128,6 +136,7 @@ int main(int argc, char *argv[]) {
     /* Select first audio device if available */
     if (num_devices > 0) {
         s_selected_device = 0;
+        FX_INFO("Audio device selected: %s", fx_audio_get_device_name(0));
         fx_audio_set_device(engine, 0);
     }
 
@@ -641,5 +650,6 @@ int main(int argc, char *argv[]) {
     SDL_DestroyWindow(window);
     SDL_Quit();
 
+    fx_log_shutdown();
     return 0;
 }

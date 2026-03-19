@@ -16,6 +16,8 @@
   .card img { max-width: 200px; max-height: 200px; border-radius: 4px; }
   .card.wide { width: 460px; }
   .card.wide img { max-width: 440px; max-height: 300px; }
+  .card.small { width: 140px; }
+  .card.small img { max-width: 120px; max-height: 120px; }
   .card p { margin-top: 6px; font-size: 12px; color: #B3A894; }
   .missing { color: #664; font-style: italic; padding: 40px 10px; }
   .refresh { color: #884; font-size: 12px; margin-top: 4px; }
@@ -37,6 +39,12 @@
 <h2>Cabinets</h2>
 <div class="grid" id="cabs"></div>
 
+<h2>Cables</h2>
+<div class="grid" id="cables"></div>
+
+<h2>LED Indicators</h2>
+<div class="grid" id="leds"></div>
+
 <h2>Theme Textures</h2>
 <div class="grid" id="textures"></div>
 
@@ -50,10 +58,15 @@ const assets = {
   pedals: {
     dir: "../resources/pedals",
     files: [
-      "jade_drive","gold_drive","blues_grit","rodent","mammoth_fuzz","round_fuzz",
-      "echo_delay","carbon_delay","tape_machine","drip_verb","hall_verb",
-      "liquid_chorus","phase_sweep","squeeze_box","howl_wah","noise_gate",
-      "jade_drive_test"
+      "jade_drive","gold_drive","blues_grit","rodent","orange_dist","metal_zone","amp_box",
+      "mammoth_fuzz","round_fuzz","wraith_fuzz","chaos_fuzz",
+      "echo_delay","carbon_delay","tape_machine","memory_echo",
+      "drip_verb","plate_verb","hall_verb","shimmer_verb","cloud_verb",
+      "liquid_chorus","phase_sweep","jet_flanger","pulse_trem","drift_vibrato",
+      "howl_wah","quack_filter",
+      "squeeze_box","glass_comp","punch_comp",
+      "tone_sculptor",
+      "noise_gate","grit_crush","ring_tone","warm_tape"
     ],
   },
   amps: {
@@ -65,6 +78,15 @@ const assets = {
     dir: "../resources/cabs",
     files: ["1x12_open","2x12_closed","4x12_straight","4x12_slant","direct_flat"],
   },
+  cables: {
+    dir: "../resources/cables",
+    files: ["patch_cable_short","patch_cable_medium","instrument_cable","speaker_cable","cable_bundle"],
+  },
+  leds: {
+    dir: "../resources/leds",
+    files: ["led_red_on","led_red_off","led_green_on","led_green_off","led_amber_on","led_amber_off","led_blue_on"],
+    small: true,
+  },
   textures: {
     dir: "../resources/theme",
     files: ["pedalboard_surface","metal_panel","tolex_surface","dark_wood"],
@@ -75,7 +97,7 @@ for (const [section, cfg] of Object.entries(assets)) {
   const container = document.getElementById(section);
   for (const name of cfg.files) {
     const card = document.createElement("div");
-    card.className = "card" + (cfg.wide ? " wide" : "");
+    card.className = "card" + (cfg.wide ? " wide" : "") + (cfg.small ? " small" : "");
     const img = document.createElement("img");
     img.src = `${cfg.dir}/${name}.png`;
     img.alt = name;

@@ -137,6 +137,101 @@ PEDAL_DEFS = {
         "knobs": 4,
         "desc": "noise gate utility stomp pedal",
     },
+    "orange_dist": {
+        "color": "burnt orange with black lettering",
+        "knobs": 3,
+        "desc": "bright hard-clipping distortion stomp pedal",
+    },
+    "metal_zone": {
+        "color": "gunmetal gray with black accents",
+        "knobs": 5,
+        "desc": "high-gain distortion stomp pedal with parametric mid EQ",
+    },
+    "wraith_fuzz": {
+        "color": "dark burgundy wine red",
+        "knobs": 3,
+        "desc": "aggressive germanium fuzz stomp pedal",
+    },
+    "chaos_fuzz": {
+        "color": "splattered white paint on raw aluminum",
+        "knobs": 4,
+        "desc": "chaotic oscillating fuzz stomp pedal, industrial vibe",
+    },
+    "memory_echo": {
+        "color": "cream yellow with brown accents",
+        "knobs": 5,
+        "desc": "modulated analog delay stomp pedal, vintage aesthetic",
+    },
+    "plate_verb": {
+        "color": "dark slate blue with silver trim",
+        "knobs": 3,
+        "desc": "plate reverb stomp pedal, studio-style",
+    },
+    "shimmer_verb": {
+        "color": "deep indigo with sparkle finish",
+        "knobs": 4,
+        "desc": "shimmer reverb stomp pedal, ethereal/ambient",
+    },
+    "cloud_verb": {
+        "color": "faded lavender gray",
+        "knobs": 4,
+        "desc": "ambient freeze reverb stomp pedal, dreamlike aesthetic",
+    },
+    "jet_flanger": {
+        "color": "dark purple metallic",
+        "knobs": 4,
+        "desc": "flanger stomp pedal with jet-sweep character",
+    },
+    "pulse_trem": {
+        "color": "seafoam green, vintage style",
+        "knobs": 3,
+        "desc": "tremolo stomp pedal with optical/bias modes",
+    },
+    "drift_vibrato": {
+        "color": "dusty rose pink",
+        "knobs": 2,
+        "desc": "true pitch vibrato stomp pedal, compact",
+    },
+    "quack_filter": {
+        "color": "mustard yellow with brown accents",
+        "knobs": 4,
+        "desc": "envelope filter / auto-wah stomp pedal, funky aesthetic",
+    },
+    "tone_sculptor": {
+        "color": "matte black with white slider markings",
+        "knobs": 0,
+        "desc": "graphic EQ stomp pedal with 7 vertical slider controls instead of knobs",
+    },
+    "grit_crush": {
+        "color": "neon green on matte black",
+        "knobs": 2,
+        "desc": "bitcrusher / lo-fi stomp pedal, digital destruction aesthetic",
+    },
+    "ring_tone": {
+        "color": "copper metallic with black details",
+        "knobs": 3,
+        "desc": "ring modulator stomp pedal, sci-fi/experimental",
+    },
+    "warm_tape": {
+        "color": "warm brown leather-wrapped",
+        "knobs": 3,
+        "desc": "tape saturation stomp pedal, vintage warmth aesthetic",
+    },
+    "glass_comp": {
+        "color": "translucent smoke gray acrylic",
+        "knobs": 4,
+        "desc": "transparent compressor stomp pedal with blend control",
+    },
+    "punch_comp": {
+        "color": "brushed steel with black faceplate",
+        "knobs": 4,
+        "desc": "fast-attack studio compressor stomp pedal, rack-unit aesthetic",
+    },
+    "amp_box": {
+        "color": "oxblood red with cream chicken-head knobs",
+        "knobs": 5,
+        "desc": "amp-in-a-box high-gain distortion stomp pedal",
+    },
 }
 
 def pedal_prompt(name):
@@ -470,6 +565,75 @@ def cmd_texture(name):
         generate_image(texture_prompt(n), out)
         print()
 
+def cmd_cable(name):
+    """Generate cable asset(s)."""
+    if name == "all":
+        names = list(CABLE_DEFS.keys())
+    elif name in CABLE_DEFS:
+        names = [name]
+    else:
+        print(f"Unknown cable: {name}")
+        print(f"Available: {', '.join(CABLE_DEFS.keys())}")
+        return
+    outdir = ROOT / "resources" / "cables"
+    outdir.mkdir(parents=True, exist_ok=True)
+    print(f"═══ Generating {len(names)} Cable(s) ═══\n")
+    for n in names:
+        out = outdir / f"{n}.png"
+        generate_image(cable_prompt(n), out)
+        print()
+
+def cmd_led(name):
+    """Generate LED glow asset(s)."""
+    if name == "all":
+        names = list(LED_DEFS.keys())
+    elif name in LED_DEFS:
+        names = [name]
+    else:
+        print(f"Unknown LED: {name}")
+        print(f"Available: {', '.join(LED_DEFS.keys())}")
+        return
+    outdir = ROOT / "resources" / "leds"
+    outdir.mkdir(parents=True, exist_ok=True)
+    print(f"═══ Generating {len(names)} LED(s) ═══\n")
+    for n in names:
+        out = outdir / f"{n}.png"
+        generate_image(led_prompt(n), out, size="512x512")
+        print()
+
+def cmd_batch():
+    """Generate ALL missing assets."""
+    print("═══ BATCH: Generating all missing assets ═══\n")
+    # Pedals
+    for n in PEDAL_DEFS:
+        out = ROOT / "resources" / "pedals" / f"{n}.png"
+        if not out.exists():
+            generate_image(pedal_prompt(n), out)
+            print()
+    # Cabs
+    for n in CAB_DEFS:
+        out = ROOT / "resources" / "cabs" / f"{n}.png"
+        if not out.exists():
+            generate_image(cab_prompt(n), out)
+            print()
+    # Cables
+    outdir = ROOT / "resources" / "cables"
+    outdir.mkdir(parents=True, exist_ok=True)
+    for n in CABLE_DEFS:
+        out = outdir / f"{n}.png"
+        if not out.exists():
+            generate_image(cable_prompt(n), out)
+            print()
+    # LEDs
+    outdir = ROOT / "resources" / "leds"
+    outdir.mkdir(parents=True, exist_ok=True)
+    for n in LED_DEFS:
+        out = outdir / f"{n}.png"
+        if not out.exists():
+            generate_image(led_prompt(n), out, size="512x512")
+            print()
+    print("═══ Batch complete ═══")
+
 # ── Main ────────────────────────────────────────────────────────
 
 def main():
@@ -496,6 +660,14 @@ def main():
     elif cmd == "texture":
         if not arg: print("Usage: texture <name|all>"); return
         cmd_texture(arg)
+    elif cmd == "cable":
+        if not arg: print("Usage: cable <name|all>"); return
+        cmd_cable(arg)
+    elif cmd == "led":
+        if not arg: print("Usage: led <name|all>"); return
+        cmd_led(arg)
+    elif cmd == "batch":
+        cmd_batch()
     else:
         print(f"Unknown command: {cmd}")
         print(__doc__)

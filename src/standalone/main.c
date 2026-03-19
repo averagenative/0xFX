@@ -6,6 +6,8 @@
  */
 #include "../engine/fx_engine.h"
 #include "../audio/audio_device.h"
+#include "log.h"
+#include "crash.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -28,34 +30,44 @@ static void signal_handler(int sig) {
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
+    fx_log_init(NULL);
+    fx_crash_init();
+
     printf("╔══════════════════════════════════════╗\n");
     printf("║  0xFX — Guitar Amp Sim & Pedalboard  ║\n");
     printf("║  Phase 1: Audio Passthrough           ║\n");
     printf("╚══════════════════════════════════════╝\n\n");
 
+    FX_INFO("0xFX standalone starting up");
+
     signal(SIGINT, signal_handler);
 
     /* Initialize audio device manager */
     if (!fx_audio_init()) {
-        fprintf(stderr, "Failed to initialize audio system.\n");
+        FX_ERROR("Failed to initialize audio system");
+        fx_log_shutdown();
         return 1;
     }
 
     int num_devices = fx_audio_get_device_count();
     if (num_devices == 0) {
-        fprintf(stderr, "No audio input devices found.\n");
-        fprintf(stderr, "Connect an audio interface (iRig, Scarlett, etc.) and try again.\n");
+        FX_ERROR("No audio input devices found. Connect an audio interface (iRig, Scarlett, etc.) and try again.");
         fx_audio_shutdown();
+        fx_log_shutdown();
         return 1;
     }
 
     /* Create engine */
     fx_engine_t *engine = fx_engine_create(44100.0f);
     if (!engine) {
-        fprintf(stderr, "Failed to create engine.\n");
+        FX_ERROR("Failed to create engine");
         fx_audio_shutdown();
+        fx_log_shutdown();
         return 1;
     }
+
+    FX_INFO("Engine created. Amp: %s",
+            fx_amp_get_type_name(fx_amp_get_model(engine, FX_CHAIN_DEFAULT)));
 
     printf("\nEngine created. Amp: %s\n",
            fx_amp_get_type_name(fx_amp_get_model(engine, FX_CHAIN_DEFAULT)));
@@ -65,18 +77,22 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         device_index = atoi(argv[1]);
         if (device_index < 0 || device_index >= num_devices) {
-            fprintf(stderr, "Invalid device index %d. Using 0.\n", device_index);
+            FX_WARN("Invalid device index %d, using 0", device_index);
             device_index = 0;
         }
     }
+
+    FX_INFO("Selecting audio device [%d]: %s",
+            device_index, fx_audio_get_device_name(device_index));
 
     printf("Selecting device [%d]: %s\n",
            device_index, fx_audio_get_device_name(device_index));
 
     if (!fx_audio_set_device(engine, device_index)) {
-        fprintf(stderr, "Failed to open audio device.\n");
+        FX_ERROR("Failed to open audio device");
         fx_engine_destroy(engine);
         fx_audio_shutdown();
+        fx_log_shutdown();
         return 1;
     }
 
@@ -99,8 +115,10 @@ int main(int argc, char *argv[]) {
     }
 
     printf("\n\nShutting down...\n");
+    FX_INFO("Shutting down");
     fx_audio_shutdown();
     fx_engine_destroy(engine);
     printf("Done.\n");
+    fx_log_shutdown();
     return 0;
 }
