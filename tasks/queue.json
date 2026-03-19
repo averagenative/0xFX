@@ -915,5 +915,190 @@
     "files": [
       "docs/competitive_analysis.md"
     ]
+  },
+  {
+    "id": "TASK-047",
+    "priority": "HIGH",
+    "title": "Implement spring reverb (Drip Verb)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Allpass diffusion + comb filter with drip transient",
+      "Dwell/mix/tone params",
+      "Test: reverb tail after impulse"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-050",
+    "priority": "HIGH",
+    "title": "Implement analog delay (Carbon Delay)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "BBD-style: repeats darken progressively",
+      "Optional modulation on repeats",
+      "Time/feedback/tone/mod/mix params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-051",
+    "priority": "HIGH",
+    "title": "Implement tape echo (Tape Machine)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Wow/flutter LFO on delay time",
+      "Tape degradation (saturation + rolloff per repeat)",
+      "Time/feedback/wow/flutter/age/mix params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-053",
+    "priority": "HIGH",
+    "title": "Implement expression wah (Howl Wah)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Bandpass sweep controlled by expression value 0-1",
+      "Frequency range, Q, volume params",
+      "Test: sweep produces audible filter effect"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-054",
+    "priority": "HIGH",
+    "title": "Implement auto-wah (Quack Filter)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Envelope follower drives bandpass cutoff",
+      "Sensitivity/decay/Q/mode params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-057",
+    "priority": "MEDIUM",
+    "title": "Implement Big Muff fuzz (Mammoth Fuzz)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "4-stage clipping, scooped mids",
+      "Sustain/tone/volume params"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-058",
+    "priority": "MEDIUM",
+    "title": "Implement germanium fuzz (Round Fuzz)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Smooth fuzz, cleans up with guitar volume",
+      "Fuzz/volume + ge/si toggle"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-060",
+    "priority": "MEDIUM",
+    "title": "Port remaining modulation effects",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "Liquid Chorus, Phase Sweep, Jet Flanger, Pulse Trem, Drift Vibrato all process audio",
+      "Each has correct param names"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-055",
+    "priority": "MEDIUM",
+    "title": "Implement graphic EQ (Tone Sculptor)",
+    "domain": "engine",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-017"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "7-band graphic EQ",
+      "Per-band gain slider",
+      "Output level param"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
   }
 ]
