@@ -125,28 +125,39 @@ JSON-based open format for presets, amp profiles, cab IR metadata, and user-desi
 
 ## Task Coordination
 
-File-based task tracking in `tasks/`. Tasks are distributed by domain, not by openspec phase. This is the **authoritative** task tracker — `openspec/changes/fx-engine/tasks.md` is the original roadmap/proposal, `tasks/*.md` is the working state.
+Task tracking lives in `tasks/`. Two formats: `queue.json` (machine-readable for agents) and `*.md` (human-readable details).
 
 ```
 tasks/
-├── engine.md      — Engine API, DSP, amp models, effects, cab IR (Layers 1-2)
-├── frontend.md    — GUI, ImGui, knobs, pedalboard, visual assets (Layer 3)
-├── infra.md       — Build system, CI, packaging, plugin wrappers (Layer 4 + cross-cutting)
-├── testing.md     — Test infrastructure, test cases, quality gates
+├── queue.json     — Source of truth: structured task queue with claims + acceptance criteria
+├── engine.md      — Engine task details (Layers 1-2)
+├── frontend.md    — GUI task details (Layer 3)
+├── infra.md       — Build/CI/packaging task details (Layer 4 + cross-cutting)
+├── testing.md     — Test task details
 ├── distribute.sh  — Status report script
 └── README.md      — Workflow docs
 ```
 
-### Task Format
+### Agent Task Pickup (queue.json)
 
-```markdown
-### TASK-NNN: Short description
-- **Status**: queued | in_progress | blocked | done
-- **Phase**: 1-11
-- **Priority**: P0 | P1 | P2 | P3
-- **Depends**: TASK-NNN
-- **Notes**: Details
+```json
+{
+  "id": "TASK-034",
+  "priority": "HIGH",
+  "title": "Overlap-add FFT convolution",
+  "domain": "engine",
+  "status": "queued",
+  "claimedBy": null,
+  "depends": ["TASK-002"],
+  "estimatedTokens": 30000,
+  "acceptanceCriteria": ["Load .wav IR via dr_wav", "FFT via KissFFT", "Test: convolve impulse with known IR"],
+  "files": ["src/engine/internal/cab_ir.c"]
+}
 ```
+
+**Priority**: CRITICAL → HIGH → MEDIUM → LOW
+**Status flow**: `queued → claimed → in_progress → done` (or `→ blocked`)
+**Claim**: Set `status: "claimed"` + `claimedBy: "agent-name"` before coding. Prevents duplicate work.
 
 ### Status Check
 
@@ -154,31 +165,32 @@ tasks/
 ./tasks/distribute.sh              # Full report
 ./tasks/distribute.sh queued       # What's available
 ./tasks/distribute.sh in_progress  # What's active
-./tasks/distribute.sh done         # What's finished
+cat tasks/queue.json | jq '.[] | select(.status=="queued") | {id, priority, title}'
 ```
 
 ## Autonomous Worker Pattern
 
 When working through the roadmap autonomously, follow this cycle:
 
-1. **Check status first**: Run `./tasks/distribute.sh in_progress` before picking a task. If another agent is working on something, don't duplicate that work. Read the task files to see what's `in_progress` vs `queued`.
-2. **Pick** next queued task (lowest phase, highest priority, dependencies met)
-3. **Set** status to `in_progress` in the task file — this is a lock. Other agents must see it.
-4. **Implement** the code
-5. **Write tests** (tests are non-negotiable — a task without tests is not done)
-6. **Run tests** — all must pass before proceeding
-7. **Set** status to `done`
-8. **Move** to next task
+1. **Read** `tasks/queue.json` — find highest-priority `queued` task with all dependencies `done`
+2. **Claim** — set `status: "claimed"` + `claimedBy: "your-name"` in queue.json. This is a lock.
+3. **Start** — set `status: "in_progress"`. Read `acceptanceCriteria` — these define done.
+4. **Implement** the code (only touch files listed in `files` field unless necessary)
+5. **Write tests** that verify each acceptance criterion. Tests are non-negotiable.
+6. **Run tests** — `cmake --build build -j$(nproc) && ./build/fx_api_test`. All must pass.
+7. **Done** — set `status: "done"` in queue.json + corresponding .md file
+8. **Repeat** from step 1
 
 ### Parallel Agent Coordination
 
-Multiple agents may work simultaneously on different tasks. To avoid conflicts:
+Multiple agents may work simultaneously. The claim system in queue.json prevents collisions:
 
-- **Always read task files before starting** — check for `in_progress` tasks to avoid collisions.
-- **Claim by writing** — set status to `in_progress` before writing code. If two agents both try to claim the same task, the file system is the arbiter.
-- **Domain separation** — prefer picking tasks from different files (engine.md vs frontend.md vs infra.md) when running in parallel.
-- **Build before commit** — always `cmake --build build` and run tests after your changes. If another agent's changes broke the build, investigate before overwriting.
-- **Don't modify files another agent owns** — if TASK-018 (engine.md) is `in_progress`, don't edit `src/engine/internal/pedals.c` unless your task also needs it. Coordinate via the task file.
+- **Always read queue.json before starting** — check for `claimed`/`in_progress` tasks.
+- **Claim by writing queue.json** — set `claimedBy` before touching source files. First writer wins.
+- **Domain separation** — prefer picking tasks from different domains (engine vs frontend vs infra).
+- **Check `files` field** — don't modify files that belong to another agent's claimed task.
+- **Build before commit** — if another agent's changes broke the build, investigate before overwriting.
+- **Stale claims** — a `claimed` task with no progress after 10 minutes can be reclaimed by another agent.
 
 ### Quality Gates (Per-Commit)
 
