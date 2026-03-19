@@ -692,7 +692,7 @@
     "title": "Synthetic IR generation",
     "domain": "engine",
     "phase": 4,
-    "status": "claimed",
+    "status": "done",
     "claimedBy": "opus-synth-ir",
     "depends": [
       "TASK-034"
@@ -715,8 +715,8 @@
     "title": "Generate 5 bundled synthetic IRs",
     "domain": "engine",
     "phase": 4,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "opus-synth-ir",
     "depends": [
       "TASK-036"
     ],
