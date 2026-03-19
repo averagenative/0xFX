@@ -305,7 +305,7 @@ def cab_prompt(name):
     return (
         f"{CAB_DEFS[name]}, road wear on corners, scuffed edges, "
         f"slightly dusty grille cloth, recessed handles with wear marks, "
-        f"3/4 angle view showing front and side, {STYLE_LOCK}"
+        f"straight-on front view, centered, symmetrical, {STYLE_LOCK}"
     )
 
 # ── Texture prompts ─────────────────────────────────────────────
@@ -598,7 +598,7 @@ def cmd_led(name):
     print(f"═══ Generating {len(names)} LED(s) ═══\n")
     for n in names:
         out = outdir / f"{n}.png"
-        generate_image(led_prompt(n), out, size="512x512")
+        generate_image(led_prompt(n), out, size="1024x1024")
         print()
 
 def cmd_batch():
@@ -630,7 +630,7 @@ def cmd_batch():
     for n in LED_DEFS:
         out = outdir / f"{n}.png"
         if not out.exists():
-            generate_image(led_prompt(n), out, size="512x512")
+            generate_image(led_prompt(n), out, size="1024x1024")
             print()
     print("═══ Batch complete ═══")
 

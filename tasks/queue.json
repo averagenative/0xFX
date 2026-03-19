@@ -1367,5 +1367,84 @@
     "files": [
       "CMakeLists.txt"
     ]
+  },
+  {
+    "id": "TASK-200",
+    "priority": "HIGH",
+    "title": "Launch muted + auto-load default preset + output device selector",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "App starts with no audio device open (muted)",
+      "Auto-loads clean_sparkle.0xfx preset on startup",
+      "Output device dropdown in settings",
+      "User must click to enable audio"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-201",
+    "priority": "MEDIUM",
+    "title": "Tooltips on knobs and features",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Hover over knob shows tooltip with param description",
+      "Hover over pedal shows what it does",
+      "Hover over amp model shows description"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-202",
+    "priority": "MEDIUM",
+    "title": "Keyboard shortcuts",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Ctrl+S save preset, Ctrl+O load preset",
+      "Ctrl+Z undo (if applicable)",
+      "Space = toggle audio mute",
+      "Documented in help/about"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-203",
+    "priority": "LOW",
+    "title": "MIDI device enumeration + settings panel",
+    "domain": "frontend",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 30000,
+    "acceptanceCriteria": [
+      "List MIDI input devices",
+      "MIDI learn mode for knobs",
+      "CC mapping"
+    ],
+    "files": [
+      "src/audio/midi.c",
+      "src/gui/gui_main.cpp"
+    ]
   }
 ]

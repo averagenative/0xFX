@@ -123,21 +123,31 @@ int main(int argc, char *argv[]) {
     FX_INFO("Engine created");
 
     /* Audio device / settings state */
-    int num_devices = fx_audio_get_device_count();
-    static int  s_selected_device  = -1;
-    static int  s_selected_buf_idx = 2; /* default: 256 frames */
-    static int  s_selected_sr_idx  = 0; /* default: 44100 Hz  */
+    int num_input_devices = fx_audio_get_device_count();
+    int num_output_devices = fx_audio_get_output_count();
+    static int  s_selected_input   = -1;   /* -1 = no input selected (muted) */
+    static int  s_selected_output  = -1;   /* -1 = system default output */
+    static int  s_selected_buf_idx = 2;    /* default: 256 frames */
+    static int  s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
+    static bool s_audio_active     = false;
 
     static const int   buf_sizes[]  = { 64, 128, 256, 512, 1024 };
     static const char *buf_labels[] = { "64", "128", "256", "512", "1024" };
     static const int   sr_values[]  = { 44100, 48000 };
     static const char *sr_labels[]  = { "44100 Hz", "48000 Hz" };
 
-    /* Select first audio device if available */
-    if (num_devices > 0) {
-        s_selected_device = 0;
-        FX_INFO("Audio device selected: %s", fx_audio_get_device_name(0));
-        fx_audio_set_device(engine, 0);
+    /* Launch MUTED — don't auto-start audio. User picks devices. */
+    FX_INFO("Launched muted. Select input+output devices to start audio.");
+
+    /* Auto-load default preset for sensible starting tone */
+    {
+        bool loaded = fx_preset_load(engine, "presets/clean_sparkle.0xfx");
+        if (!loaded) loaded = fx_preset_load(engine, "../presets/clean_sparkle.0xfx");
+        if (loaded) {
+            FX_INFO("Default preset loaded: Clean Sparkle");
+        } else {
+            FX_WARN("Could not load default preset, using engine defaults");
+        }
     }
 
     /* Pre-pedal ID registry — tracks IDs returned by fx_chain_add_pedal */
@@ -271,60 +281,98 @@ int main(int argc, char *argv[]) {
                 fx_amp_set_model(engine, FX_CHAIN_DEFAULT, (fx_amp_type_t)current_amp);
             }
 
-            ImGui::SameLine(650);
+            ImGui::SameLine(620);
 
-            /* Audio device combo */
-            if (num_devices > 0) {
-                /* Build a lambda-style getter for ImGui::Combo */
-                struct DeviceGetter {
-                    static bool get(void *, int idx, const char **out) {
-                        const char *n = fx_audio_get_device_name(idx);
-                        if (!n) return false;
-                        *out = n;
-                        return true;
-                    }
-                };
-                ImGui::SetNextItemWidth(220);
-                if (ImGui::Combo("Device", &s_selected_device,
-                                 DeviceGetter::get, nullptr, num_devices)) {
-                    fx_audio_set_device(engine, s_selected_device);
-                }
-                ImGui::SameLine();
-                /* Show current buffer size and sample rate as small info text */
-                ImGui::TextDisabled("%s / %s",
-                    buf_labels[s_selected_buf_idx],
-                    sr_labels[s_selected_sr_idx]);
-                ImGui::SameLine();
-                if (ImGui::SmallButton("Settings...")) {
-                    ImGui::OpenPopup("audio_settings_popup");
-                }
+            /* Audio status indicator */
+            if (s_audio_active) {
+                ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "LIVE");
             } else {
-                ImGui::TextDisabled("No audio device");
+                ImGui::TextColored(ImVec4(0.6f, 0.3f, 0.1f, 1.0f), "MUTED");
+            }
+            ImGui::SameLine();
+
+            if (ImGui::SmallButton("Audio...")) {
+                ImGui::OpenPopup("audio_settings_popup");
             }
 
-            /* Audio settings popup */
+            /* Audio settings popup — input + output device selection */
             if (ImGui::BeginPopup("audio_settings_popup")) {
                 ImGui::Text("Audio Settings");
                 ImGui::Separator();
 
-                /* Buffer size selector */
-                ImGui::SetNextItemWidth(120);
-                if (ImGui::Combo("Buffer Size", &s_selected_buf_idx,
-                                 buf_labels, 5)) {
-                    fx_audio_set_buffer_size(engine, buf_sizes[s_selected_buf_idx]);
-                    /* Re-open device to apply */
-                    if (s_selected_device >= 0)
-                        fx_audio_set_device(engine, s_selected_device);
+                /* Input device (guitar interface) */
+                ImGui::TextDisabled("Input Device (Guitar):");
+                struct InGetter {
+                    static bool get(void *, int idx, const char **out) {
+                        const char *n = fx_audio_get_device_name(idx);
+                        if (!n) return false; *out = n; return true;
+                    }
+                };
+                ImGui::SetNextItemWidth(300);
+                if (ImGui::Combo("##input", &s_selected_input,
+                                 InGetter::get, nullptr, num_input_devices)) {
+                    /* Don't auto-start — user clicks Start */
                 }
 
-                /* Sample rate selector */
+                ImGui::Spacing();
+
+                /* Output device (speakers/headphones) */
+                ImGui::TextDisabled("Output Device (Speakers/Headphones):");
+                struct OutGetter {
+                    static bool get(void *, int idx, const char **out) {
+                        const char *n = fx_audio_get_output_name(idx);
+                        if (!n) return false; *out = n; return true;
+                    }
+                };
+                ImGui::SetNextItemWidth(300);
+                if (ImGui::Combo("##output", &s_selected_output,
+                                 OutGetter::get, nullptr, num_output_devices)) {
+                    fx_audio_set_output(s_selected_output);
+                }
+
+                ImGui::Spacing();
+
+                /* Buffer size + sample rate */
                 ImGui::SetNextItemWidth(120);
-                if (ImGui::Combo("Sample Rate", &s_selected_sr_idx,
-                                 sr_labels, 2)) {
+                if (ImGui::Combo("Buffer", &s_selected_buf_idx, buf_labels, 5)) {
+                    fx_audio_set_buffer_size(engine, buf_sizes[s_selected_buf_idx]);
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(120);
+                if (ImGui::Combo("Rate", &s_selected_sr_idx, sr_labels, 2)) {
                     fx_audio_set_sample_rate(engine, (float)sr_values[s_selected_sr_idx]);
-                    /* Re-open device to apply */
-                    if (s_selected_device >= 0)
-                        fx_audio_set_device(engine, s_selected_device);
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+
+                /* Start / Stop audio button */
+                if (!s_audio_active) {
+                    if (s_selected_input >= 0) {
+                        if (ImGui::Button("Start Audio", ImVec2(200, 30))) {
+                            if (s_selected_output >= 0)
+                                fx_audio_set_output(s_selected_output);
+                            if (fx_audio_set_device(engine, s_selected_input)) {
+                                s_audio_active = true;
+                                FX_INFO("Audio started: in=%s out=%s",
+                                    fx_audio_get_device_name(s_selected_input),
+                                    s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
+                            } else {
+                                FX_ERROR("Failed to start audio");
+                            }
+                        }
+                    } else {
+                        ImGui::TextDisabled("Select an input device first");
+                    }
+                } else {
+                    if (ImGui::Button("Stop Audio", ImVec2(200, 30))) {
+                        fx_audio_shutdown();
+                        fx_audio_init();
+                        num_input_devices = fx_audio_get_device_count();
+                        num_output_devices = fx_audio_get_output_count();
+                        s_audio_active = false;
+                        FX_INFO("Audio stopped");
+                    }
                 }
 
                 ImGui::EndPopup();
