@@ -1446,5 +1446,229 @@
       "src/audio/midi.c",
       "src/gui/gui_main.cpp"
     ]
+  },
+  {
+    "id": "TASK-300",
+    "priority": "CRITICAL",
+    "title": "GUI overhaul: signal chain visual layout",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 80000,
+    "acceptanceCriteria": [
+      "Top section: horizontal signal chain \u2014 pedal icons connected by visual cables/lines leading to amp then cab",
+      "Each element (pedal, amp, cab) is a clickable node in the chain",
+      "Visual connections (lines/curves) between nodes showing signal flow",
+      "SINGLE/DUAL chain toggle (like BIAS FX)",
+      "Available pedals sidebar or shelf that you can add from",
+      "Drag-and-drop to reorder pedals in the chain",
+      "Remove pedal by dragging out or X button"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-301",
+    "priority": "CRITICAL",
+    "title": "Detail view: click element to edit properties",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "Bottom section: large detail view of selected element",
+      "Click pedal in chain \u2192 shows large pedal face with turnable knobs",
+      "Click amp in chain \u2192 shows large amp panel with all knobs (like BIAS FX screenshot)",
+      "Click cab in chain \u2192 shows cab selector with IR waveform",
+      "Smooth transition between detail views",
+      "Detail view shows element name prominently"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-302",
+    "priority": "CRITICAL",
+    "title": "LIVE button in toolbar (replaces buried Audio settings)",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Prominent LIVE button in toolbar \u2014 large, visible",
+      "Lit up (bright green/amber glow) when audio is active",
+      "Dim/dark when audio is off",
+      "Click to toggle audio on/off",
+      "Starts OFF by default",
+      "Auto-selects first available input+output device on first click"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-303",
+    "priority": "HIGH",
+    "title": "Auto-select audio devices on startup",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "On startup, auto-detect best input device (prefer USB/class-compliant over built-in mic)",
+      "Auto-detect default output device",
+      "Pre-select in settings but don't start audio (user clicks LIVE)",
+      "If iRig/Scarlett detected, prefer it over generic microphone"
+    ],
+    "files": [
+      "src/audio/audio_device.c",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-304",
+    "priority": "HIGH",
+    "title": "Visual cables/connections between signal chain nodes",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Bezier curves or straight lines connecting pedal \u2192 pedal \u2192 amp \u2192 cab",
+      "Cables drawn on the ImGui foreground draw list",
+      "Cable color changes based on signal presence (dim when muted, bright when LIVE)",
+      "Input jack on left, output jack on right of each node"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-305",
+    "priority": "HIGH",
+    "title": "Pedal shelf / add-pedal sidebar",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Side panel or bottom shelf showing available pedal types",
+      "Categorized: Overdrive, Distortion, Fuzz, Delay, Reverb, Modulation, Utility",
+      "Click or drag to add pedal to the signal chain",
+      "Shows pedal icon/thumbnail + name"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-306",
+    "priority": "HIGH",
+    "title": "Toolbar overhaul: preset name, LIVE, signal indicator",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-302"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Left: 0xFX logo",
+      "Center: current preset/rig name (editable), save/load buttons",
+      "Right-center: tuner display",
+      "Right: LIVE button (prominent), Audio settings gear icon, _ [] X window controls",
+      "Bottom bar: input level meter, 'NO SIGNAL DETECTED' when no input, output level meter"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-307",
+    "priority": "HIGH",
+    "title": "Session/save state system (rig presets)",
+    "domain": "infra",
+    "phase": 4,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "Save current rig as named preset (.0xfx JSON \u2014 already implemented)",
+      "Load preset from file browser",
+      "Quick-save (Ctrl+S) overwrites current preset",
+      "Quick-load last used preset on startup",
+      "Preset browser: list saved presets, click to load, delete, rename",
+      "Remember last audio device + window size between sessions"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/engine/internal/preset.c"
+    ]
+  },
+  {
+    "id": "TASK-308",
+    "priority": "MEDIUM",
+    "title": "Input/output level meters + signal detection",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Input level meter (VU-style or LED bar) showing guitar input level",
+      "Output level meter showing processed signal level",
+      "'NO SIGNAL DETECTED' text when input is silence (like BIAS FX)",
+      "Clip indicator (red) when signal exceeds 0dBFS"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/engine/fx_engine.h"
+    ]
+  },
+  {
+    "id": "TASK-309",
+    "priority": "MEDIUM",
+    "title": "Amp and cab visual nodes in signal chain",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Amp shown as a distinct node in the chain (amp face icon, model name)",
+      "Cab shown after amp (speaker icon, IR name)",
+      "Clicking amp node opens amp detail view with full knob panel",
+      "Clicking cab node opens cab selector with IR browser",
+      "Amp model selector dropdown in detail view"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
   }
 ]
