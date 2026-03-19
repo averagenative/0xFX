@@ -1,0 +1,52 @@
+{
+	"format":	"0xfx",
+	"version":	"1.0",
+	"name":	"Chimey British",
+	"signal_chain":	{
+		"input":	{
+			"noise_gate":	{
+				"threshold_db":	-55,
+				"attack_ms":	1,
+				"release_ms":	50,
+				"hold_ms":	10
+			}
+		},
+		"pre_pedals":	[{
+			"type":	"gold_drive",
+			"bypass":	false,
+			"params":	{
+				"gain":	0.3,
+				"treble":	0.6,
+				"output":	0.7
+			}
+		}],
+		"chains":	[{
+			"amp":	{
+				"model":	"essex_chime",
+				"params":	{
+					"gain":	0.5,
+					"volume":	0.7,
+					"bass":	0.4,
+					"mid":	0.5,
+					"treble":	0.75,
+					"presence":	0.65,
+					"sag":	0.3
+				}
+			},
+			"cab":	{
+				"bypass":	false
+			},
+			"mix":	1.0
+		}],
+		"post_pedals":	[{
+			"type":	"echo_delay",
+			"bypass":	false,
+			"params":	{
+				"time":	0.15,
+				"feedback":	0.15,
+				"mix":	0.2,
+				"sync":	0.0
+			}
+		}]
+	}
+}

@@ -14,6 +14,7 @@
 extern "C" {
 #include "../engine/fx_engine.h"
 #include "../audio/audio_device.h"
+#include "knobs.h"
 }
 
 #include <stdio.h>
@@ -196,12 +197,11 @@ int main(int argc, char *argv[]) {
             ImGui::Text("%s", fx_amp_get_type_name(amp_type));
             ImGui::Separator();
 
-            /* Knob-style sliders for each amp param */
+            /* Rotary knobs for each amp param */
             for (int p = 0; p < param_count; p++) {
                 const char *name = fx_amp_get_param_name(amp_type, (fx_amp_param_t)p);
                 float val = fx_amp_get_param(engine, FX_CHAIN_DEFAULT, (fx_amp_param_t)p);
-                ImGui::SetNextItemWidth(80);
-                if (ImGui::SliderFloat(name, &val, 0.0f, 1.0f, "%.2f")) {
+                if (knob_float(name, &val, 0.0f, 1.0f, 0.5f, 0.01f)) {
                     fx_amp_set_param(engine, FX_CHAIN_DEFAULT, (fx_amp_param_t)p, val);
                 }
                 if (p < param_count - 1) ImGui::SameLine();

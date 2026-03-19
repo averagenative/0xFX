@@ -1,0 +1,53 @@
+{
+	"format":	"0xfx",
+	"version":	"1.0",
+	"name":	"Classic Crunch",
+	"signal_chain":	{
+		"input":	{
+			"noise_gate":	{
+				"threshold_db":	-50,
+				"attack_ms":	1,
+				"release_ms":	50,
+				"hold_ms":	10
+			}
+		},
+		"pre_pedals":	[{
+			"type":	"jade_drive",
+			"bypass":	false,
+			"params":	{
+				"drive":	0.4,
+				"tone":	0.6,
+				"level":	0.7
+			}
+		}],
+		"chains":	[{
+			"amp":	{
+				"model":	"brit_crunch",
+				"params":	{
+					"gain":	0.6,
+					"volume":	0.6,
+					"bass":	0.5,
+					"mid":	0.6,
+					"treble":	0.6,
+					"presence":	0.5,
+					"sag":	0.3,
+					"master":	0.7
+				}
+			},
+			"cab":	{
+				"bypass":	false
+			},
+			"mix":	1.0
+		}],
+		"post_pedals":	[{
+			"type":	"echo_delay",
+			"bypass":	false,
+			"params":	{
+				"time":	0.3,
+				"feedback":	0.2,
+				"mix":	0.2,
+				"sync":	0.0
+			}
+		}]
+	}
+}

@@ -668,6 +668,250 @@ static void test_cab_ir(void) {
     printf("  OK\n");
 }
 
+/* ── Test: parallel chain routing (TASK-039) ─────────────────── */
+
+static void test_parallel_chain_routing(void) {
+    printf("test_parallel_chain_routing...\n");
+
+    /* ── Basic API: create, count, max chains, destroy ────────── */
+
+    fx_engine_t *e = fx_engine_create(44100.0f);
+    ASSERT(fx_chain_get_count(e) == 1, "should start with 1 chain");
+
+    /* Create chain 1 — should return valid ID */
+    fx_chain_id c1 = fx_chain_create(e);
+    ASSERT(c1 >= 0, "fx_chain_create should return valid ID");
+    ASSERT(fx_chain_get_count(e) == 2, "should have 2 chains after create");
+
+    /* Create chains 2 and 3 (max 4 total) */
+    fx_chain_id c2 = fx_chain_create(e);
+    ASSERT(c2 >= 0, "chain 2 should be valid");
+    ASSERT(fx_chain_get_count(e) == 3, "should have 3 chains");
+
+    fx_chain_id c3 = fx_chain_create(e);
+    ASSERT(c3 >= 0, "chain 3 should be valid");
+    ASSERT(fx_chain_get_count(e) == 4, "should have 4 chains (max)");
+
+    /* 5th chain should fail — max 4 enforced */
+    fx_chain_id c4 = fx_chain_create(e);
+    ASSERT(c4 == -1, "5th chain create should return -1 (max 4)");
+    ASSERT(fx_chain_get_count(e) == 4, "should still have 4 chains");
+
+    /* Cannot destroy chain 0 (default) */
+    fx_chain_destroy(e, FX_CHAIN_DEFAULT);
+    ASSERT(fx_chain_get_count(e) == 4,
+           "destroying chain 0 should have no effect");
+
+    /* Can destroy a non-default chain */
+    fx_chain_destroy(e, c1);
+    /* Note: chain_destroy deactivates but doesn't reduce num_chains,
+     * so count stays at 4 — the chain is just inactive */
+
+    /* Mix levels clamp to 0-1 */
+    fx_chain_set_mix(e, FX_CHAIN_DEFAULT, -0.5f);
+    ASSERT(fx_chain_get_mix(e, FX_CHAIN_DEFAULT) >= 0.0f,
+           "mix should clamp to >= 0");
+    fx_chain_set_mix(e, FX_CHAIN_DEFAULT, 2.0f);
+    ASSERT(fx_chain_get_mix(e, FX_CHAIN_DEFAULT) <= 1.0f,
+           "mix should clamp to <= 1");
+
+    fx_engine_destroy(e);
+
+    /* ── Dual-chain processing test ───────────────────────────── */
+
+    /* Create engine with 2 chains: British Crunch and Fullerton Clean */
+    fx_engine_t *e_dual = fx_engine_create(44100.0f);
+
+    /* Chain 0: British Crunch, gain=0.8 */
+    fx_amp_set_model(e_dual, FX_CHAIN_DEFAULT, FX_AMP_BRIT_CRUNCH);
+    fx_amp_set_param(e_dual, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.8f);
+
+    /* Chain 1: Fullerton Clean, gain=0.2 */
+    fx_chain_id chain1 = fx_chain_create(e_dual);
+    ASSERT(chain1 >= 0, "dual: chain 1 should be created");
+    fx_amp_set_model(e_dual, chain1, FX_AMP_FULLERTON_CLEAN);
+    fx_amp_set_param(e_dual, chain1, FX_AMP_PARAM_GAIN, 0.2f);
+
+    /* Set mix levels: 0.6 / 0.4 */
+    fx_chain_set_mix(e_dual, FX_CHAIN_DEFAULT, 0.6f);
+    fx_chain_set_mix(e_dual, chain1, 0.4f);
+    ASSERT(fabsf(fx_chain_get_mix(e_dual, FX_CHAIN_DEFAULT) - 0.6f) < 1e-6f,
+           "chain 0 mix should be 0.6");
+    ASSERT(fabsf(fx_chain_get_mix(e_dual, chain1) - 0.4f) < 1e-6f,
+           "chain 1 mix should be 0.4");
+
+    /* Generate a 440Hz sine wave input */
+    float pc_input[512];
+    for (int i = 0; i < 512; i++) {
+        pc_input[i] = 0.3f * sinf(2.0f * 3.14159f * 440.0f * (float)i / 44100.0f);
+    }
+
+    /* Process through dual-chain engine */
+    float out_dual[512];
+    fx_engine_process(e_dual, pc_input, out_dual, 512);
+
+    /* Output should have energy */
+    float dual_peak = 0.0f;
+    for (int i = 0; i < 512; i++) {
+        float a = fabsf(out_dual[i]);
+        if (a > dual_peak) dual_peak = a;
+    }
+    ASSERT(dual_peak > 0.01f, "dual-chain output should have energy");
+    printf("    dual-chain peak=%.4f\n", dual_peak);
+
+    /* Now process the same input through a single-chain engine
+     * (British Crunch only, gain=0.8) for comparison */
+    fx_engine_t *e_single = fx_engine_create(44100.0f);
+    fx_amp_set_model(e_single, FX_CHAIN_DEFAULT, FX_AMP_BRIT_CRUNCH);
+    fx_amp_set_param(e_single, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.8f);
+
+    float out_single[512];
+    fx_engine_process(e_single, pc_input, out_single, 512);
+
+    /* Dual-chain output should differ from single-chain output */
+    int pc_differs = 0;
+    for (int i = 50; i < 512; i++) {
+        if (fabsf(out_dual[i] - out_single[i]) > 1e-4f) {
+            pc_differs = 1;
+            break;
+        }
+    }
+    ASSERT(pc_differs, "dual-chain output should differ from single-chain");
+
+    fx_engine_destroy(e_dual);
+    fx_engine_destroy(e_single);
+
+    printf("  OK\n");
+}
+
+/* ── Test: fx_cab_load_ir() API end-to-end (TASK-035) ────────── */
+
+static void test_cab_load_api(void) {
+    printf("test_cab_load_api...\n");
+
+    const unsigned int sr = 48000;
+    const char *wav_path = "/tmp/test_ir.wav";
+
+    /* ── Create a simple .wav IR file: delayed impulse ────────── */
+    const int ir_len = 128;
+    float ir_data[128];
+    memset(ir_data, 0, sizeof(ir_data));
+    /* Delayed impulse at sample 20 — convolution should shift signal */
+    ir_data[0] = 0.0f;
+    ir_data[20] = 1.0f;
+
+    drwav wav;
+    drwav_data_format format;
+    format.container = drwav_container_riff;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+    format.channels = 1;
+    format.sampleRate = sr;
+    format.bitsPerSample = 32;
+    drwav_bool32 ok = drwav_init_file_write(&wav, wav_path, &format, NULL);
+    ASSERT(ok, "should create test IR .wav file");
+    if (!ok) { printf("  SKIP (cannot create temp file)\n"); return; }
+    drwav_uint64 written = drwav_write_pcm_frames(&wav, (drwav_uint64)ir_len, ir_data);
+    ASSERT((int)written == ir_len, "should write all IR frames");
+    drwav_uninit(&wav);
+
+    /* ── Load IR via public API ───────────────────────────────── */
+    fx_engine_t *e = fx_engine_create((float)sr);
+    ASSERT(e != NULL, "engine should be created");
+
+    bool loaded = fx_cab_load_ir(e, FX_CHAIN_DEFAULT, wav_path);
+    ASSERT(loaded, "fx_cab_load_ir should succeed");
+
+    /* Set amp to minimal processing */
+    fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+
+    /* ── Process audio and verify cab affects signal ──────────── */
+    const int block = 256;
+    float input_sig[256];
+    memset(input_sig, 0, sizeof(input_sig));
+    /* Short tone burst to open the gate */
+    for (int i = 0; i < 64; i++) {
+        input_sig[i] = 0.4f * sinf(2.0f * 3.14159f * 440.0f * (float)i / (float)sr);
+    }
+
+    float out_with_ir[256];
+    fx_engine_process(e, input_sig, out_with_ir, block);
+
+    /* Output should have energy */
+    float ir_peak = 0.0f;
+    for (int i = 0; i < block; i++) {
+        float a = fabsf(out_with_ir[i]);
+        if (a > ir_peak) ir_peak = a;
+    }
+    ASSERT(ir_peak > 0.001f, "cab IR output should have energy");
+    printf("    with-IR peak=%.4f\n", ir_peak);
+
+    /* ── Compare with no-cab processing ──────────────────────── */
+    fx_engine_t *e_nocab = fx_engine_create((float)sr);
+    fx_amp_set_param(e_nocab, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e_nocab, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e_nocab, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+    /* No IR loaded — cab is inactive */
+    float out_no_ir[256];
+    fx_engine_process(e_nocab, input_sig, out_no_ir, block);
+
+    int ir_differs = 0;
+    for (int i = 0; i < block; i++) {
+        if (fabsf(out_with_ir[i] - out_no_ir[i]) > 1e-4f) {
+            ir_differs = 1;
+            break;
+        }
+    }
+    ASSERT(ir_differs, "cab IR should change the signal vs no-cab");
+
+    /* ── Test fx_cab_set_bypass ───────────────────────────────── */
+    /* Create a fresh engine with cab loaded, process with bypass on vs off */
+    fx_engine_t *e_bp = fx_engine_create((float)sr);
+    fx_amp_set_param(e_bp, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e_bp, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e_bp, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+    bool bp_loaded = fx_cab_load_ir(e_bp, FX_CHAIN_DEFAULT, wav_path);
+    ASSERT(bp_loaded, "should load IR for bypass test");
+
+    /* Process with cab active */
+    float out_active[256];
+    fx_engine_process(e_bp, input_sig, out_active, block);
+
+    /* Now bypass the cab and process with a fresh engine (same IR loaded) */
+    fx_engine_t *e_bp2 = fx_engine_create((float)sr);
+    fx_amp_set_param(e_bp2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+    fx_amp_set_param(e_bp2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 1.0f);
+    fx_amp_set_param(e_bp2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 1.0f);
+    fx_cab_load_ir(e_bp2, FX_CHAIN_DEFAULT, wav_path);
+    fx_cab_set_bypass(e_bp2, FX_CHAIN_DEFAULT, true);
+    ASSERT(fx_cab_get_bypass(e_bp2, FX_CHAIN_DEFAULT) == true,
+           "cab bypass should be true after set");
+
+    float out_bypassed[256];
+    fx_engine_process(e_bp2, input_sig, out_bypassed, block);
+
+    /* Bypassed cab should produce different output than active cab */
+    int bp_differs = 0;
+    for (int i = 0; i < block; i++) {
+        if (fabsf(out_active[i] - out_bypassed[i]) > 1e-4f) {
+            bp_differs = 1;
+            break;
+        }
+    }
+    ASSERT(bp_differs, "bypassed cab should differ from active cab");
+
+    fx_engine_destroy(e);
+    fx_engine_destroy(e_nocab);
+    fx_engine_destroy(e_bp);
+    fx_engine_destroy(e_bp2);
+
+    /* Clean up temp file */
+    unlink(wav_path);
+
+    printf("  OK\n");
+}
+
 /* ── Test: preset roundtrip (save + load) ─────────────────────── */
 
 static void test_preset_roundtrip(void) {
@@ -885,6 +1129,8 @@ int main(void) {
     test_pedal_param_names();
     test_tuner();
     test_cab_ir();
+    test_parallel_chain_routing();
+    test_cab_load_api();
     test_preset_roundtrip();
     test_preset_fuzz();
 

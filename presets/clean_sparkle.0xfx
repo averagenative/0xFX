@@ -1,0 +1,43 @@
+{
+	"format":	"0xfx",
+	"version":	"1.0",
+	"name":	"Clean Sparkle",
+	"signal_chain":	{
+		"input":	{
+			"noise_gate":	{
+				"threshold_db":	-60,
+				"attack_ms":	1,
+				"release_ms":	50,
+				"hold_ms":	10
+			}
+		},
+		"pre_pedals":	[],
+		"chains":	[{
+			"amp":	{
+				"model":	"fullerton_clean",
+				"params":	{
+					"gain":	0.3,
+					"volume":	0.7,
+					"bass":	0.4,
+					"mid":	0.5,
+					"treble":	0.8,
+					"presence":	0.7,
+					"sag":	0.2
+				}
+			},
+			"cab":	{
+				"bypass":	false
+			},
+			"mix":	1.0
+		}],
+		"post_pedals":	[{
+			"type":	"drip_verb",
+			"bypass":	false,
+			"params":	{
+				"param_1":	0.4,
+				"param_2":	0.3,
+				"param_3":	0.25
+			}
+		}]
+	}
+}
