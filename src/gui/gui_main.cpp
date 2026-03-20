@@ -310,6 +310,70 @@ static const struct { fx_pedal_type_t type; const char *name; } s_pedal_menu[] =
 };
 static const int s_pedal_menu_count = 24;
 
+/* ── Texture path helpers ──────────────────────────────────────── */
+
+/* Convert a display name like "Jade Drive" -> "jade_drive" */
+static void type_to_filename(const char *type_name, char *out, int out_size) {
+    int i = 0;
+    for (; type_name[i] && i < out_size - 1; i++) {
+        char c = type_name[i];
+        if (c == ' ') c = '_';
+        else if (c >= 'A' && c <= 'Z') c = c + 32;
+        out[i] = c;
+    }
+    out[i] = '\0';
+}
+
+/* Cab type enum -> filename base (without _nobg.png) */
+static const char *s_cab_filenames[] = {
+    "1x12_open",      /* FX_CAB_1X12_OPEN */
+    "2x12_closed",    /* FX_CAB_2X12_CLOSED */
+    "4x12_straight",  /* FX_CAB_4X12_STRAIGHT */
+    "4x12_slant",     /* FX_CAB_4X12_SLANT */
+    "direct_flat",    /* FX_CAB_DIRECT */
+};
+
+/* Special-case pedal name overrides where type_to_filename doesn't match the asset */
+static uintptr_t load_pedal_texture(const char *type_name) {
+    char fname[128];
+    type_to_filename(type_name, fname, sizeof(fname));
+
+    /* "Orange Distortion" -> "orange_distortion" but asset is "orange_dist" */
+    if (strcmp(fname, "orange_distortion") == 0) {
+        strcpy(fname, "orange_dist");
+    }
+
+    char path[256];
+    snprintf(path, sizeof(path), "resources/pedals/%s_body_nobg.png", fname);
+    return fx_texture_load(path);
+}
+
+static uintptr_t load_amp_body_texture(const char *type_name) {
+    char fname[128];
+    type_to_filename(type_name, fname, sizeof(fname));
+    char path[256];
+    snprintf(path, sizeof(path), "resources/amps/%s_body_nobg.png", fname);
+    return fx_texture_load(path);
+}
+
+static uintptr_t load_amp_face_texture(const char *type_name) {
+    char fname[128];
+    type_to_filename(type_name, fname, sizeof(fname));
+    char path[256];
+    snprintf(path, sizeof(path), "resources/amps/%s_nobg.png", fname);
+    return fx_texture_load(path);
+}
+
+static uintptr_t load_cab_texture(int cab_type_idx) {
+    if (cab_type_idx < 0 || cab_type_idx >= FX_CAB_TYPE_COUNT) {
+        /* Default to 4x12 straight */
+        return fx_texture_load("resources/cabs/4x12_straight_nobg.png");
+    }
+    char path[256];
+    snprintf(path, sizeof(path), "resources/cabs/%s_nobg.png", s_cab_filenames[cab_type_idx]);
+    return fx_texture_load(path);
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
@@ -414,6 +478,7 @@ int main(int argc, char *argv[]) {
 
     /* Signal chain selection state */
     static int  s_selected_node = -1;  /* index into the flattened chain array */
+    static int  s_cab_type = 0;        /* current cab type (for texture lookup) */
 
     /* Layout constants */
     static const float TOOLBAR_H      = 50.0f;
@@ -453,7 +518,22 @@ int main(int argc, char *argv[]) {
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
 
-            ImGui::Text("0xFX");
+            /* Neon logo image (cached) */
+            {
+                static uintptr_t s_logo_tex = 0;
+                static bool s_logo_tried = false;
+                if (!s_logo_tried) {
+                    s_logo_tex = fx_texture_load("resources/logo/logo_neon_v4_red.png");
+                    s_logo_tried = true;
+                }
+                if (s_logo_tex) {
+                    float logo_h = TOOLBAR_H - 12.0f;  /* ~38px, fits toolbar */
+                    float logo_w = logo_h * 2.5f;       /* approximate aspect ratio */
+                    ImGui::Image((ImTextureID)s_logo_tex, ImVec2(logo_w, logo_h));
+                } else {
+                    ImGui::Text("0xFX");
+                }
+            }
             ImGui::SameLine(100);
 
             /* Tuner */
@@ -864,10 +944,40 @@ int main(int argc, char *argv[]) {
                 float nx = x_cursor;
                 float ny = cy - NODE_H * 0.5f;
 
-                /* Draw node rectangle */
-                ImU32 bg_col = node_color(n.kind, is_bypassed);
-                dl->AddRectFilled(ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
-                                  bg_col, 6.0f);
+                /* Draw node — try PNG texture first, fall back to colored rect */
+                bool drew_texture = false;
+                {
+                    uintptr_t tex = 0;
+                    if (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST) {
+                        fx_pedal_type_t pt = fx_pedal_get_type(engine, n.pedal_id);
+                        if (pt < FX_PEDAL_TYPE_COUNT) {
+                            const char *tname = fx_pedal_get_type_name(pt);
+                            tex = load_pedal_texture(tname);
+                        }
+                    } else if (n.kind == NODE_AMP) {
+                        const char *aname = fx_amp_get_type_name(
+                            fx_amp_get_model(engine, FX_CHAIN_DEFAULT));
+                        tex = load_amp_body_texture(aname);
+                    } else if (n.kind == NODE_CAB) {
+                        tex = load_cab_texture((int)s_cab_type);
+                    }
+                    if (tex) {
+                        ImVec2 uv_tint = is_bypassed
+                            ? ImVec2(1.0f, 1.0f) : ImVec2(1.0f, 1.0f);
+                        ImVec4 tint = is_bypassed
+                            ? ImVec4(0.5f, 0.5f, 0.5f, 0.7f)
+                            : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                        ImGui::SetCursorScreenPos(ImVec2(nx, ny));
+                        ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
+                                     ImVec2(0, 0), ImVec2(1, 1), tint);
+                        drew_texture = true;
+                    }
+                }
+                if (!drew_texture) {
+                    ImU32 bg_col = node_color(n.kind, is_bypassed);
+                    dl->AddRectFilled(ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
+                                      bg_col, 6.0f);
+                }
 
                 /* Selection highlight */
                 if (is_selected) {
@@ -1011,11 +1121,28 @@ int main(int argc, char *argv[]) {
                         }
                     }
 
-                    /* Draw connecting line */
-                    float line_x0 = x_cursor;
-                    float line_x1 = x_cursor + NODE_SPACING;
-                    dl->AddLine(ImVec2(line_x0, cy), ImVec2(line_x1, cy),
-                                IM_COL32(100, 90, 70, 200), 2.0f);
+                    /* Draw connecting cable (bezier curve) */
+                    {
+                        float line_x0 = x_cursor;
+                        float line_x1 = x_cursor + NODE_SPACING;
+                        ImVec2 p0(line_x0, cy);
+                        ImVec2 p3(line_x1, cy);
+                        float cp_off = 30.0f;
+                        ImVec2 p1(line_x0 + cp_off, cy);
+                        ImVec2 p2(line_x1 - cp_off, cy);
+                        /* Shadow pass */
+                        dl->AddBezierCubic(
+                            ImVec2(p0.x + 1, p0.y + 2),
+                            ImVec2(p1.x + 1, p1.y + 2),
+                            ImVec2(p2.x + 1, p2.y + 2),
+                            ImVec2(p3.x + 1, p3.y + 2),
+                            IM_COL32(20, 15, 5, 140), 3.0f, 16);
+                        /* Cable pass */
+                        ImU32 cable_col = s_audio_active
+                            ? IM_COL32(210, 150, 30, 230)
+                            : IM_COL32(110, 85, 30, 180);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 3.0f, 16);
+                    }
 
                     x_cursor += NODE_SPACING;
                 }
@@ -1161,16 +1288,28 @@ int main(int argc, char *argv[]) {
                     int current_amp = (int)amp_type;
                     float avail_w = ImGui::GetContentRegionAvail().x;
 
-                    /* Title */
+                    /* Title — large amp name + "Amp Model" subtitle */
                     {
                         const char *amp_name = fx_amp_get_type_name(amp_type);
+                        ImGui::SetWindowFontScale(1.35f);
                         ImVec2 text_size = ImGui::CalcTextSize(amp_name);
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - text_size.x) * 0.5f);
-                        ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", amp_name);
+                        ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", amp_name);
+                        ImGui::SetWindowFontScale(1.0f);
+                        const char *sub = "Amp Model";
+                        ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                        ImGui::TextDisabled("%s", sub);
                     }
 
-                    ImGui::Separator();
                     ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    {
+                        ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                        ImGui::GetWindowDrawList()->AddLine(
+                            sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                            IM_COL32(180, 130, 40, 100), 1.0f);
+                        ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                    }
 
                     /* Model selector */
                     ImGui::SetNextItemWidth(200);
@@ -1270,15 +1409,34 @@ int main(int argc, char *argv[]) {
                 else if (sel.kind == NODE_CAB) {
                     float avail_w = ImGui::GetContentRegionAvail().x;
 
-                    const char *title = "Cabinet";
-                    ImVec2 ts = ImGui::CalcTextSize(title);
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
-                    ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", title);
-                    ImGui::Separator();
-                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                    /* Large title: "Cabinet" */
+                    {
+                        const char *title = "Cabinet";
+                        ImGui::SetWindowFontScale(1.35f);
+                        ImVec2 ts = ImGui::CalcTextSize(title);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                        ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
+                        ImGui::SetWindowFontScale(1.0f);
+                        /* Subtitle: "Cabinet — 4x12 Straight" style */
+                        const char *cab_name = (s_cab_type >= 0 && s_cab_type < FX_CAB_TYPE_COUNT)
+                            ? s_cab_type_names[s_cab_type] : "Unknown";
+                        char sub[64];
+                        snprintf(sub, sizeof(sub), "Cabinet \xe2\x80\x94 %s", cab_name);
+                        ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                        ImGui::TextDisabled("%s", sub);
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    {
+                        ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                        ImGui::GetWindowDrawList()->AddLine(
+                            sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                            IM_COL32(180, 130, 40, 100), 1.0f);
+                        ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
                     /* Cab type selector */
-                    static int s_cab_type = 0;
                     ImGui::SetNextItemWidth(200);
                     if (ImGui::Combo("Cab Type", &s_cab_type, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
                         fx_cab_params_t params;
@@ -1320,15 +1478,46 @@ int main(int argc, char *argv[]) {
                         bool bypassed = fx_pedal_get_bypass(engine, pid);
                         float avail_w = ImGui::GetContentRegionAvail().x;
 
-                        /* Title */
+                        /* Look up category for subtitle ("Jade Drive — Overdrive") */
+                        const char *pedal_category = nullptr;
+                        for (int ci = 0; ci < s_pedal_category_count && !pedal_category; ci++) {
+                            for (int pi = 0; pi < s_pedal_categories[ci].count; pi++) {
+                                if (s_pedal_categories[ci].pedals[pi].type == pt) {
+                                    pedal_category = s_pedal_categories[ci].label;
+                                    break;
+                                }
+                            }
+                        }
+
+                        /* Title — large name + subtitle */
                         {
+                            ImGui::SetWindowFontScale(1.35f);
                             ImVec2 ts = ImGui::CalcTextSize(pname);
                             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
-                            if (bypassed) ImGui::TextDisabled("%s", pname);
-                            else ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", pname);
+                            if (bypassed)
+                                ImGui::TextDisabled("%s", pname);
+                            else
+                                ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", pname);
+                            ImGui::SetWindowFontScale(1.0f);
+                            if (pedal_category) {
+                                char sub[64];
+                                snprintf(sub, sizeof(sub), "%s \xe2\x80\x94 %s",
+                                         pname, pedal_category);
+                                /* Title-case the category */
+                                ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                                ImGui::TextDisabled("%s", sub);
+                            }
                         }
-                        ImGui::Separator();
-                        ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                        ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                        {
+                            ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                            ImGui::GetWindowDrawList()->AddLine(
+                                sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                                IM_COL32(180, 130, 40, 100), 1.0f);
+                            ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                        }
+                        ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
                         /* Knobs — centered horizontally */
                         {

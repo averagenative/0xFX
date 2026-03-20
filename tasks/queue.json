@@ -1479,8 +1479,8 @@
     "title": "Detail view: click element to edit properties",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-agent",
     "depends": [
       "TASK-300"
     ],
@@ -1546,8 +1546,8 @@
     "title": "Visual cables/connections between signal chain nodes",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-agent",
     "depends": [
       "TASK-300"
     ],
