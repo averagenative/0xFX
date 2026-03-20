@@ -84,10 +84,24 @@ else()
     message(STATUS "GUI disabled (SDL2 not found)")
 endif()
 
+# ── ALSA detection (optional, for MIDI on Linux) ──────────────
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(ALSA QUIET alsa)
+    endif()
+    if(ALSA_FOUND)
+        message(STATUS "ALSA found — MIDI input enabled")
+    else()
+        message(STATUS "ALSA not found — MIDI input disabled (no-op fallback)")
+    endif()
+endif()
+
 # ── Standalone application (console, no GUI) ──────────────────
 add_executable(0xfx_standalone
     src/standalone/main.c
     src/audio/audio_device.c
+    src/audio/midi_input.c
     src/audio/debug_recorder.c
 )
 target_include_directories(0xfx_standalone PRIVATE
@@ -99,6 +113,10 @@ target_link_libraries(0xfx_standalone PRIVATE fx_engine fx_core m)
 # Platform-specific audio deps
 if(UNIX AND NOT APPLE)
     target_link_libraries(0xfx_standalone PRIVATE pthread dl)
+    if(ALSA_FOUND)
+        target_include_directories(0xfx_standalone PRIVATE ${ALSA_INCLUDE_DIRS})
+        target_link_libraries(0xfx_standalone PRIVATE ${ALSA_LIBRARIES})
+    endif()
 elseif(WIN32)
     target_link_libraries(0xfx_standalone PRIVATE ole32 winmm)
 endif()
@@ -117,6 +135,7 @@ if(HAS_GUI)
         src/gui/knobs.cpp
         src/gui/texture.c
         src/audio/audio_device.c
+        src/audio/midi_input.c
         src/audio/debug_recorder.c
         ${GUI_RC}
     )
@@ -142,6 +161,10 @@ if(HAS_GUI)
             opengl32 ole32 winmm)
     elseif(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_gui PRIVATE GL pthread dl)
+        if(ALSA_FOUND)
+            target_include_directories(0xfx_gui PRIVATE ${ALSA_INCLUDE_DIRS})
+            target_link_libraries(0xfx_gui PRIVATE ${ALSA_LIBRARIES})
+        endif()
     endif()
 endif()
 

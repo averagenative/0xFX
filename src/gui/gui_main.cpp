@@ -27,6 +27,7 @@ extern "C" {
 #include "../engine/fx_engine.h"
 #include "../audio/audio_device.h"
 #include "../audio/debug_recorder.h"
+#include "../audio/midi_input.h"
 #include "../core/log.h"
 #include "../core/crash.h"
 #include "knobs.h"
@@ -642,20 +643,24 @@ int main(int argc, char *argv[]) {
         if (test_tex) FX_INFO("Texture loaded: %lu", (unsigned long)test_tex);
     }
 
-    /* Audio + engine init */
+    /* Audio + engine + MIDI init */
     fx_audio_init();
+    fx_midi_init();
     fx_engine_t *engine = fx_engine_create(44100.0f);
     FX_INFO("Engine created");
 
     /* Audio device / settings state */
     int num_input_devices = fx_audio_get_device_count();
     int num_output_devices = fx_audio_get_output_count();
+    int num_midi_devices = fx_midi_get_device_count();
     /* Apply saved device selections */
     static int  s_selected_input   = -1;
     static int  s_selected_output  = -1;
     static int  s_selected_buf_idx = 2;    /* default: 256 frames */
     static int  s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
     static bool s_audio_active     = false;
+    static int  s_selected_midi   = -1;
+    static bool s_midi_active     = false;
 
     /* Restore from session config */
     if (s_session_cfg.input_device_idx  >= 0 && s_session_cfg.input_device_idx  < num_input_devices)
@@ -1143,6 +1148,90 @@ int main(int argc, char *argv[]) {
                         num_output_devices = fx_audio_get_output_count();
                         s_audio_active = false;
                         FX_INFO("Audio stopped");
+                    }
+                }
+
+                /* ── MIDI Settings ─────────────────────────────── */
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Text("MIDI Settings");
+                ImGui::Separator();
+
+                ImGui::TextDisabled("MIDI Input Device:");
+                struct MidiGetter {
+                    static bool get(void *, int idx, const char **out) {
+                        const char *n = fx_midi_get_device_name(idx);
+                        if (!n) return false;
+                        *out = n; return true;
+                    }
+                };
+                ImGui::SetNextItemWidth(300);
+                if (num_midi_devices > 0) {
+                    if (ImGui::Combo("##midi_input", &s_selected_midi,
+                                     MidiGetter::get, nullptr, num_midi_devices)) {
+                        /* Selection changed — open new device */
+                        if (s_selected_midi >= 0) {
+                            if (fx_midi_open(s_selected_midi)) {
+                                s_midi_active = true;
+                                FX_INFO("MIDI opened: %s",
+                                    fx_midi_get_device_name(s_selected_midi));
+                            } else {
+                                s_midi_active = false;
+                                FX_ERROR("Failed to open MIDI device");
+                            }
+                        }
+                    }
+                } else {
+                    ImGui::TextDisabled("No MIDI devices found");
+                }
+
+                if (s_midi_active) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Active");
+                }
+
+                /* MIDI Learn */
+                ImGui::Spacing();
+                if (fx_midi_learn_active()) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.15f, 0.15f, 1.0f));
+                    if (ImGui::Button("Cancel MIDI Learn", ImVec2(200, 28))) {
+                        fx_midi_learn_cancel();
+                    }
+                    ImGui::PopStyleColor(3);
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                                       "Move a CC knob on your controller...");
+                } else {
+                    if (ImGui::Button("MIDI Learn", ImVec2(200, 28))) {
+                        /* Map next CC to param 0 — GUI can set specific target */
+                        fx_midi_learn_start(0);
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Click, then move a CC knob to map it");
+                }
+
+                /* CC Mapping table */
+                ImGui::Spacing();
+                ImGui::TextDisabled("CC Mappings:");
+                {
+                    bool has_mappings = false;
+                    for (int cc = 0; cc < 128; cc++) {
+                        int param = fx_midi_get_mapped_param(cc);
+                        if (param >= 0) {
+                            has_mappings = true;
+                            ImGui::Text("  CC %3d -> Param %d", cc, param);
+                            ImGui::SameLine();
+                            char unmap_id[32];
+                            snprintf(unmap_id, sizeof(unmap_id), "X##cc%d", cc);
+                            if (ImGui::SmallButton(unmap_id)) {
+                                fx_midi_unmap_cc(cc);
+                            }
+                        }
+                    }
+                    if (!has_mappings) {
+                        ImGui::TextDisabled("  (none)");
                     }
                 }
 
@@ -1646,7 +1735,9 @@ int main(int argc, char *argv[]) {
                     if (ImGui::InvisibleButton(btn_id, ImVec2(dm * 2.0f, dm * 2.0f))) {
                         s_selected_node = (s_selected_node == ni) ? -1 : ni;
                     }
-                    continue;
+                    /* SPLIT skips cable drawing (handled by bezier pass),
+                     * but MERGE falls through to draw cable + [+] to next node */
+                    if (n.kind == NODE_SPLIT) continue;
                 }
 
                 /* ── Regular rectangular node ───────────────────── */
@@ -1849,7 +1940,7 @@ int main(int argc, char *argv[]) {
 
                         if (show_add) {
                             float add_x = x_right + (x_next - x_right - ADD_BTN_W) * 0.5f;
-                            float add_y = lcy - NODE_H * 0.5f - ADD_BTN_W + 4.0f;
+                            float add_y = lcy - ADD_BTN_W * 0.5f; /* centered on cable line, overlays cable */
                             char inv_id[32];
                             snprintf(inv_id, sizeof(inv_id), "##addinv_%d", ni);
                             ImGui::SetCursorScreenPos(ImVec2(add_x, add_y));
@@ -3336,6 +3427,7 @@ int main(int argc, char *argv[]) {
 
     /* Cleanup */
     fx_texture_shutdown();
+    fx_midi_shutdown();
     fx_audio_shutdown();
     fx_engine_destroy(engine);
 

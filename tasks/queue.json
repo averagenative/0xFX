@@ -1433,8 +1433,8 @@
     "title": "MIDI device enumeration + settings panel",
     "domain": "frontend",
     "phase": 8,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 30000,
     "acceptanceCriteria": [
@@ -1568,7 +1568,7 @@
     "title": "Pedal shelf / add-pedal sidebar",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-300"
@@ -1657,7 +1657,7 @@
     "title": "Amp and cab visual nodes in signal chain",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-300"
@@ -1703,7 +1703,7 @@
     "title": "Generate knobless amp panel images",
     "domain": "infra",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-074"
@@ -1725,7 +1725,7 @@
     "title": "Pedal layout descriptor system",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-200",
@@ -1751,7 +1751,7 @@
     "domain": "frontend",
     "phase": 7,
     "status": "done",
-    "claimedBy": "claude-agent",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-027",
       "TASK-202"
@@ -1824,7 +1824,7 @@
     "title": "Composite pedal renderer (body + knobs + LED + stomp)",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-202",
@@ -1851,7 +1851,7 @@
     "title": "Amp panel layout descriptors + composite renderer",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-201",
@@ -1875,7 +1875,7 @@
     "title": "Signal chain cable rendering between components",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-206"
@@ -2150,8 +2150,8 @@
     "title": "Cable segment assets between signal chain nodes",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-312"
     ],
@@ -2244,8 +2244,8 @@
     "title": "Generate microphone PNG assets",
     "domain": "frontend",
     "phase": 5,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-326"
     ],
@@ -2423,6 +2423,27 @@
     ],
     "files": [
       "src/plugin/plugin.c"
+    ]
+  },
+  {
+    "id": "TASK-336",
+    "priority": "HIGH",
+    "title": "Clickable stomp switch on pedal images with glowing LED",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "Click on the stomp switch area of the pedal body image to toggle bypass",
+      "Green LED glows on the pedal image when active, dim red when bypassed",
+      "LED positions detected from green dots marked on pedal images (like red dot workflow for knobs)",
+      "Stomp switch hit area is the lower portion of the pedal body",
+      "Visual feedback: slight push-down animation or brightness change on click"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
     ]
   }
 ]
