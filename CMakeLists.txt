@@ -130,7 +130,7 @@ if(HAS_GUI)
         set(GUI_RC "")
     endif()
 
-    add_executable(0xfx_gui
+    add_executable(0xfx_gui WIN32
         src/gui/gui_main.cpp
         src/gui/knobs.cpp
         src/gui/texture.c

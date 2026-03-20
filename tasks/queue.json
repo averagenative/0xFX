@@ -2445,5 +2445,111 @@
     "files": [
       "src/gui/gui_main.cpp"
     ]
+  },
+  {
+    "id": "TASK-337",
+    "priority": "CRITICAL",
+    "title": "Plugin GUI: embed ImGui in CLAP/VST3 host window",
+    "domain": "frontend",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 60000,
+    "acceptanceCriteria": [
+      "ImGui+SDL2/OpenGL renders inside the host-provided native window (CLAP/VST3)",
+      "Same visual appearance as standalone GUI",
+      "Resize support \u2014 adapts to host window size",
+      "Works in at least one DAW on Windows (Reaper recommended)",
+      "Share gui_main.cpp rendering code between standalone and plugin (extract to shared module)",
+      "cplug_createGUI/destroyGUI/setParent/setVisible fully implemented"
+    ],
+    "files": [
+      "src/plugin/plugin.c",
+      "src/gui/gui_render.cpp"
+    ]
+  },
+  {
+    "id": "TASK-338",
+    "priority": "HIGH",
+    "title": "Plugin: dual chain support + noise gate params",
+    "domain": "engine",
+    "phase": 6,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Plugin exposes chain count selector (single/dual)",
+      "Chain B amp model, params, cab, mic \u2014 all automatable",
+      "Chain A/B mix levels exposed as params",
+      "Noise gate threshold/attack/release/hold exposed as params",
+      "Parameter count increases to accommodate dual chain"
+    ],
+    "files": [
+      "src/plugin/plugin.c"
+    ]
+  },
+  {
+    "id": "TASK-339",
+    "priority": "HIGH",
+    "title": "Plugin: full pedal parameter exposure + bypass",
+    "domain": "engine",
+    "phase": 6,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Each pedal slot exposes up to 6 params (not just 3)",
+      "Per-pedal bypass toggle exposed as automatable param",
+      "Per-studio-processor bypass exposed",
+      "Increase pedal slots from 3+3 to 6+3 (6 pre, 3 post)",
+      "Parameter names update dynamically based on which pedal type is loaded"
+    ],
+    "files": [
+      "src/plugin/plugin.c"
+    ]
+  },
+  {
+    "id": "TASK-340",
+    "priority": "MEDIUM",
+    "title": "Plugin: factory preset enumeration",
+    "domain": "engine",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Host can enumerate factory presets via CLAP preset-discovery or VST3 program list",
+      "All .0xfx presets in presets/ folder available in host preset browser",
+      "Selecting a preset loads the full rig state",
+      "Current preset name reported to host"
+    ],
+    "files": [
+      "src/plugin/plugin.c"
+    ]
+  },
+  {
+    "id": "TASK-341",
+    "priority": "MEDIUM",
+    "title": "Plugin: tuner data + MIDI CC passthrough",
+    "domain": "engine",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-337"
+    ],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Tuner note name and cents available in plugin GUI",
+      "MIDI CC input from host routed to engine parameter mapping",
+      "MIDI learn works within plugin context"
+    ],
+    "files": [
+      "src/plugin/plugin.c"
+    ]
   }
 ]

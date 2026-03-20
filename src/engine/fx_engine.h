@@ -274,6 +274,17 @@ const char   *fx_studio_get_type_name(fx_studio_type_t type);
 int           fx_studio_get_param_count(fx_studio_type_t type);
 const char   *fx_studio_get_param_name(fx_studio_type_t type, int param);
 
+/* ── Noise gate — input stage ─────────────────────────────────── */
+
+void         fx_gate_set_threshold(fx_engine_t *engine, float db);
+float        fx_gate_get_threshold(fx_engine_t *engine);
+void         fx_gate_set_attack(fx_engine_t *engine, float ms);
+float        fx_gate_get_attack(fx_engine_t *engine);
+void         fx_gate_set_release(fx_engine_t *engine, float ms);
+float        fx_gate_get_release(fx_engine_t *engine);
+void         fx_gate_set_hold(fx_engine_t *engine, float ms);
+float        fx_gate_get_hold(fx_engine_t *engine);
+
 /* ── Presets (.0xfx JSON) ─────────────────────────────────────── */
 
 bool         fx_preset_save(fx_engine_t *engine, const char *path);

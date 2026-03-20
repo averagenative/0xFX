@@ -11,24 +11,27 @@
  *   Input  bus 0 — 1 channel  (mono guitar)
  *   Output bus 0 — 2 channels (stereo, engine output duplicated L+R)
  *
- * Parameters (59 total):
- *   Indices  0-11  : Amp knobs (Gain, Volume, Bass, Mid, Treble, Presence,
- *                               Sag, Master, Bright, Cut, Tone, Feedback)
- *   Index   12     : Amp model selector (0 .. FX_AMP_COUNT-1)
- *   Index   13     : Cab type selector (0 .. FX_CAB_TYPE_COUNT-1)
- *   Index   14     : Cab bypass (0/1)
- *   Index   15     : Mic type selector (0 .. FX_MIC_COUNT-1)
- *   Indices 16-18  : Mic params (Distance, Angle, Position)
- *   Indices 19-22  : Studio slot 0  (type + 3 generic params)
- *   Indices 23-26  : Studio slot 1
- *   Indices 27-30  : Studio slot 2
- *   Indices 31-34  : Studio slot 3
- *   Indices 35-38  : Pre-pedal slot 0  (type + 3 generic params)
- *   Indices 39-42  : Pre-pedal slot 1
- *   Indices 43-46  : Pre-pedal slot 2
- *   Indices 47-50  : Post-pedal slot 0
- *   Indices 51-54  : Post-pedal slot 1
- *   Indices 55-58  : Post-pedal slot 2
+ * Parameters (137 total):
+ *   Indices  0-11  : Chain A amp knobs (Gain, Volume, Bass, Mid, Treble,
+ *                    Presence, Sag, Master, Bright, Cut, Tone, Feedback)
+ *   Index   12     : Chain A amp model selector (0 .. FX_AMP_COUNT-1)
+ *   Index   13     : Chain A cab type selector (0 .. FX_CAB_TYPE_COUNT-1)
+ *   Index   14     : Chain A cab bypass (0/1)
+ *   Index   15     : Chain A mic type selector (0 .. FX_MIC_COUNT-1)
+ *   Indices 16-18  : Chain A mic params (Distance, Angle, Position)
+ *   Indices 19-22  : Noise gate (Threshold, Attack, Release, Hold)
+ *   Index   23     : Chain mode (0=single, 1=dual)
+ *   Index   24     : Chain A mix level (0.0-1.0)
+ *   Index   25     : Chain B mix level (0.0-1.0)
+ *   Indices 26-37  : Chain B amp knobs (mirror of Chain A layout)
+ *   Index   38     : Chain B amp model selector
+ *   Index   39     : Chain B cab type selector
+ *   Index   40     : Chain B cab bypass
+ *   Index   41     : Chain B mic type selector
+ *   Indices 42-44  : Chain B mic params (Distance, Angle, Position)
+ *   Indices 45-64  : Studio slots 0-3 (type + bypass + 3 params = 5 each)
+ *   Indices 65-112 : Pre-pedal slots 0-5 (type + bypass + 6 params = 8 each)
+ *   Indices 113-136: Post-pedal slots 0-2 (type + bypass + 6 params = 8 each)
  *
  * Pedal/studio type selector value 0 means "no pedal/processor" (slot empty).
  * Values 1 .. TYPE_COUNT map to the corresponding type enum (value - 1).
@@ -46,29 +49,66 @@
 /* ── Parameter layout constants ─────────────────────────────────── */
 
 #define NUM_AMP_KNOBS    12
-#define IDX_AMP_MODEL    NUM_AMP_KNOBS          /* index 12 */
-#define NUM_AMP_PARAMS   (NUM_AMP_KNOBS + 1)    /* 13: knobs + model selector */
 
-#define IDX_CAB_TYPE     NUM_AMP_PARAMS         /* index 13 */
-#define IDX_CAB_BYPASS   (IDX_CAB_TYPE + 1)     /* index 14 */
-#define NUM_CAB_PARAMS   2
+/* Chain A amp section */
+#define IDX_A_AMP_START  0
+#define IDX_A_AMP_MODEL  NUM_AMP_KNOBS          /* index 12 */
+#define NUM_A_AMP_PARAMS (NUM_AMP_KNOBS + 1)    /* 13: knobs + model selector */
 
-#define IDX_MIC_TYPE     (IDX_CAB_BYPASS + 1)   /* index 15 */
-#define IDX_MIC_DISTANCE (IDX_MIC_TYPE + 1)     /* index 16 */
-#define IDX_MIC_ANGLE    (IDX_MIC_TYPE + 2)     /* index 17 */
-#define IDX_MIC_POSITION (IDX_MIC_TYPE + 3)     /* index 18 */
-#define NUM_MIC_PARAMS   4                      /* type + 3 placement */
+/* Chain A cab section */
+#define IDX_A_CAB_TYPE   NUM_A_AMP_PARAMS       /* index 13 */
+#define IDX_A_CAB_BYPASS (IDX_A_CAB_TYPE + 1)   /* index 14 */
+#define NUM_A_CAB_PARAMS 2
 
+/* Chain A mic section */
+#define IDX_A_MIC_TYPE     (IDX_A_CAB_BYPASS + 1)   /* index 15 */
+#define IDX_A_MIC_DISTANCE (IDX_A_MIC_TYPE + 1)     /* index 16 */
+#define IDX_A_MIC_ANGLE    (IDX_A_MIC_TYPE + 2)     /* index 17 */
+#define IDX_A_MIC_POSITION (IDX_A_MIC_TYPE + 3)     /* index 18 */
+#define NUM_A_MIC_PARAMS   4
+
+/* Noise gate section */
+#define IDX_GATE_START     (IDX_A_MIC_POSITION + 1)  /* index 19 */
+#define IDX_GATE_THRESHOLD IDX_GATE_START             /* index 19 */
+#define IDX_GATE_ATTACK    (IDX_GATE_START + 1)       /* index 20 */
+#define IDX_GATE_RELEASE   (IDX_GATE_START + 2)       /* index 21 */
+#define IDX_GATE_HOLD      (IDX_GATE_START + 3)       /* index 22 */
+#define NUM_GATE_PARAMS    4
+
+/* Chain mode + mix section */
+#define IDX_CHAIN_MODE     (IDX_GATE_START + NUM_GATE_PARAMS)  /* index 23 */
+#define IDX_MIX_A          (IDX_CHAIN_MODE + 1)                /* index 24 */
+#define IDX_MIX_B          (IDX_CHAIN_MODE + 2)                /* index 25 */
+#define NUM_CHAIN_PARAMS   3
+
+/* Chain B amp section */
+#define IDX_B_AMP_START    (IDX_MIX_B + 1)           /* index 26 */
+#define IDX_B_AMP_MODEL    (IDX_B_AMP_START + NUM_AMP_KNOBS)  /* index 38 */
+
+/* Chain B cab section */
+#define IDX_B_CAB_TYPE     (IDX_B_AMP_MODEL + 1)     /* index 39 */
+#define IDX_B_CAB_BYPASS   (IDX_B_CAB_TYPE + 1)      /* index 40 */
+
+/* Chain B mic section */
+#define IDX_B_MIC_TYPE     (IDX_B_CAB_BYPASS + 1)    /* index 41 */
+#define IDX_B_MIC_DISTANCE (IDX_B_MIC_TYPE + 1)      /* index 42 */
+#define IDX_B_MIC_ANGLE    (IDX_B_MIC_TYPE + 2)      /* index 43 */
+#define IDX_B_MIC_POSITION (IDX_B_MIC_TYPE + 3)      /* index 44 */
+
+/* Studio slots */
 #define NUM_STUDIO_SLOTS   4
-#define PARAMS_PER_STUDIO  4   /* type selector + 3 generic params */
-#define IDX_STUDIO_START   (IDX_MIC_TYPE + NUM_MIC_PARAMS)  /* index 19 */
+#define PARAMS_PER_STUDIO  5   /* type + bypass + 3 params */
+#define IDX_STUDIO_START   (IDX_B_MIC_POSITION + 1)  /* index 45 */
 
-#define NUM_PEDAL_SLOTS  6   /* 3 pre + 3 post */
-#define PARAMS_PER_PEDAL 4   /* type selector + 3 generic knob params */
-#define IDX_PEDAL_START  (IDX_STUDIO_START + NUM_STUDIO_SLOTS * PARAMS_PER_STUDIO)  /* index 35 */
+/* Pedal slots */
+#define NUM_PRE_PEDAL_SLOTS  6
+#define NUM_POST_PEDAL_SLOTS 3
+#define NUM_PEDAL_SLOTS      (NUM_PRE_PEDAL_SLOTS + NUM_POST_PEDAL_SLOTS) /* 9 */
+#define PARAMS_PER_PEDAL     8   /* type + bypass + 6 params */
+#define IDX_PEDAL_START      (IDX_STUDIO_START + NUM_STUDIO_SLOTS * PARAMS_PER_STUDIO)  /* index 65 */
 
-#define NUM_PARAMS       (IDX_PEDAL_START + NUM_PEDAL_SLOTS * PARAMS_PER_PEDAL)
-/* = 35 + 24 = 59 */
+#define NUM_PARAMS           (IDX_PEDAL_START + NUM_PEDAL_SLOTS * PARAMS_PER_PEDAL)
+/* = 65 + 9 * 8 = 65 + 72 = 137 */
 
 /* First param index for pedal block n (0-based) */
 #define PEDAL_BLOCK_START(n)   (IDX_PEDAL_START + (n) * PARAMS_PER_PEDAL)
@@ -87,6 +127,7 @@ typedef struct {
     const char   *name;
 } AmpParamDef;
 
+/* Chain A param IDs (original, backward-compatible) */
 #define PARAM_ID_AMP_MODEL   'axAM'
 #define PARAM_ID_CAB_TYPE    'cxTY'
 #define PARAM_ID_CAB_BYPASS  'cxBP'
@@ -94,6 +135,26 @@ typedef struct {
 #define PARAM_ID_MIC_DIST    'mx00'
 #define PARAM_ID_MIC_ANGLE   'mx01'
 #define PARAM_ID_MIC_POS     'mx02'
+
+/* Noise gate param IDs */
+#define PARAM_ID_GATE_THRESH 'gx00'
+#define PARAM_ID_GATE_ATTACK 'gx01'
+#define PARAM_ID_GATE_RELEASE 'gx02'
+#define PARAM_ID_GATE_HOLD   'gx03'
+
+/* Chain mode + mix param IDs */
+#define PARAM_ID_CHAIN_MODE  'chMD'
+#define PARAM_ID_MIX_A       'chMA'
+#define PARAM_ID_MIX_B       'chMB'
+
+/* Chain B param IDs */
+#define PARAM_ID_B_AMP_MODEL 'bxAM'
+#define PARAM_ID_B_CAB_TYPE  'bxTY'
+#define PARAM_ID_B_CAB_BYPASS 'bxBP'
+#define PARAM_ID_B_MIC_TYPE  'bxMT'
+#define PARAM_ID_B_MIC_DIST  'bx00'
+#define PARAM_ID_B_MIC_ANGLE 'bx01'
+#define PARAM_ID_B_MIC_POS   'bx02'
 
 static const AmpParamDef AMP_KNOBS[NUM_AMP_KNOBS] = {
     { 'ax00', FX_AMP_PARAM_GAIN,     0.0f, 10.0f, 5.0f, "Gain"     },
@@ -110,10 +171,19 @@ static const AmpParamDef AMP_KNOBS[NUM_AMP_KNOBS] = {
     { 'ax11', FX_AMP_PARAM_FEEDBACK, 0.0f, 10.0f, 0.0f, "Feedback" },
 };
 
+/* Chain B amp knob IDs — 'bx' prefix + knob index as 2-char hex */
+static uint32_t chain_b_amp_knob_id(int knob)
+{
+    return (uint32_t)('b' | ((uint32_t)'a' << 8) |
+                      ((uint32_t)('0' + knob / 10) << 16) |
+                      ((uint32_t)('0' + knob % 10) << 24));
+}
+
 /* ── Pedal slot descriptors ─────────────────────────────────────── */
 
 /*
- * Slots 0-2 are PRE, slots 3-5 are POST.
+ * Pre-pedal slots 0-5 map to engine FX_CHAIN_POS_PRE.
+ * Post-pedal slots 6-8 map to engine FX_CHAIN_POS_POST.
  * Param IDs for pedal slots are built from 'px' prefix + slot + sub-index.
  *   e.g. slot 0 param 0 => 'px00', slot 0 param 1 => 'px01', ...
  *        slot 1 param 0 => 'px10', etc.
@@ -121,7 +191,7 @@ static const AmpParamDef AMP_KNOBS[NUM_AMP_KNOBS] = {
 
 static uint32_t pedal_param_id(int slot, int sub)
 {
-    /* slot 0-5, sub 0-3 -> unique 4-byte ID */
+    /* slot 0-8, sub 0-7 -> unique 4-byte ID */
     return (uint32_t)('p' | ((uint32_t)'x' << 8) |
                       ((uint32_t)('0' + slot) << 16) |
                       ((uint32_t)('0' + sub) << 24));
@@ -137,7 +207,7 @@ static uint32_t studio_param_id(int slot, int sub)
 
 static fx_chain_pos_t slot_pos(int slot)
 {
-    return (slot < 3) ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
+    return (slot < NUM_PRE_PEDAL_SLOTS) ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
 }
 
 /* ── Plugin state struct ─────────────────────────────────────────── */
@@ -163,6 +233,11 @@ typedef struct {
      * -1 means empty (no processor in this slot).
      */
     fx_studio_id studio_ids[NUM_STUDIO_SLOTS];
+
+    /*
+     * Chain B ID — -1 when in single chain mode.
+     */
+    fx_chain_id chain_b_id;
 } OxFXPlugin;
 
 /* ── Type-from-param helpers ────────────────────────────────────── */
@@ -185,25 +260,54 @@ static int type_from_param(float v, int type_count)
  * Returns NUM_PARAMS if not found. */
 static int find_param_index(uint32_t param_id)
 {
-    /* Amp model selector */
-    if (param_id == PARAM_ID_AMP_MODEL)
-        return IDX_AMP_MODEL;
-
-    /* Cab params */
-    if (param_id == PARAM_ID_CAB_TYPE)   return IDX_CAB_TYPE;
-    if (param_id == PARAM_ID_CAB_BYPASS) return IDX_CAB_BYPASS;
-
-    /* Mic params */
-    if (param_id == PARAM_ID_MIC_TYPE)   return IDX_MIC_TYPE;
-    if (param_id == PARAM_ID_MIC_DIST)   return IDX_MIC_DISTANCE;
-    if (param_id == PARAM_ID_MIC_ANGLE)  return IDX_MIC_ANGLE;
-    if (param_id == PARAM_ID_MIC_POS)    return IDX_MIC_POSITION;
-
-    /* Amp knobs */
+    /* Chain A amp knobs */
     for (int i = 0; i < NUM_AMP_KNOBS; i++) {
         if (AMP_KNOBS[i].id == param_id)
             return i;
     }
+
+    /* Chain A amp model selector */
+    if (param_id == PARAM_ID_AMP_MODEL)  return IDX_A_AMP_MODEL;
+
+    /* Chain A cab params */
+    if (param_id == PARAM_ID_CAB_TYPE)   return IDX_A_CAB_TYPE;
+    if (param_id == PARAM_ID_CAB_BYPASS) return IDX_A_CAB_BYPASS;
+
+    /* Chain A mic params */
+    if (param_id == PARAM_ID_MIC_TYPE)   return IDX_A_MIC_TYPE;
+    if (param_id == PARAM_ID_MIC_DIST)   return IDX_A_MIC_DISTANCE;
+    if (param_id == PARAM_ID_MIC_ANGLE)  return IDX_A_MIC_ANGLE;
+    if (param_id == PARAM_ID_MIC_POS)    return IDX_A_MIC_POSITION;
+
+    /* Noise gate params */
+    if (param_id == PARAM_ID_GATE_THRESH)  return IDX_GATE_THRESHOLD;
+    if (param_id == PARAM_ID_GATE_ATTACK)  return IDX_GATE_ATTACK;
+    if (param_id == PARAM_ID_GATE_RELEASE) return IDX_GATE_RELEASE;
+    if (param_id == PARAM_ID_GATE_HOLD)    return IDX_GATE_HOLD;
+
+    /* Chain mode + mix */
+    if (param_id == PARAM_ID_CHAIN_MODE) return IDX_CHAIN_MODE;
+    if (param_id == PARAM_ID_MIX_A)      return IDX_MIX_A;
+    if (param_id == PARAM_ID_MIX_B)      return IDX_MIX_B;
+
+    /* Chain B amp knobs */
+    for (int i = 0; i < NUM_AMP_KNOBS; i++) {
+        if (chain_b_amp_knob_id(i) == param_id)
+            return IDX_B_AMP_START + i;
+    }
+
+    /* Chain B amp model */
+    if (param_id == PARAM_ID_B_AMP_MODEL) return IDX_B_AMP_MODEL;
+
+    /* Chain B cab */
+    if (param_id == PARAM_ID_B_CAB_TYPE)   return IDX_B_CAB_TYPE;
+    if (param_id == PARAM_ID_B_CAB_BYPASS) return IDX_B_CAB_BYPASS;
+
+    /* Chain B mic */
+    if (param_id == PARAM_ID_B_MIC_TYPE)   return IDX_B_MIC_TYPE;
+    if (param_id == PARAM_ID_B_MIC_DIST)   return IDX_B_MIC_DISTANCE;
+    if (param_id == PARAM_ID_B_MIC_ANGLE)  return IDX_B_MIC_ANGLE;
+    if (param_id == PARAM_ID_B_MIC_POS)    return IDX_B_MIC_POSITION;
 
     /* Studio params */
     for (int slot = 0; slot < NUM_STUDIO_SLOTS; slot++) {
@@ -226,12 +330,38 @@ static int find_param_index(uint32_t param_id)
 
 static float param_min(int index)
 {
-    if (index < NUM_AMP_KNOBS)      return AMP_KNOBS[index].min_val;
-    if (index == IDX_AMP_MODEL)     return 0.0f;
-    if (index == IDX_CAB_TYPE)      return 0.0f;
-    if (index == IDX_CAB_BYPASS)    return 0.0f;
-    if (index == IDX_MIC_TYPE)      return 0.0f;
-    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) return 0.0f;
+    /* Chain A amp knobs */
+    if (index < NUM_AMP_KNOBS)
+        return AMP_KNOBS[index].min_val;
+
+    /* Chain A amp model / cab / mic */
+    if (index == IDX_A_AMP_MODEL)     return 0.0f;
+    if (index == IDX_A_CAB_TYPE)      return 0.0f;
+    if (index == IDX_A_CAB_BYPASS)    return 0.0f;
+    if (index == IDX_A_MIC_TYPE)      return 0.0f;
+    if (index >= IDX_A_MIC_DISTANCE && index <= IDX_A_MIC_POSITION) return 0.0f;
+
+    /* Noise gate */
+    if (index == IDX_GATE_THRESHOLD) return -80.0f;
+    if (index == IDX_GATE_ATTACK)    return 0.1f;
+    if (index == IDX_GATE_RELEASE)   return 5.0f;
+    if (index == IDX_GATE_HOLD)      return 1.0f;
+
+    /* Chain mode + mix */
+    if (index == IDX_CHAIN_MODE) return 0.0f;
+    if (index == IDX_MIX_A)      return 0.0f;
+    if (index == IDX_MIX_B)      return 0.0f;
+
+    /* Chain B amp knobs */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS)
+        return AMP_KNOBS[index - IDX_B_AMP_START].min_val;
+
+    /* Chain B amp model / cab / mic */
+    if (index == IDX_B_AMP_MODEL)     return 0.0f;
+    if (index == IDX_B_CAB_TYPE)      return 0.0f;
+    if (index == IDX_B_CAB_BYPASS)    return 0.0f;
+    if (index == IDX_B_MIC_TYPE)      return 0.0f;
+    if (index >= IDX_B_MIC_DISTANCE && index <= IDX_B_MIC_POSITION) return 0.0f;
 
     /* Studio sub-params */
     if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START)
@@ -246,18 +376,45 @@ static float param_min(int index)
 
 static float param_max(int index)
 {
-    if (index < NUM_AMP_KNOBS)      return AMP_KNOBS[index].max_val;
-    if (index == IDX_AMP_MODEL)     return (float)(FX_AMP_COUNT - 1);
-    if (index == IDX_CAB_TYPE)      return (float)(FX_CAB_TYPE_COUNT - 1);
-    if (index == IDX_CAB_BYPASS)    return 1.0f;
-    if (index == IDX_MIC_TYPE)      return (float)(FX_MIC_COUNT - 1);
-    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) return 1.0f;
+    /* Chain A amp knobs */
+    if (index < NUM_AMP_KNOBS)
+        return AMP_KNOBS[index].max_val;
+
+    /* Chain A amp model / cab / mic */
+    if (index == IDX_A_AMP_MODEL)     return (float)(FX_AMP_COUNT - 1);
+    if (index == IDX_A_CAB_TYPE)      return (float)(FX_CAB_TYPE_COUNT - 1);
+    if (index == IDX_A_CAB_BYPASS)    return 1.0f;
+    if (index == IDX_A_MIC_TYPE)      return (float)(FX_MIC_COUNT - 1);
+    if (index >= IDX_A_MIC_DISTANCE && index <= IDX_A_MIC_POSITION) return 1.0f;
+
+    /* Noise gate */
+    if (index == IDX_GATE_THRESHOLD) return 0.0f;
+    if (index == IDX_GATE_ATTACK)    return 50.0f;
+    if (index == IDX_GATE_RELEASE)   return 500.0f;
+    if (index == IDX_GATE_HOLD)      return 100.0f;
+
+    /* Chain mode + mix */
+    if (index == IDX_CHAIN_MODE) return 1.0f;
+    if (index == IDX_MIX_A)      return 1.0f;
+    if (index == IDX_MIX_B)      return 1.0f;
+
+    /* Chain B amp knobs */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS)
+        return AMP_KNOBS[index - IDX_B_AMP_START].max_val;
+
+    /* Chain B amp model / cab / mic */
+    if (index == IDX_B_AMP_MODEL)     return (float)(FX_AMP_COUNT - 1);
+    if (index == IDX_B_CAB_TYPE)      return (float)(FX_CAB_TYPE_COUNT - 1);
+    if (index == IDX_B_CAB_BYPASS)    return 1.0f;
+    if (index == IDX_B_MIC_TYPE)      return (float)(FX_MIC_COUNT - 1);
+    if (index >= IDX_B_MIC_DISTANCE && index <= IDX_B_MIC_POSITION) return 1.0f;
 
     /* Studio sub-params */
     if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
         int offset = index - IDX_STUDIO_START;
         int sub    = offset % PARAMS_PER_STUDIO;
         if (sub == 0) return (float)FX_STUDIO_COUNT; /* 0 = none, 1..N = type */
+        if (sub == 1) return 1.0f; /* bypass */
         return 1.0f;
     }
 
@@ -266,6 +423,7 @@ static float param_max(int index)
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0) return (float)FX_PEDAL_TYPE_COUNT; /* 0 = none, 1..N = type */
+        if (sub == 1) return 1.0f; /* bypass */
         return 1.0f;
     }
 
@@ -274,12 +432,39 @@ static float param_max(int index)
 
 static float param_default(int index)
 {
-    if (index < NUM_AMP_KNOBS)      return AMP_KNOBS[index].default_val;
-    if (index == IDX_AMP_MODEL)     return 0.0f;
-    if (index == IDX_CAB_TYPE)      return 0.0f;  /* 1x12 open */
-    if (index == IDX_CAB_BYPASS)    return 0.0f;  /* cab enabled */
-    if (index == IDX_MIC_TYPE)      return 0.0f;  /* DI (no coloration) */
-    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) return 0.5f;
+    /* Chain A amp knobs */
+    if (index < NUM_AMP_KNOBS)
+        return AMP_KNOBS[index].default_val;
+
+    /* Chain A model / cab / mic */
+    if (index == IDX_A_AMP_MODEL)     return 0.0f;
+    if (index == IDX_A_CAB_TYPE)      return 0.0f;  /* 1x12 open */
+    if (index == IDX_A_CAB_BYPASS)    return 0.0f;  /* cab enabled */
+    if (index == IDX_A_MIC_TYPE)      return 0.0f;  /* DI (no coloration) */
+    if (index >= IDX_A_MIC_DISTANCE && index <= IDX_A_MIC_POSITION) return 0.5f;
+
+    /* Noise gate */
+    if (index == IDX_GATE_THRESHOLD) return -55.0f;
+    if (index == IDX_GATE_ATTACK)    return 1.0f;
+    if (index == IDX_GATE_RELEASE)   return 50.0f;
+    if (index == IDX_GATE_HOLD)      return 10.0f;
+
+    /* Chain mode + mix */
+    if (index == IDX_CHAIN_MODE) return 0.0f;  /* single */
+    if (index == IDX_MIX_A)      return 1.0f;  /* full level */
+    if (index == IDX_MIX_B)      return 0.5f;  /* half level */
+
+    /* Chain B amp knobs */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS)
+        return AMP_KNOBS[index - IDX_B_AMP_START].default_val;
+
+    /* Chain B model / cab / mic */
+    if (index == IDX_B_AMP_MODEL)     return 0.0f;
+    if (index == IDX_B_CAB_TYPE)      return 0.0f;
+    if (index == IDX_B_CAB_BYPASS)    return 0.0f;
+    if (index == IDX_B_MIC_TYPE)      return 0.0f;
+    if (index >= IDX_B_MIC_DISTANCE && index <= IDX_B_MIC_POSITION) return 0.5f;
+
     return 0.0f; /* studio/pedal slots: empty / knobs at min */
 }
 
@@ -321,11 +506,15 @@ static fx_pedal_id sync_pedal_slot(OxFXPlugin *p, int slot, int type_idx)
                                              (fx_pedal_type_t)type_idx, pos);
     p->pedal_ids[slot] = new_id;
 
-    /* Restore the 3 generic param values for this slot */
+    /* Restore the 6 generic param values and bypass for this slot */
     if (new_id >= 0) {
         int base = PEDAL_BLOCK_START(slot);
-        for (int sub = 1; sub < PARAMS_PER_PEDAL; sub++) {
-            fx_pedal_set_param(p->engine, new_id, sub - 1,
+        /* sub 1 = bypass */
+        fx_pedal_set_bypass(p->engine, new_id,
+                            p->param_values[base + 1] >= 0.5f);
+        /* sub 2-7 = params 0-5 */
+        for (int sub = 2; sub < PARAMS_PER_PEDAL; sub++) {
+            fx_pedal_set_param(p->engine, new_id, sub - 2,
                                p->param_values[base + sub]);
         }
     }
@@ -360,15 +549,36 @@ static fx_studio_id sync_studio_slot(OxFXPlugin *p, int slot, int type_idx)
                                          (fx_studio_type_t)type_idx);
     p->studio_ids[slot] = new_id;
 
-    /* Restore the 3 generic param values for this slot */
+    /* Restore bypass + 3 generic param values for this slot */
     if (new_id >= 0) {
         int base = STUDIO_BLOCK_START(slot);
-        for (int sub = 1; sub < PARAMS_PER_STUDIO; sub++) {
-            fx_studio_set_param(p->engine, new_id, sub - 1,
+        /* sub 1 = bypass */
+        fx_studio_set_bypass(p->engine, new_id,
+                             p->param_values[base + 1] >= 0.5f);
+        /* sub 2-4 = params 0-2 */
+        for (int sub = 2; sub < PARAMS_PER_STUDIO; sub++) {
+            fx_studio_set_param(p->engine, new_id, sub - 2,
                                 p->param_values[base + sub]);
         }
     }
     return new_id;
+}
+
+/*
+ * Generate cab IR for the given chain using current shadow param values.
+ */
+static void apply_cab_type(OxFXPlugin *p, fx_chain_id chain, float value)
+{
+    int cab = (int)(value + 0.5f);
+    if (cab < 0) cab = 0;
+    if (cab >= FX_CAB_TYPE_COUNT) cab = FX_CAB_TYPE_COUNT - 1;
+    fx_cab_params_t params;
+    params.cab_type   = (fx_cab_type_t)cab;
+    params.mic_pos    = FX_MIC_ON_AXIS;
+    params.speaker_fs = 80.0f;
+    params.brightness = 0.5f;
+    params.resonance  = 0.5f;
+    fx_cab_generate_ir(p->engine, chain, &params);
 }
 
 /* Apply a parameter value to the engine */
@@ -376,15 +586,15 @@ static void apply_param(OxFXPlugin *p, int index, float value)
 {
     if (!p->engine) return;
 
-    /* Amp knob */
+    /* ── Chain A amp knob ─────────────────────────────────────────── */
     if (index < NUM_AMP_KNOBS) {
         fx_amp_set_param(p->engine, FX_CHAIN_DEFAULT,
                          AMP_KNOBS[index].amp_param, value);
         return;
     }
 
-    /* Amp model selector */
-    if (index == IDX_AMP_MODEL) {
+    /* ── Chain A amp model selector ───────────────────────────────── */
+    if (index == IDX_A_AMP_MODEL) {
         int model = (int)(value + 0.5f);
         if (model < 0) model = 0;
         if (model >= FX_AMP_COUNT) model = FX_AMP_COUNT - 1;
@@ -392,30 +602,20 @@ static void apply_param(OxFXPlugin *p, int index, float value)
         return;
     }
 
-    /* Cab type */
-    if (index == IDX_CAB_TYPE) {
-        int cab = (int)(value + 0.5f);
-        if (cab < 0) cab = 0;
-        if (cab >= FX_CAB_TYPE_COUNT) cab = FX_CAB_TYPE_COUNT - 1;
-        /* Generate a synthetic IR with the selected cab type and current mic pos */
-        fx_cab_params_t params;
-        params.cab_type   = (fx_cab_type_t)cab;
-        params.mic_pos    = FX_MIC_ON_AXIS;
-        params.speaker_fs = 80.0f;
-        params.brightness = 0.5f;
-        params.resonance  = 0.5f;
-        fx_cab_generate_ir(p->engine, FX_CHAIN_DEFAULT, &params);
+    /* ── Chain A cab type ─────────────────────────────────────────── */
+    if (index == IDX_A_CAB_TYPE) {
+        apply_cab_type(p, FX_CHAIN_DEFAULT, value);
         return;
     }
 
-    /* Cab bypass */
-    if (index == IDX_CAB_BYPASS) {
+    /* ── Chain A cab bypass ───────────────────────────────────────── */
+    if (index == IDX_A_CAB_BYPASS) {
         fx_cab_set_bypass(p->engine, FX_CHAIN_DEFAULT, value >= 0.5f);
         return;
     }
 
-    /* Mic type */
-    if (index == IDX_MIC_TYPE) {
+    /* ── Chain A mic type ─────────────────────────────────────────── */
+    if (index == IDX_A_MIC_TYPE) {
         int mic = (int)(value + 0.5f);
         if (mic < 0) mic = 0;
         if (mic >= FX_MIC_COUNT) mic = FX_MIC_COUNT - 1;
@@ -423,21 +623,141 @@ static void apply_param(OxFXPlugin *p, int index, float value)
         return;
     }
 
-    /* Mic placement params */
-    if (index == IDX_MIC_DISTANCE) {
+    /* ── Chain A mic placement params ─────────────────────────────── */
+    if (index == IDX_A_MIC_DISTANCE) {
         fx_mic_set_param(p->engine, FX_CHAIN_DEFAULT, FX_MIC_PARAM_DISTANCE, value);
         return;
     }
-    if (index == IDX_MIC_ANGLE) {
+    if (index == IDX_A_MIC_ANGLE) {
         fx_mic_set_param(p->engine, FX_CHAIN_DEFAULT, FX_MIC_PARAM_ANGLE, value);
         return;
     }
-    if (index == IDX_MIC_POSITION) {
+    if (index == IDX_A_MIC_POSITION) {
         fx_mic_set_param(p->engine, FX_CHAIN_DEFAULT, FX_MIC_PARAM_POSITION, value);
         return;
     }
 
-    /* Studio processor param */
+    /* ── Noise gate params ────────────────────────────────────────── */
+    if (index == IDX_GATE_THRESHOLD) {
+        fx_gate_set_threshold(p->engine, value);
+        return;
+    }
+    if (index == IDX_GATE_ATTACK) {
+        fx_gate_set_attack(p->engine, value);
+        return;
+    }
+    if (index == IDX_GATE_RELEASE) {
+        fx_gate_set_release(p->engine, value);
+        return;
+    }
+    if (index == IDX_GATE_HOLD) {
+        fx_gate_set_hold(p->engine, value);
+        return;
+    }
+
+    /* ── Chain mode ───────────────────────────────────────────────── */
+    if (index == IDX_CHAIN_MODE) {
+        bool want_dual = (value >= 0.5f);
+        bool have_dual = (p->chain_b_id >= 0);
+
+        if (want_dual && !have_dual) {
+            /* Create chain B */
+            p->chain_b_id = fx_chain_create(p->engine);
+            if (p->chain_b_id >= 0) {
+                /* Apply all chain B params */
+                fx_chain_set_mix(p->engine, FX_CHAIN_DEFAULT,
+                                 p->param_values[IDX_MIX_A]);
+                fx_chain_set_mix(p->engine, p->chain_b_id,
+                                 p->param_values[IDX_MIX_B]);
+                /* Apply chain B amp/cab/mic state */
+                for (int i = IDX_B_AMP_START; i <= IDX_B_MIC_POSITION; i++)
+                    apply_param(p, i, p->param_values[i]);
+            }
+        } else if (!want_dual && have_dual) {
+            /* Destroy chain B */
+            fx_chain_destroy(p->engine, p->chain_b_id);
+            p->chain_b_id = -1;
+        }
+        return;
+    }
+
+    /* ── Chain A mix ──────────────────────────────────────────────── */
+    if (index == IDX_MIX_A) {
+        fx_chain_set_mix(p->engine, FX_CHAIN_DEFAULT, value);
+        return;
+    }
+
+    /* ── Chain B mix ──────────────────────────────────────────────── */
+    if (index == IDX_MIX_B) {
+        if (p->chain_b_id >= 0)
+            fx_chain_set_mix(p->engine, p->chain_b_id, value);
+        return;
+    }
+
+    /* ── Chain B amp knobs ────────────────────────────────────────── */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS) {
+        if (p->chain_b_id >= 0) {
+            int knob = index - IDX_B_AMP_START;
+            fx_amp_set_param(p->engine, p->chain_b_id,
+                             AMP_KNOBS[knob].amp_param, value);
+        }
+        return;
+    }
+
+    /* ── Chain B amp model ────────────────────────────────────────── */
+    if (index == IDX_B_AMP_MODEL) {
+        if (p->chain_b_id >= 0) {
+            int model = (int)(value + 0.5f);
+            if (model < 0) model = 0;
+            if (model >= FX_AMP_COUNT) model = FX_AMP_COUNT - 1;
+            fx_amp_set_model(p->engine, p->chain_b_id, (fx_amp_type_t)model);
+        }
+        return;
+    }
+
+    /* ── Chain B cab type ─────────────────────────────────────────── */
+    if (index == IDX_B_CAB_TYPE) {
+        if (p->chain_b_id >= 0)
+            apply_cab_type(p, p->chain_b_id, value);
+        return;
+    }
+
+    /* ── Chain B cab bypass ───────────────────────────────────────── */
+    if (index == IDX_B_CAB_BYPASS) {
+        if (p->chain_b_id >= 0)
+            fx_cab_set_bypass(p->engine, p->chain_b_id, value >= 0.5f);
+        return;
+    }
+
+    /* ── Chain B mic type ─────────────────────────────────────────── */
+    if (index == IDX_B_MIC_TYPE) {
+        if (p->chain_b_id >= 0) {
+            int mic = (int)(value + 0.5f);
+            if (mic < 0) mic = 0;
+            if (mic >= FX_MIC_COUNT) mic = FX_MIC_COUNT - 1;
+            fx_mic_set_type(p->engine, p->chain_b_id, (fx_mic_type_t)mic);
+        }
+        return;
+    }
+
+    /* ── Chain B mic placement params ─────────────────────────────── */
+    if (index == IDX_B_MIC_DISTANCE) {
+        if (p->chain_b_id >= 0)
+            fx_mic_set_param(p->engine, p->chain_b_id, FX_MIC_PARAM_DISTANCE, value);
+        return;
+    }
+    if (index == IDX_B_MIC_ANGLE) {
+        if (p->chain_b_id >= 0)
+            fx_mic_set_param(p->engine, p->chain_b_id, FX_MIC_PARAM_ANGLE, value);
+        return;
+    }
+    if (index == IDX_B_MIC_POSITION) {
+        if (p->chain_b_id >= 0)
+            fx_mic_set_param(p->engine, p->chain_b_id, FX_MIC_PARAM_POSITION, value);
+        return;
+    }
+
+    /* ── Studio processor param ──────────────────────────────────── */
     if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
         int offset = index - IDX_STUDIO_START;
         int slot   = offset / PARAMS_PER_STUDIO;
@@ -447,17 +767,21 @@ static void apply_param(OxFXPlugin *p, int index, float value)
             /* Type selector — may add or remove the processor */
             int type_idx = type_from_param(value, FX_STUDIO_COUNT);
             sync_studio_slot(p, slot, type_idx);
-        } else {
-            /* Generic knob param (0-indexed: sub-1) */
+        } else if (sub == 1) {
+            /* Bypass toggle */
             fx_studio_id sid = p->studio_ids[slot];
-            if (sid >= 0) {
-                fx_studio_set_param(p->engine, sid, sub - 1, value);
-            }
+            if (sid >= 0)
+                fx_studio_set_bypass(p->engine, sid, value >= 0.5f);
+        } else {
+            /* Generic knob param (0-indexed: sub-2) */
+            fx_studio_id sid = p->studio_ids[slot];
+            if (sid >= 0)
+                fx_studio_set_param(p->engine, sid, sub - 2, value);
         }
         return;
     }
 
-    /* Pedal param */
+    /* ── Pedal param ─────────────────────────────────────────────── */
     if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
         int offset = index - IDX_PEDAL_START;
         int slot   = offset / PARAMS_PER_PEDAL;
@@ -467,12 +791,16 @@ static void apply_param(OxFXPlugin *p, int index, float value)
             /* Type selector — may add or remove the pedal */
             int type_idx = type_from_param(value, FX_PEDAL_TYPE_COUNT);
             sync_pedal_slot(p, slot, type_idx);
-        } else {
-            /* Generic knob param (0-indexed: sub-1) */
+        } else if (sub == 1) {
+            /* Bypass toggle */
             fx_pedal_id pid = p->pedal_ids[slot];
-            if (pid >= 0) {
-                fx_pedal_set_param(p->engine, pid, sub - 1, value);
-            }
+            if (pid >= 0)
+                fx_pedal_set_bypass(p->engine, pid, value >= 0.5f);
+        } else {
+            /* Generic knob param (0-indexed: sub-2) */
+            fx_pedal_id pid = p->pedal_ids[slot];
+            if (pid >= 0)
+                fx_pedal_set_param(p->engine, pid, sub - 2, value);
         }
         return;
     }
@@ -492,6 +820,7 @@ void *cplug_createPlugin(CplugHostContext *ctx)
 
     p->host_ctx    = ctx;
     p->sample_rate = 44100.0f;
+    p->chain_b_id  = -1;
 
     /* Initialise pedal IDs to "empty" */
     for (int i = 0; i < NUM_PEDAL_SLOTS; i++)
@@ -556,14 +885,37 @@ uint32_t cplug_getParameterID(void *ptr, uint32_t param_index)
     (void)ptr;
     int i = (int)param_index;
 
-    if (i < NUM_AMP_KNOBS)      return AMP_KNOBS[i].id;
-    if (i == IDX_AMP_MODEL)     return PARAM_ID_AMP_MODEL;
-    if (i == IDX_CAB_TYPE)      return PARAM_ID_CAB_TYPE;
-    if (i == IDX_CAB_BYPASS)    return PARAM_ID_CAB_BYPASS;
-    if (i == IDX_MIC_TYPE)      return PARAM_ID_MIC_TYPE;
-    if (i == IDX_MIC_DISTANCE)  return PARAM_ID_MIC_DIST;
-    if (i == IDX_MIC_ANGLE)     return PARAM_ID_MIC_ANGLE;
-    if (i == IDX_MIC_POSITION)  return PARAM_ID_MIC_POS;
+    /* Chain A amp knobs */
+    if (i < NUM_AMP_KNOBS)       return AMP_KNOBS[i].id;
+    if (i == IDX_A_AMP_MODEL)    return PARAM_ID_AMP_MODEL;
+    if (i == IDX_A_CAB_TYPE)     return PARAM_ID_CAB_TYPE;
+    if (i == IDX_A_CAB_BYPASS)   return PARAM_ID_CAB_BYPASS;
+    if (i == IDX_A_MIC_TYPE)     return PARAM_ID_MIC_TYPE;
+    if (i == IDX_A_MIC_DISTANCE) return PARAM_ID_MIC_DIST;
+    if (i == IDX_A_MIC_ANGLE)    return PARAM_ID_MIC_ANGLE;
+    if (i == IDX_A_MIC_POSITION) return PARAM_ID_MIC_POS;
+
+    /* Noise gate */
+    if (i == IDX_GATE_THRESHOLD) return PARAM_ID_GATE_THRESH;
+    if (i == IDX_GATE_ATTACK)    return PARAM_ID_GATE_ATTACK;
+    if (i == IDX_GATE_RELEASE)   return PARAM_ID_GATE_RELEASE;
+    if (i == IDX_GATE_HOLD)      return PARAM_ID_GATE_HOLD;
+
+    /* Chain mode + mix */
+    if (i == IDX_CHAIN_MODE) return PARAM_ID_CHAIN_MODE;
+    if (i == IDX_MIX_A)      return PARAM_ID_MIX_A;
+    if (i == IDX_MIX_B)      return PARAM_ID_MIX_B;
+
+    /* Chain B amp knobs */
+    if (i >= IDX_B_AMP_START && i < IDX_B_AMP_START + NUM_AMP_KNOBS)
+        return chain_b_amp_knob_id(i - IDX_B_AMP_START);
+    if (i == IDX_B_AMP_MODEL)    return PARAM_ID_B_AMP_MODEL;
+    if (i == IDX_B_CAB_TYPE)     return PARAM_ID_B_CAB_TYPE;
+    if (i == IDX_B_CAB_BYPASS)   return PARAM_ID_B_CAB_BYPASS;
+    if (i == IDX_B_MIC_TYPE)     return PARAM_ID_B_MIC_TYPE;
+    if (i == IDX_B_MIC_DISTANCE) return PARAM_ID_B_MIC_DIST;
+    if (i == IDX_B_MIC_ANGLE)    return PARAM_ID_B_MIC_ANGLE;
+    if (i == IDX_B_MIC_POSITION) return PARAM_ID_B_MIC_POS;
 
     /* Studio params */
     if (i >= IDX_STUDIO_START && i < IDX_PEDAL_START) {
@@ -592,27 +944,23 @@ uint32_t cplug_getParameterFlags(void *ptr, uint32_t param_id)
 
     uint32_t flags = CPLUG_FLAG_PARAMETER_IS_AUTOMATABLE;
 
-    /* Amp model selector — integer enum */
-    if (index == IDX_AMP_MODEL) {
+    /* Integer enum selectors */
+    if (index == IDX_A_AMP_MODEL || index == IDX_B_AMP_MODEL ||
+        index == IDX_A_CAB_TYPE  || index == IDX_B_CAB_TYPE  ||
+        index == IDX_A_MIC_TYPE  || index == IDX_B_MIC_TYPE) {
         flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
         return flags;
     }
 
-    /* Cab type selector — integer enum */
-    if (index == IDX_CAB_TYPE) {
+    /* Chain mode — integer (0 or 1) */
+    if (index == IDX_CHAIN_MODE) {
         flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
         return flags;
     }
 
-    /* Cab bypass — boolean */
-    if (index == IDX_CAB_BYPASS) {
+    /* Boolean bypass toggles */
+    if (index == IDX_A_CAB_BYPASS || index == IDX_B_CAB_BYPASS) {
         flags |= CPLUG_FLAG_PARAMETER_IS_BOOL;
-        return flags;
-    }
-
-    /* Mic type selector — integer enum */
-    if (index == IDX_MIC_TYPE) {
-        flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
         return flags;
     }
 
@@ -623,20 +971,31 @@ uint32_t cplug_getParameterFlags(void *ptr, uint32_t param_id)
         return flags;
     }
 
-    /* Studio type selectors — integer enum */
+    /* Chain B bright switch */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS &&
+        AMP_KNOBS[index - IDX_B_AMP_START].amp_param == FX_AMP_PARAM_BRIGHT) {
+        flags |= CPLUG_FLAG_PARAMETER_IS_BOOL;
+        return flags;
+    }
+
+    /* Studio type selectors — integer enum; bypass — boolean */
     if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
         int offset = index - IDX_STUDIO_START;
         int sub    = offset % PARAMS_PER_STUDIO;
         if (sub == 0)
             flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
+        else if (sub == 1)
+            flags |= CPLUG_FLAG_PARAMETER_IS_BOOL;
     }
 
-    /* Pedal type selectors — integer enum */
+    /* Pedal type selectors — integer enum; bypass — boolean */
     if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0)
             flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
+        else if (sub == 1)
+            flags |= CPLUG_FLAG_PARAMETER_IS_BOOL;
     }
 
     return flags;
@@ -656,36 +1015,104 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
     (void)ptr;
     int index = find_param_index(param_id);
 
+    /* Chain A amp knobs */
     if (index < NUM_AMP_KNOBS) {
         snprintf(buf, buflen, "%s", AMP_KNOBS[index].name);
         return;
     }
-    if (index == IDX_AMP_MODEL) {
+    if (index == IDX_A_AMP_MODEL) {
         snprintf(buf, buflen, "Amp Model");
         return;
     }
-    if (index == IDX_CAB_TYPE) {
+    if (index == IDX_A_CAB_TYPE) {
         snprintf(buf, buflen, "Cab Type");
         return;
     }
-    if (index == IDX_CAB_BYPASS) {
+    if (index == IDX_A_CAB_BYPASS) {
         snprintf(buf, buflen, "Cab Bypass");
         return;
     }
-    if (index == IDX_MIC_TYPE) {
+    if (index == IDX_A_MIC_TYPE) {
         snprintf(buf, buflen, "Mic Type");
         return;
     }
-    if (index == IDX_MIC_DISTANCE) {
+    if (index == IDX_A_MIC_DISTANCE) {
         snprintf(buf, buflen, "Mic Distance");
         return;
     }
-    if (index == IDX_MIC_ANGLE) {
+    if (index == IDX_A_MIC_ANGLE) {
         snprintf(buf, buflen, "Mic Angle");
         return;
     }
-    if (index == IDX_MIC_POSITION) {
+    if (index == IDX_A_MIC_POSITION) {
         snprintf(buf, buflen, "Mic Position");
+        return;
+    }
+
+    /* Noise gate */
+    if (index == IDX_GATE_THRESHOLD) {
+        snprintf(buf, buflen, "Gate Threshold");
+        return;
+    }
+    if (index == IDX_GATE_ATTACK) {
+        snprintf(buf, buflen, "Gate Attack");
+        return;
+    }
+    if (index == IDX_GATE_RELEASE) {
+        snprintf(buf, buflen, "Gate Release");
+        return;
+    }
+    if (index == IDX_GATE_HOLD) {
+        snprintf(buf, buflen, "Gate Hold");
+        return;
+    }
+
+    /* Chain mode + mix */
+    if (index == IDX_CHAIN_MODE) {
+        snprintf(buf, buflen, "Chain Mode");
+        return;
+    }
+    if (index == IDX_MIX_A) {
+        snprintf(buf, buflen, "Chain A Mix");
+        return;
+    }
+    if (index == IDX_MIX_B) {
+        snprintf(buf, buflen, "Chain B Mix");
+        return;
+    }
+
+    /* Chain B amp knobs */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS) {
+        int knob = index - IDX_B_AMP_START;
+        snprintf(buf, buflen, "B %s", AMP_KNOBS[knob].name);
+        return;
+    }
+    if (index == IDX_B_AMP_MODEL) {
+        snprintf(buf, buflen, "B Amp Model");
+        return;
+    }
+    if (index == IDX_B_CAB_TYPE) {
+        snprintf(buf, buflen, "B Cab Type");
+        return;
+    }
+    if (index == IDX_B_CAB_BYPASS) {
+        snprintf(buf, buflen, "B Cab Bypass");
+        return;
+    }
+    if (index == IDX_B_MIC_TYPE) {
+        snprintf(buf, buflen, "B Mic Type");
+        return;
+    }
+    if (index == IDX_B_MIC_DISTANCE) {
+        snprintf(buf, buflen, "B Mic Distance");
+        return;
+    }
+    if (index == IDX_B_MIC_ANGLE) {
+        snprintf(buf, buflen, "B Mic Angle");
+        return;
+    }
+    if (index == IDX_B_MIC_POSITION) {
+        snprintf(buf, buflen, "B Mic Position");
         return;
     }
 
@@ -696,8 +1123,10 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
         int sub      = offset % PARAMS_PER_STUDIO;
         if (sub == 0) {
             snprintf(buf, buflen, "Studio %d Type", slot + 1);
+        } else if (sub == 1) {
+            snprintf(buf, buflen, "Studio %d Bypass", slot + 1);
         } else {
-            snprintf(buf, buflen, "Studio %d P%d", slot + 1, sub);
+            snprintf(buf, buflen, "Studio %d P%d", slot + 1, sub - 1);
         }
         return;
     }
@@ -707,12 +1136,14 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
         int offset   = index - IDX_PEDAL_START;
         int slot     = offset / PARAMS_PER_PEDAL;
         int sub      = offset % PARAMS_PER_PEDAL;
-        const char *pos_name = (slot < 3) ? "Pre" : "Post";
-        int slot_num = (slot < 3) ? slot + 1 : slot - 2;
+        const char *pos_name = (slot < NUM_PRE_PEDAL_SLOTS) ? "Pre" : "Post";
+        int slot_num = (slot < NUM_PRE_PEDAL_SLOTS) ? slot + 1 : slot - NUM_PRE_PEDAL_SLOTS + 1;
         if (sub == 0) {
             snprintf(buf, buflen, "%s Pedal %d Type", pos_name, slot_num);
+        } else if (sub == 1) {
+            snprintf(buf, buflen, "%s Pedal %d Bypass", pos_name, slot_num);
         } else {
-            snprintf(buf, buflen, "%s Pedal %d P%d", pos_name, slot_num, sub);
+            snprintf(buf, buflen, "%s Pedal %d P%d", pos_name, slot_num, sub - 1);
         }
         return;
     }
@@ -790,26 +1221,37 @@ double cplug_parameterStringToValue(void *ptr, uint32_t param_id, const char *st
     if (index >= NUM_PARAMS) return 0.0;
 
     /* Integer / boolean params */
-    if (index == IDX_AMP_MODEL)  return (double)atoi(str);
-    if (index == IDX_CAB_TYPE)   return (double)atoi(str);
-    if (index == IDX_CAB_BYPASS) return (double)atoi(str);
-    if (index == IDX_MIC_TYPE)   return (double)atoi(str);
+    if (index == IDX_A_AMP_MODEL || index == IDX_B_AMP_MODEL)
+        return (double)atoi(str);
+    if (index == IDX_A_CAB_TYPE || index == IDX_B_CAB_TYPE)
+        return (double)atoi(str);
+    if (index == IDX_A_CAB_BYPASS || index == IDX_B_CAB_BYPASS)
+        return (double)atoi(str);
+    if (index == IDX_A_MIC_TYPE || index == IDX_B_MIC_TYPE)
+        return (double)atoi(str);
+    if (index == IDX_CHAIN_MODE)
+        return (double)atoi(str);
+
+    /* Bright switches */
     if (index < NUM_AMP_KNOBS &&
         AMP_KNOBS[index].amp_param == FX_AMP_PARAM_BRIGHT)
         return (double)atoi(str);
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS &&
+        AMP_KNOBS[index - IDX_B_AMP_START].amp_param == FX_AMP_PARAM_BRIGHT)
+        return (double)atoi(str);
 
-    /* Studio type selectors */
+    /* Studio type selectors + bypass */
     if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
         int offset = index - IDX_STUDIO_START;
         int sub    = offset % PARAMS_PER_STUDIO;
-        if (sub == 0) return (double)atoi(str);
+        if (sub <= 1) return (double)atoi(str);
     }
 
-    /* Pedal type selectors */
+    /* Pedal type selectors + bypass */
     if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
-        if (sub == 0) return (double)atoi(str);
+        if (sub <= 1) return (double)atoi(str);
     }
 
     return atof(str);
@@ -822,8 +1264,8 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
     int index = find_param_index(param_id);
     if (index >= NUM_PARAMS) { snprintf(buf, bufsize, "0"); return; }
 
-    /* Amp model name */
-    if (index == IDX_AMP_MODEL) {
+    /* Amp model name (Chain A or B) */
+    if (index == IDX_A_AMP_MODEL || index == IDX_B_AMP_MODEL) {
         int model = (int)(value + 0.5);
         if (model < 0) model = 0;
         if (model >= FX_AMP_COUNT) model = FX_AMP_COUNT - 1;
@@ -837,8 +1279,8 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
         return;
     }
 
-    /* Cab type name */
-    if (index == IDX_CAB_TYPE) {
+    /* Cab type name (Chain A or B) */
+    if (index == IDX_A_CAB_TYPE || index == IDX_B_CAB_TYPE) {
         int cab = (int)(value + 0.5);
         if (cab < 0) cab = 0;
         if (cab >= FX_CAB_TYPE_COUNT) cab = FX_CAB_TYPE_COUNT - 1;
@@ -850,14 +1292,14 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
         return;
     }
 
-    /* Cab bypass */
-    if (index == IDX_CAB_BYPASS) {
+    /* Cab bypass (Chain A or B) */
+    if (index == IDX_A_CAB_BYPASS || index == IDX_B_CAB_BYPASS) {
         snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
         return;
     }
 
-    /* Mic type name */
-    if (index == IDX_MIC_TYPE) {
+    /* Mic type name (Chain A or B) */
+    if (index == IDX_A_MIC_TYPE || index == IDX_B_MIC_TYPE) {
         int mic = (int)(value + 0.5);
         if (mic < 0) mic = 0;
         if (mic >= FX_MIC_COUNT) mic = FX_MIC_COUNT - 1;
@@ -866,15 +1308,58 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
         return;
     }
 
-    /* Mic placement params */
-    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) {
+    /* Mic placement params (Chain A) */
+    if (index >= IDX_A_MIC_DISTANCE && index <= IDX_A_MIC_POSITION) {
         snprintf(buf, bufsize, "%.0f%%", value * 100.0);
         return;
     }
 
-    /* Bright switch */
+    /* Mic placement params (Chain B) */
+    if (index >= IDX_B_MIC_DISTANCE && index <= IDX_B_MIC_POSITION) {
+        snprintf(buf, bufsize, "%.0f%%", value * 100.0);
+        return;
+    }
+
+    /* Noise gate params */
+    if (index == IDX_GATE_THRESHOLD) {
+        snprintf(buf, bufsize, "%.1f dB", value);
+        return;
+    }
+    if (index == IDX_GATE_ATTACK) {
+        snprintf(buf, bufsize, "%.1f ms", value);
+        return;
+    }
+    if (index == IDX_GATE_RELEASE) {
+        snprintf(buf, bufsize, "%.0f ms", value);
+        return;
+    }
+    if (index == IDX_GATE_HOLD) {
+        snprintf(buf, bufsize, "%.0f ms", value);
+        return;
+    }
+
+    /* Chain mode */
+    if (index == IDX_CHAIN_MODE) {
+        snprintf(buf, bufsize, "%s", value >= 0.5 ? "Dual" : "Single");
+        return;
+    }
+
+    /* Chain mix levels */
+    if (index == IDX_MIX_A || index == IDX_MIX_B) {
+        snprintf(buf, bufsize, "%.0f%%", value * 100.0);
+        return;
+    }
+
+    /* Bright switch (Chain A) */
     if (index < NUM_AMP_KNOBS &&
         AMP_KNOBS[index].amp_param == FX_AMP_PARAM_BRIGHT) {
+        snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
+        return;
+    }
+
+    /* Bright switch (Chain B) */
+    if (index >= IDX_B_AMP_START && index < IDX_B_AMP_START + NUM_AMP_KNOBS &&
+        AMP_KNOBS[index - IDX_B_AMP_START].amp_param == FX_AMP_PARAM_BRIGHT) {
         snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
         return;
     }
@@ -895,6 +1380,10 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
             }
             return;
         }
+        if (sub == 1) {
+            snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
+            return;
+        }
     }
 
     /* Pedal type selector */
@@ -911,6 +1400,10 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
                 snprintf(buf, bufsize, "%s",
                          fx_pedal_get_type_name((fx_pedal_type_t)type));
             }
+            return;
+        }
+        if (sub == 1) {
+            snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
             return;
         }
     }
@@ -941,6 +1434,9 @@ void cplug_setSampleRateAndBlockSize(void *ptr, double sample_rate, uint32_t max
     /* Clear cached studio IDs */
     for (int i = 0; i < NUM_STUDIO_SLOTS; i++)
         p->studio_ids[i] = -1;
+
+    /* Clear chain B — belongs to old engine */
+    p->chain_b_id = -1;
 
     p->engine = fx_engine_create(p->sample_rate);
 

@@ -513,6 +513,52 @@ float fx_mic_get_param(fx_engine_t *engine, fx_chain_id chain,
     return engine->chains[chain].mic.params[param];
 }
 
+/* ── Noise gate — public API ──────────────────────────────────── */
+
+void fx_gate_set_threshold(fx_engine_t *engine, float db) {
+    if (!engine) return;
+    if (db < -80.0f) db = -80.0f;
+    if (db > 0.0f) db = 0.0f;
+    engine->gate.threshold = db;
+}
+
+float fx_gate_get_threshold(fx_engine_t *engine) {
+    return engine ? engine->gate.threshold : -50.0f;
+}
+
+void fx_gate_set_attack(fx_engine_t *engine, float ms) {
+    if (!engine) return;
+    if (ms < 0.1f) ms = 0.1f;
+    if (ms > 50.0f) ms = 50.0f;
+    engine->gate.attack = ms / 1000.0f;
+}
+
+float fx_gate_get_attack(fx_engine_t *engine) {
+    return engine ? engine->gate.attack * 1000.0f : 1.0f;
+}
+
+void fx_gate_set_release(fx_engine_t *engine, float ms) {
+    if (!engine) return;
+    if (ms < 5.0f) ms = 5.0f;
+    if (ms > 500.0f) ms = 500.0f;
+    engine->gate.release = ms / 1000.0f;
+}
+
+float fx_gate_get_release(fx_engine_t *engine) {
+    return engine ? engine->gate.release * 1000.0f : 50.0f;
+}
+
+void fx_gate_set_hold(fx_engine_t *engine, float ms) {
+    if (!engine) return;
+    if (ms < 1.0f) ms = 1.0f;
+    if (ms > 100.0f) ms = 100.0f;
+    engine->gate.hold = ms / 1000.0f;
+}
+
+float fx_gate_get_hold(fx_engine_t *engine) {
+    return engine ? engine->gate.hold * 1000.0f : 10.0f;
+}
+
 /* ── Presets are implemented in preset.c ──────────────────────── */
 
 /* ── Audio device management stubs (implemented in audio_device.c) */
