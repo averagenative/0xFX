@@ -203,11 +203,10 @@ if(HAS_GUI)
 endif()
 
 # ── CLAP plugin shared library ────────────────────────────────
-# Build only on Linux (and Windows via MinGW) — not macOS (needs bundle)
-if(UNIX AND NOT APPLE)
     set(CLAP_SOURCES
         src/plugin/plugin.c
         deps/cplug/src/cplug_clap.c
+        src/core/log.c
     )
     if(HAS_GUI)
         list(APPEND CLAP_SOURCES ${PLUGIN_GUI_SOURCES}
@@ -247,15 +246,16 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(0xfx_clap PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_clap PRIVATE pthread dl)
+    elseif(WIN32 OR MINGW)
+        target_link_libraries(0xfx_clap PRIVATE ole32 winmm opengl32)
     endif()
     message(STATUS "CLAP plugin target enabled")
-endif()
 
 # ── VST3 plugin shared library ────────────────────────────────
-if(UNIX AND NOT APPLE)
     set(VST3_SOURCES
         src/plugin/plugin.c
         deps/cplug/src/cplug_vst3.c
+        src/core/log.c
     )
     if(HAS_GUI)
         list(APPEND VST3_SOURCES ${PLUGIN_GUI_SOURCES}
@@ -294,6 +294,7 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_vst3 PRIVATE pthread dl)
+    elseif(WIN32 OR MINGW)
+        target_link_libraries(0xfx_vst3 PRIVATE ole32 winmm opengl32)
     endif()
     message(STATUS "VST3 plugin target enabled")
-endif()

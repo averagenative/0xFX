@@ -2551,5 +2551,75 @@
     "files": [
       "src/plugin/plugin.c"
     ]
+  },
+  {
+    "id": "TASK-342",
+    "priority": "HIGH",
+    "title": "Sync plugin GUI renderer with standalone \u2014 full visual parity",
+    "domain": "frontend",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-337"
+    ],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "gui_render.cpp has all overlay knob maps (per-pedal + per-amp) from gui_main.cpp",
+      "gui_render.cpp has LED position maps for all 35 pedals",
+      "gui_render.cpp has textured button assets (stomp, arrows, remove)",
+      "gui_render.cpp has cable rendering with droop for INPUT/OUTPUT",
+      "gui_render.cpp has studio processor detail view + add popup",
+      "Standalone gui_main.cpp migrated to call fx_gui_render_frame()",
+      "Plugin and standalone render identically"
+    ],
+    "files": [
+      "src/gui/gui_render.cpp",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-343",
+    "priority": "HIGH",
+    "title": "Pedal stomp switch click area on image + LED toggle",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "Clicking on the lower portion of the pedal body image toggles bypass (like stomping a real footswitch)",
+      "The stomp switch hit area is the bottom ~30% of the pedal image",
+      "Remove the separate Active/Remove ImGui buttons \u2014 they should be part of the pedal image interaction",
+      "Remove button moves to a small X overlay on the pedal image corner",
+      "LED glow on the pedal image is the bypass indicator (green=active, red=bypassed)",
+      "Reorder arrows could be drag-and-drop instead of buttons (future)"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-344",
+    "priority": "MEDIUM",
+    "title": "macOS plugin builds \u2014 AU/VST3/CLAP bundles",
+    "domain": "infra",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "CMakeLists.txt handles APPLE target for CLAP and VST3",
+      "VST3 bundle structure: .vst3/Contents/MacOS/0xFX",
+      "CLAP bundle: .clap file with correct structure",
+      "Link CoreAudio, CoreMIDI, CoreFoundation, Cocoa frameworks",
+      "AUv2 wrapper via CPLUG (if supported)",
+      "Codesigning placeholder for distribution"
+    ],
+    "files": [
+      "CMakeLists.txt"
+    ]
   }
 ]
