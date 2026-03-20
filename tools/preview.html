@@ -6,8 +6,10 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #141210; color: #D9CDB8; font-family: monospace; padding: 20px; }
-  h1 { color: #CC8822; margin-bottom: 8px; }
+  h1 { color: #CC8822; margin-bottom: 4px; }
+  .subtitle { color: #886; font-size: 13px; margin-bottom: 20px; }
   h2 { color: #E6A030; margin: 30px 0 12px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  h3 { color: #B3A894; margin: 20px 0 8px; font-size: 13px; }
   .grid { display: flex; flex-wrap: wrap; gap: 16px; }
   .card {
     background: #1e1b17; border: 1px solid #333; border-radius: 6px;
@@ -20,26 +22,48 @@
   .card.small img { max-width: 120px; max-height: 120px; }
   .card p { margin-top: 6px; font-size: 12px; color: #B3A894; }
   .missing { color: #664; font-style: italic; padding: 40px 10px; }
-  .refresh { color: #884; font-size: 12px; margin-top: 4px; }
+  /* Toggle for nobg/original */
+  .toggle-bar { margin: 10px 0; }
+  .toggle-bar button {
+    background: #252119; color: #B3A894; border: 1px solid #444;
+    padding: 4px 12px; cursor: pointer; font-family: monospace; font-size: 12px;
+    border-radius: 3px; margin-right: 6px;
+  }
+  .toggle-bar button.active { background: #CC8822; color: #141210; border-color: #CC8822; }
+  /* Checkerboard bg for transparent images */
+  .card.checker img {
+    background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 16px 16px;
+  }
 </style>
 </head>
 <body>
 <h1>0xFX Asset Preview</h1>
-<p class="refresh">Open this file directly in a browser: <code>file:///path/to/0xFX/tools/preview.html</code></p>
+<p class="subtitle">247 assets &middot; <code>file:///Z:/home/dmichael/projects/0xFX/tools/preview.html</code></p>
+
+<div class="toggle-bar">
+  <button id="btn-orig" class="active" onclick="setMode('orig')">Originals</button>
+  <button id="btn-nobg" onclick="setMode('nobg')">Transparent (nobg)</button>
+</div>
 
 <h2>Style References</h2>
 <div class="grid" id="refs"></div>
 
-<h2>Pedals</h2>
+<h2>Pedals — With Knobs</h2>
 <div class="grid" id="pedals"></div>
 
-<h2>Amp Panels</h2>
+<h2>Pedals — Knobless Bodies (for composite rendering)</h2>
+<div class="grid" id="pedal_bodies"></div>
+
+<h2>Amp Panels — With Knobs</h2>
 <div class="grid" id="amps"></div>
+
+<h2>Amp Panels — Knobless Bodies</h2>
+<div class="grid" id="amp_bodies"></div>
 
 <h2>Cabinets</h2>
 <div class="grid" id="cabs"></div>
 
-<h2>Knobs (Rotatable)</h2>
+<h2>Knobs (Rotatable Sprites)</h2>
 <div class="grid" id="knobs"></div>
 
 <h2>Cables</h2>
@@ -51,36 +75,54 @@
 <h2>App Icons</h2>
 <div class="grid" id="icons"></div>
 
-<h2>Logos</h2>
-<div class="grid" id="logos"></div>
+<h2>Logos — Neon Variants</h2>
+<div class="grid" id="logos_neon"></div>
+
+<h2>Logos — Other Styles</h2>
+<div class="grid" id="logos_other"></div>
 
 <h2>Theme Textures</h2>
 <div class="grid" id="textures"></div>
 
 <script>
+let currentMode = "orig"; // "orig" or "nobg"
+
+const pedal_names = [
+  "jade_drive","gold_drive","blues_grit","rodent","orange_dist","metal_zone","amp_box",
+  "mammoth_fuzz","round_fuzz","wraith_fuzz","chaos_fuzz",
+  "echo_delay","carbon_delay","tape_machine","memory_echo",
+  "drip_verb","plate_verb","hall_verb","shimmer_verb","cloud_verb",
+  "liquid_chorus","phase_sweep","jet_flanger","pulse_trem","drift_vibrato",
+  "howl_wah","quack_filter",
+  "squeeze_box","glass_comp","punch_comp",
+  "tone_sculptor",
+  "noise_gate","grit_crush","ring_tone","warm_tape"
+];
+
+const amp_names = ["fullerton_clean","brit_crunch","southwest_lead","essex_chime","tweed_blues"];
+
 const assets = {
   refs: {
     dir: "../resources/reference",
     files: ["ref_01_pedal_aesthetic","ref_02_amp_aesthetic","ref_03_grime_closeup"],
-    wide: true,
+    wide: true, noNobg: true,
   },
   pedals: {
     dir: "../resources/pedals",
-    files: [
-      "jade_drive","gold_drive","blues_grit","rodent","orange_dist","metal_zone","amp_box",
-      "mammoth_fuzz","round_fuzz","wraith_fuzz","chaos_fuzz",
-      "echo_delay","carbon_delay","tape_machine","memory_echo",
-      "drip_verb","plate_verb","hall_verb","shimmer_verb","cloud_verb",
-      "liquid_chorus","phase_sweep","jet_flanger","pulse_trem","drift_vibrato",
-      "howl_wah","quack_filter",
-      "squeeze_box","glass_comp","punch_comp",
-      "tone_sculptor",
-      "noise_gate","grit_crush","ring_tone","warm_tape"
-    ],
+    files: pedal_names,
+  },
+  pedal_bodies: {
+    dir: "../resources/pedals",
+    files: pedal_names.map(n => n + "_body"),
   },
   amps: {
     dir: "../resources/amps",
-    files: ["fullerton_clean","brit_crunch","southwest_lead","essex_chime","tweed_blues"],
+    files: amp_names,
+    wide: true,
+  },
+  amp_bodies: {
+    dir: "../resources/amps",
+    files: amp_names.map(n => n + "_body"),
     wide: true,
   },
   cabs: {
@@ -107,40 +149,66 @@ const assets = {
     files: ["icon_01_pedal","icon_02_knob","icon_03_amp_glow","icon_04_hex"],
     small: true,
   },
-  logos: {
+  logos_neon: {
     dir: "../resources/logo",
-    files: ["logo_01_stamped","logo_02_neon","logo_03_etched","logo_04_amp_badge","logo_05_burned","logo_06_stencil"],
+    files: ["logo_02_neon","logo_neon_v1_straight","logo_neon_v2_minimal","logo_neon_v3_warm","logo_neon_v4_red","logo_neon_v5_dual","logo_neon_v6_glass"],
+  },
+  logos_other: {
+    dir: "../resources/logo",
+    files: ["logo_01_stamped","logo_03_etched","logo_04_amp_badge","logo_05_burned","logo_06_stencil"],
   },
   textures: {
     dir: "../resources/theme",
     files: ["pedalboard_surface","metal_panel","tolex_surface","dark_wood"],
+    noNobg: true,
   },
 };
 
-for (const [section, cfg] of Object.entries(assets)) {
-  const container = document.getElementById(section);
-  for (const name of cfg.files) {
-    const card = document.createElement("div");
-    card.className = "card" + (cfg.wide ? " wide" : "") + (cfg.small ? " small" : "");
-    const img = document.createElement("img");
-    img.src = `${cfg.dir}/${name}.png`;
-    img.alt = name;
-    img.onerror = function() {
-      this.style.display = "none";
-      card.querySelector(".missing").style.display = "block";
-    };
-    const label = document.createElement("p");
-    label.textContent = name.replace(/_/g, " ");
-    const missing = document.createElement("p");
-    missing.className = "missing";
-    missing.style.display = "none";
-    missing.textContent = "not generated yet";
-    card.appendChild(img);
-    card.appendChild(missing);
-    card.appendChild(label);
-    container.appendChild(card);
+function buildCards() {
+  for (const [section, cfg] of Object.entries(assets)) {
+    const container = document.getElementById(section);
+    container.innerHTML = "";
+    for (const name of cfg.files) {
+      const card = document.createElement("div");
+      let cls = "card";
+      if (cfg.wide) cls += " wide";
+      if (cfg.small) cls += " small";
+      if (currentMode === "nobg" && !cfg.noNobg) cls += " checker";
+      card.className = cls;
+
+      const img = document.createElement("img");
+      if (currentMode === "nobg" && !cfg.noNobg) {
+        img.src = `${cfg.dir}/${name}_nobg.png`;
+      } else {
+        img.src = `${cfg.dir}/${name}.png`;
+      }
+      img.alt = name;
+      img.onerror = function() {
+        this.style.display = "none";
+        card.querySelector(".missing").style.display = "block";
+      };
+      const label = document.createElement("p");
+      label.textContent = name.replace(/_/g, " ");
+      const missing = document.createElement("p");
+      missing.className = "missing";
+      missing.style.display = "none";
+      missing.textContent = "not generated yet";
+      card.appendChild(img);
+      card.appendChild(missing);
+      card.appendChild(label);
+      container.appendChild(card);
+    }
   }
 }
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById("btn-orig").className = mode === "orig" ? "active" : "";
+  document.getElementById("btn-nobg").className = mode === "nobg" ? "active" : "";
+  buildCards();
+}
+
+buildCards();
 </script>
 </body>
 </html>

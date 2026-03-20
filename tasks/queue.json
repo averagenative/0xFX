@@ -2053,5 +2053,71 @@
     "files": [
       "src/gui/gui_main.cpp"
     ]
+  },
+  {
+    "id": "TASK-320",
+    "priority": "HIGH",
+    "title": "Center-align signal chain + detail view",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Signal chain nodes centered horizontally in the chain area",
+      "Detail view controls centered in the detail panel",
+      "Flow looks balanced, not pushed to left/right edge"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-321",
+    "priority": "HIGH",
+    "title": "Larger VU meters + styled input meter",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 15000,
+    "acceptanceCriteria": [
+      "Bottom VU meters are significantly larger (taller bars, wider)",
+      "Consider generating a VU meter PNG asset that gets filled programmatically",
+      "Input meter in status bar has more visual style (not just colored rectangles)",
+      "Meters should be prominent and easy to read at a glance"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-322",
+    "priority": "HIGH",
+    "title": "Prominent add-pedal button + pedal gallery/browser",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [
+      "TASK-300"
+    ],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "[+] buttons between nodes are larger and more visible (glowing border or icon)",
+      "Clicking [+] opens a pedal gallery panel (not just a dropdown menu)",
+      "Gallery shows pedals organized by category with icons/thumbnails",
+      "Categories: Overdrive, Distortion, Fuzz, Delay, Reverb, Modulation, Utility, Pitch, Experimental",
+      "Can click to add or eventually drag into position"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
   }
 ]
