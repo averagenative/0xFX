@@ -2431,7 +2431,7 @@
     "title": "Clickable stomp switch on pedal images with glowing LED",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 25000,
@@ -2517,7 +2517,7 @@
     "title": "Plugin: factory preset enumeration",
     "domain": "engine",
     "phase": 6,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 15000,
@@ -2537,7 +2537,7 @@
     "title": "Plugin: tuner data + MIDI CC passthrough",
     "domain": "engine",
     "phase": 6,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude-opus",
     "depends": [
       "TASK-337"

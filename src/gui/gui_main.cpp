@@ -2838,8 +2838,14 @@ int main(int argc, char *argv[]) {
                                 IM_COL32(180, 130, 40, 100), 1.0f);
                             ImGui::Dummy(ImVec2(0.0f, 3.0f));
                         }
-                        /* Pedal body image with overlay knobs */
+                        /* Pedal body image with overlay knobs + LED */
                         {
+                            /* Convert display name to filename for lookups */
+                            char pedal_fname[128];
+                            type_to_filename(pname, pedal_fname, sizeof(pedal_fname));
+                            if (strcmp(pedal_fname, "orange_distortion") == 0)
+                                strcpy(pedal_fname, "orange_dist");
+
                             uintptr_t pedal_tex = load_pedal_texture(pname);
                             float img_h = 220.0f;
                             float img_w = img_h;
@@ -2868,6 +2874,52 @@ int main(int argc, char *argv[]) {
                                 ImGui::Dummy(ImVec2(img_w, img_h));
                             }
                             cursor_after_img_y = ImGui::GetCursorPosY();
+
+                            /* LED indicator on pedal image (detected from green/purple dots) */
+                            {
+                                static const struct { const char *name; float x, y; } s_led_pos[] = {
+                                    {"amp_box",0.502f,0.451f}, {"blues_grit",0.496f,0.605f},
+                                    {"carbon_delay",0.496f,0.641f}, {"chaos_fuzz",0.369f,0.729f},
+                                    {"cloud_verb",0.502f,0.213f}, {"drift_vibrato",0.500f,0.547f},
+                                    {"drip_verb",0.506f,0.615f}, {"echo_delay",0.496f,0.582f},
+                                    {"glass_comp",0.494f,0.588f}, {"gold_drive",0.502f,0.373f},
+                                    {"grit_crush",0.498f,0.565f}, {"hall_verb",0.498f,0.600f},
+                                    {"howl_wah",0.635f,0.576f}, {"jade_drive",0.490f,0.576f},
+                                    {"jet_flanger",0.322f,0.693f}, {"liquid_chorus",0.502f,0.330f},
+                                    {"mammoth_fuzz",0.336f,0.711f}, {"memory_echo",0.348f,0.703f},
+                                    {"metal_zone",0.498f,0.599f}, {"noise_gate",0.494f,0.525f},
+                                    {"orange_dist",0.498f,0.537f}, {"phase_sweep",0.508f,0.445f},
+                                    {"plate_verb",0.496f,0.488f}, {"pulse_trem",0.320f,0.816f},
+                                    {"punch_comp",0.502f,0.545f}, {"quack_filter",0.494f,0.451f},
+                                    {"ring_tone",0.497f,0.578f}, {"rodent",0.500f,0.562f},
+                                    {"round_fuzz",0.645f,0.398f}, {"shimmer_verb",0.498f,0.674f},
+                                    {"squeeze_box",0.359f,0.578f}, {"tape_machine",0.498f,0.600f},
+                                    {"tone_sculptor",0.500f,0.621f}, {"warm_tape",0.342f,0.721f},
+                                    {"wraith_fuzz",0.498f,0.525f},
+                                };
+                                /* Look up LED position for this pedal */
+                                for (int li = 0; li < 35; li++) {
+                                    if (strcmp(s_led_pos[li].name, pedal_fname) == 0) {
+                                        float led_cx = img_pos.x + s_led_pos[li].x * img_w;
+                                        float led_cy = img_pos.y + s_led_pos[li].y * img_h;
+                                        ImDrawList *ldl = ImGui::GetWindowDrawList();
+                                        if (!bypassed) {
+                                            /* Green glow when active */
+                                            ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 6.0f,
+                                                IM_COL32(40, 220, 40, 200), 12);
+                                            ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 10.0f,
+                                                IM_COL32(40, 200, 40, 60), 12);
+                                            ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 16.0f,
+                                                IM_COL32(40, 180, 40, 25), 12);
+                                        } else {
+                                            /* Dim red when bypassed */
+                                            ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 4.0f,
+                                                IM_COL32(180, 40, 30, 150), 12);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
 
                             /* Per-pedal knob position maps (detected from red dots) */
                             struct PedalKnobMap { const char *name; int count; float pos[8][2]; };
@@ -2913,11 +2965,7 @@ int main(int argc, char *argv[]) {
                             const float PEDAL_KNOB_SZ = 32.0f;
                             const char *knob_tex = "resources/knobs/knob_pointer_black_nobg.png";
 
-                            /* Look up per-pedal knob positions */
-                            char pedal_fname[128];
-                            type_to_filename(pname, pedal_fname, sizeof(pedal_fname));
-                            if (strcmp(pedal_fname, "orange_distortion") == 0)
-                                strcpy(pedal_fname, "orange_dist");
+                            /* Look up per-pedal knob positions (pedal_fname already set above) */
 
                             const PedalKnobMap *pmap = nullptr;
                             for (int mi = 0; mi < s_pedal_knob_map_count; mi++) {
