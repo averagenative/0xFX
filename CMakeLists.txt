@@ -77,6 +77,7 @@ if(SDL2_FOUND)
         ${CMAKE_SOURCE_DIR}/deps/imgui/backends
         ${SDL2_INCLUDE_DIRS}
     )
+    set_target_properties(imgui PROPERTIES POSITION_INDEPENDENT_CODE ON)
     set(HAS_GUI TRUE)
     message(STATUS "GUI enabled (SDL2 from: ${SDL2_INCLUDE_DIRS})")
 else()
@@ -132,6 +133,7 @@ if(HAS_GUI)
 
     add_executable(0xfx_gui WIN32
         src/gui/gui_main.cpp
+        src/gui/gui_render.cpp
         src/gui/knobs.cpp
         src/gui/texture.c
         src/audio/audio_device.c
@@ -184,17 +186,52 @@ if(MINGW)
     target_link_libraries(0xfx_standalone PRIVATE -static)
 endif()
 
+# ── Shared plugin GUI sources ─────────────────────────────────
+# GUI render + widget sources shared between plugin targets
+if(HAS_GUI)
+    set(PLUGIN_GUI_SOURCES
+        src/gui/gui_render.cpp
+        src/gui/knobs.cpp
+        src/gui/texture.c
+    )
+    set(PLUGIN_GUI_INCLUDES
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/deps
+        ${CMAKE_SOURCE_DIR}/deps/imgui
+        ${CMAKE_SOURCE_DIR}/deps/imgui/backends
+    )
+endif()
+
 # ── CLAP plugin shared library ────────────────────────────────
 # Build only on Linux (and Windows via MinGW) — not macOS (needs bundle)
 if(UNIX AND NOT APPLE)
-    add_library(0xfx_clap MODULE
+    set(CLAP_SOURCES
         src/plugin/plugin.c
         deps/cplug/src/cplug_clap.c
     )
+    if(HAS_GUI)
+        list(APPEND CLAP_SOURCES ${PLUGIN_GUI_SOURCES}
+            src/plugin/gui_plugin_bridge.cpp)
+    endif()
+
+    add_library(0xfx_clap MODULE ${CLAP_SOURCES})
     target_include_directories(0xfx_clap PRIVATE
         ${CMAKE_SOURCE_DIR}/deps/cplug/src
         ${CMAKE_SOURCE_DIR}/src/engine
     )
+    if(HAS_GUI)
+        target_include_directories(0xfx_clap PRIVATE ${PLUGIN_GUI_INCLUDES})
+        target_compile_definitions(0xfx_clap PRIVATE OXFX_PLUGIN_HAS_GUI=1)
+        target_link_libraries(0xfx_clap PRIVATE imgui)
+        if(SDL2_FOUND)
+            target_link_libraries(0xfx_clap PRIVATE ${SDL2_LIBRARIES})
+        else()
+            target_link_libraries(0xfx_clap PRIVATE SDL2)
+        endif()
+        if(UNIX AND NOT APPLE)
+            target_link_libraries(0xfx_clap PRIVATE GL)
+        endif()
+    endif()
     target_compile_definitions(0xfx_clap PRIVATE CPLUG_SHARED)
     target_compile_options(0xfx_clap PRIVATE
         -include ${CMAKE_SOURCE_DIR}/src/plugin/config.h
@@ -216,14 +253,33 @@ endif()
 
 # ── VST3 plugin shared library ────────────────────────────────
 if(UNIX AND NOT APPLE)
-    add_library(0xfx_vst3 MODULE
+    set(VST3_SOURCES
         src/plugin/plugin.c
         deps/cplug/src/cplug_vst3.c
     )
+    if(HAS_GUI)
+        list(APPEND VST3_SOURCES ${PLUGIN_GUI_SOURCES}
+            src/plugin/gui_plugin_bridge.cpp)
+    endif()
+
+    add_library(0xfx_vst3 MODULE ${VST3_SOURCES})
     target_include_directories(0xfx_vst3 PRIVATE
         ${CMAKE_SOURCE_DIR}/deps/cplug/src
         ${CMAKE_SOURCE_DIR}/src/engine
     )
+    if(HAS_GUI)
+        target_include_directories(0xfx_vst3 PRIVATE ${PLUGIN_GUI_INCLUDES})
+        target_compile_definitions(0xfx_vst3 PRIVATE OXFX_PLUGIN_HAS_GUI=1)
+        target_link_libraries(0xfx_vst3 PRIVATE imgui)
+        if(SDL2_FOUND)
+            target_link_libraries(0xfx_vst3 PRIVATE ${SDL2_LIBRARIES})
+        else()
+            target_link_libraries(0xfx_vst3 PRIVATE SDL2)
+        endif()
+        if(UNIX AND NOT APPLE)
+            target_link_libraries(0xfx_vst3 PRIVATE GL)
+        endif()
+    endif()
     target_compile_definitions(0xfx_vst3 PRIVATE CPLUG_SHARED)
     target_compile_options(0xfx_vst3 PRIVATE
         -include ${CMAKE_SOURCE_DIR}/src/plugin/config.h
