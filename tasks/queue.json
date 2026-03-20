@@ -2038,7 +2038,7 @@
     "title": "Background textures and theme surfaces",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-311"

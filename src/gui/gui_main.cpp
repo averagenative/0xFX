@@ -582,10 +582,16 @@ int main(int argc, char *argv[]) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
+    /* Load session config (window size, device prefs) */
+    SessionConfig s_session_cfg;
+    session_config_load(&s_session_cfg);
+    if (s_session_cfg.window_w < 800)  s_session_cfg.window_w = 800;
+    if (s_session_cfg.window_h < 500)  s_session_cfg.window_h = 500;
+
     SDL_Window *window = SDL_CreateWindow(
         "0xFX — Guitar Amp Sim & Pedalboard",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        1400, 800,
+        s_session_cfg.window_w, s_session_cfg.window_h,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
         SDL_WINDOW_ALLOW_HIGHDPI
     );
@@ -629,11 +635,22 @@ int main(int argc, char *argv[]) {
     /* Audio device / settings state */
     int num_input_devices = fx_audio_get_device_count();
     int num_output_devices = fx_audio_get_output_count();
+    /* Apply saved device selections */
     static int  s_selected_input   = -1;
     static int  s_selected_output  = -1;
     static int  s_selected_buf_idx = 2;    /* default: 256 frames */
     static int  s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
     static bool s_audio_active     = false;
+
+    /* Restore from session config */
+    if (s_session_cfg.input_device_idx  >= 0 && s_session_cfg.input_device_idx  < num_input_devices)
+        s_selected_input  = s_session_cfg.input_device_idx;
+    if (s_session_cfg.output_device_idx >= 0 && s_session_cfg.output_device_idx < num_output_devices)
+        s_selected_output = s_session_cfg.output_device_idx;
+    if (s_session_cfg.buf_size_idx >= 0 && s_session_cfg.buf_size_idx < 5)
+        s_selected_buf_idx = s_session_cfg.buf_size_idx;
+    if (s_session_cfg.sr_idx >= 0 && s_session_cfg.sr_idx < 2)
+        s_selected_sr_idx = s_session_cfg.sr_idx;
 
     static const int   buf_sizes[]  = { 64, 128, 256, 512, 1024 };
     static const char *buf_labels[] = { "64", "128", "256", "512", "1024" };
@@ -642,14 +659,21 @@ int main(int argc, char *argv[]) {
 
     FX_INFO("Launched muted. Select input+output devices to start audio.");
 
-    /* Auto-load default preset for sensible starting tone */
+    /* Auto-load last session preset first, then fall back to default */
     {
-        bool loaded = fx_preset_load(engine, "presets/clean_sparkle.0xfx");
-        if (!loaded) loaded = fx_preset_load(engine, "../presets/clean_sparkle.0xfx");
+        bool loaded = fx_preset_load(engine, "presets/last_session.0xfx");
+        if (!loaded) loaded = fx_preset_load(engine, "../presets/last_session.0xfx");
         if (loaded) {
-            FX_INFO("Default preset loaded: Clean Sparkle");
+            FX_INFO("Last session preset restored");
         } else {
-            FX_WARN("Could not load default preset, using engine defaults");
+            /* Fall back to default preset */
+            loaded = fx_preset_load(engine, "presets/clean_sparkle.0xfx");
+            if (!loaded) loaded = fx_preset_load(engine, "../presets/clean_sparkle.0xfx");
+            if (loaded) {
+                FX_INFO("Default preset loaded: Clean Sparkle");
+            } else {
+                FX_WARN("Could not load any preset, using engine defaults");
+            }
         }
     }
 
@@ -876,6 +900,9 @@ int main(int argc, char *argv[]) {
                     dl->AddRect(ImVec2(bmin.x-2,bmin.y-2), ImVec2(bmax.x+2,bmax.y+2),
                                 IM_COL32(255, g, 30, g), 6.0f, 0, 2.0f);
                 }
+                /* Tooltip */
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Toggle audio processing on/off (Space)");
             }
             ImGui::SameLine();
 
@@ -890,6 +917,8 @@ int main(int argc, char *argv[]) {
             }
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(4);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Audio device and buffer settings");
 
             /* Audio settings popup */
             if (ImGui::BeginPopup("audio_settings_popup")) {
@@ -1131,6 +1160,79 @@ int main(int argc, char *argv[]) {
         /* ── Keyboard shortcuts ──────────────────────────────────── */
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             running = false;
+        }
+        /* Space = toggle LIVE */
+        if (ImGui::IsKeyPressed(ImGuiKey_Space) && !ImGui::GetIO().WantCaptureKeyboard) {
+            if (s_audio_active) {
+                fx_audio_shutdown(); fx_audio_init();
+                num_input_devices  = fx_audio_get_device_count();
+                num_output_devices = fx_audio_get_output_count();
+                s_audio_active = false;
+                FX_INFO("Audio stopped via Space");
+            } else {
+                if (s_selected_input < 0 && num_input_devices > 0) s_selected_input = 0;
+                if (s_selected_output < 0 && num_output_devices > 0) s_selected_output = 0;
+                if (s_selected_input >= 0) {
+                    if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+                    if (fx_audio_set_device(engine, s_selected_input)) {
+                        s_audio_active = true;
+                        FX_INFO("LIVE on via Space");
+                    }
+                }
+            }
+        }
+        /* Ctrl+S = quick-save preset */
+        static bool s_save_as_open = false;
+        static char s_save_as_name[128] = "";
+        {
+            bool ctrl = ImGui::GetIO().KeyCtrl;
+            bool shift = ImGui::GetIO().KeyShift;
+            if (ctrl && ImGui::IsKeyPressed(ImGuiKey_S)) {
+                if (shift) {
+                    /* Ctrl+Shift+S = Save As */
+                    s_save_as_name[0] = ' ';
+                    s_save_as_open = true;
+                    ImGui::OpenPopup("save_as_popup");
+                } else {
+                    /* Ctrl+S = quick-save to last_session */
+                    bool ok = fx_preset_save(engine, "presets/last_session.0xfx");
+                    if (!ok) ok = fx_preset_save(engine, "../presets/last_session.0xfx");
+                    FX_INFO(ok ? "Quick-saved to last_session.0xfx" : "Quick-save failed");
+                }
+            }
+        }
+        /* Save As popup (Ctrl+Shift+S) */
+        if (s_save_as_open) {
+            ImGui::OpenPopup("save_as_popup");
+        }
+        if (ImGui::BeginPopupModal("save_as_popup", &s_save_as_open,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Save Preset As");
+            ImGui::Separator();
+            ImGui::SetNextItemWidth(280);
+            bool enter_pressed = ImGui::InputText("Preset Name", s_save_as_name,
+                                                  sizeof(s_save_as_name),
+                                                  ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::Spacing();
+            if ((ImGui::Button("Save", ImVec2(120, 0)) || enter_pressed) &&
+                s_save_as_name[0] != ' ') {
+                char path[400];
+                snprintf(path, sizeof(path), "presets/%s.0xfx", s_save_as_name);
+                bool ok = fx_preset_save(engine, path);
+                if (!ok) {
+                    snprintf(path, sizeof(path), "../presets/%s.0xfx", s_save_as_name);
+                    ok = fx_preset_save(engine, path);
+                }
+                FX_INFO(ok ? "Saved preset: %s" : "Save failed: %s", s_save_as_name);
+                s_save_as_open = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                s_save_as_open = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
 
         /* ============================================================
