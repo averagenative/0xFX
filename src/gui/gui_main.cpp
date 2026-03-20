@@ -627,6 +627,55 @@ int main(int argc, char *argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             running = false;
         }
+        /* Ctrl+S: save current preset */
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S)) {
+            if (fx_preset_save(engine, "presets/last_session.0xfx"))
+                FX_INFO("Preset saved: presets/last_session.0xfx");
+            else
+                FX_WARN("Failed to save preset");
+        }
+        /* Ctrl+O: load preset */
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O)) {
+            if (fx_preset_load(engine, "presets/last_session.0xfx"))
+                FX_INFO("Preset loaded: presets/last_session.0xfx");
+            else
+                FX_WARN("Failed to load preset: presets/last_session.0xfx");
+        }
+        /* Space / L: toggle LIVE on/off */
+        if (!io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_Space) ||
+                             ImGui::IsKeyPressed(ImGuiKey_L))) {
+            if (s_audio_active) {
+                fx_audio_shutdown(); fx_audio_init();
+                num_input_devices  = fx_audio_get_device_count();
+                num_output_devices = fx_audio_get_output_count();
+                s_audio_active = false;
+                FX_INFO("Audio stopped (LIVE off, keyboard)");
+            } else {
+                if (s_selected_input < 0 && num_input_devices > 0)  s_selected_input  = 0;
+                if (s_selected_output < 0 && num_output_devices > 0) s_selected_output = 0;
+                if (s_selected_input >= 0) {
+                    if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+                    if (fx_audio_set_device(engine, s_selected_input)) {
+                        s_audio_active = true;
+                        FX_INFO("LIVE on (keyboard): in=%s out=%s",
+                            fx_audio_get_device_name(s_selected_input),
+                            s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
+                    }
+                }
+            }
+        }
+        /* 1-5: select amp model */
+        {
+            static const ImGuiKey amp_keys[5] = {
+                ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5
+            };
+            for (int k = 0; k < 5; k++) {
+                if (!io.KeyCtrl && ImGui::IsKeyPressed(amp_keys[k])) {
+                    fx_amp_set_model(engine, FX_CHAIN_DEFAULT, (fx_amp_type_t)k);
+                    FX_INFO("Amp model -> %s (key %d)", fx_amp_get_type_name((fx_amp_type_t)k), k + 1);
+                }
+            }
+        }
 
         /* ── Amp panel ────────────────────────────────────────── */
         {

@@ -1413,7 +1413,7 @@
     "title": "Keyboard shortcuts",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 10000,
