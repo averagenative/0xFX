@@ -35,6 +35,182 @@ extern "C" {
 #include <stdio.h>
 #include <cmath>
 #include <cstring>
+#include <sys/stat.h>
+
+extern "C" {
+#include "../../deps/cJSON.h"
+}
+
+/* ── Session config helpers (TASK-307) ───────────────────────── */
+
+#ifdef _WIN32
+#define PATH_SEP "\\"
+static const char *get_config_dir(void) {
+    static char buf[512];
+    const char *appdata = getenv("APPDATA");
+    if (!appdata) appdata = ".";
+    snprintf(buf, sizeof(buf), "%s\\0xFX", appdata);
+    return buf;
+}
+#else
+#define PATH_SEP "/"
+static const char *get_config_dir(void) {
+    static char buf[512];
+    const char *home = getenv("HOME");
+    if (!home) home = ".";
+    snprintf(buf, sizeof(buf), "%s/.0xfx", home);
+    return buf;
+}
+#endif
+
+static void ensure_dir(const char *path) {
+#ifdef _WIN32
+    CreateDirectoryA(path, NULL);
+#else
+    mkdir(path, 0755);
+#endif
+}
+
+static const char *get_config_path(void) {
+    static char buf[600];
+    snprintf(buf, sizeof(buf), "%s" PATH_SEP "config.json", get_config_dir());
+    return buf;
+}
+
+struct SessionConfig {
+    int  input_device_idx;
+    int  output_device_idx;
+    int  window_w;
+    int  window_h;
+    int  buf_size_idx;
+    int  sr_idx;
+};
+
+static void session_config_defaults(SessionConfig *cfg) {
+    cfg->input_device_idx  = -1;
+    cfg->output_device_idx = -1;
+    cfg->window_w          = 1400;
+    cfg->window_h          = 800;
+    cfg->buf_size_idx      = 2;
+    cfg->sr_idx            = 0;
+}
+
+static bool session_config_load(SessionConfig *cfg) {
+    session_config_defaults(cfg);
+    FILE *f = fopen(get_config_path(), "r");
+    if (!f) return false;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    rewind(f);
+    if (sz <= 0 || sz > 65536) { fclose(f); return false; }
+    char *cbuf = (char *)malloc(sz + 1);
+    if (!cbuf) { fclose(f); return false; }
+    fread(cbuf, 1, sz, f);
+    cbuf[sz] = '\0';
+    fclose(f);
+    cJSON *root = cJSON_Parse(cbuf);
+    free(cbuf);
+    if (!root) return false;
+    cJSON *v;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_device"))  && cJSON_IsNumber(v)) cfg->input_device_idx  = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "output_device")) && cJSON_IsNumber(v)) cfg->output_device_idx = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "window_w"))      && cJSON_IsNumber(v)) cfg->window_w          = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "window_h"))      && cJSON_IsNumber(v)) cfg->window_h          = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "buf_size_idx"))  && cJSON_IsNumber(v)) cfg->buf_size_idx      = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "sr_idx"))        && cJSON_IsNumber(v)) cfg->sr_idx            = (int)v->valuedouble;
+    cJSON_Delete(root);
+    return true;
+}
+
+static void session_config_save(const SessionConfig *cfg) {
+    ensure_dir(get_config_dir());
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "input_device",  cfg->input_device_idx);
+    cJSON_AddNumberToObject(root, "output_device", cfg->output_device_idx);
+    cJSON_AddNumberToObject(root, "window_w",      cfg->window_w);
+    cJSON_AddNumberToObject(root, "window_h",      cfg->window_h);
+    cJSON_AddNumberToObject(root, "buf_size_idx",  cfg->buf_size_idx);
+    cJSON_AddNumberToObject(root, "sr_idx",        cfg->sr_idx);
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    if (!json) return;
+    FILE *f = fopen(get_config_path(), "w");
+    if (f) { fputs(json, f); fclose(f); }
+    free(json);
+}
+
+/* ── Amp param tooltips (TASK-201) ───────────────────────────── */
+
+static const char *s_amp_param_tooltips[] = {
+    "Gain \xe2\x80\x94 Preamp drive level. Higher = more distortion",
+    "Volume \xe2\x80\x94 Overall output volume",
+    "Bass \xe2\x80\x94 Low frequency EQ",
+    "Mid \xe2\x80\x94 Midrange frequency EQ",
+    "Treble \xe2\x80\x94 High frequency EQ",
+    "Presence \xe2\x80\x94 Upper-mid sparkle/bite",
+    "Sag \xe2\x80\x94 Power supply droop. Higher = spongier feel",
+    "Master \xe2\x80\x94 Power amp volume",
+    "Bright \xe2\x80\x94 Treble boost switch",
+    "Cut \xe2\x80\x94 High frequency cut"
+};
+static const int s_amp_param_tooltip_count =
+    (int)(sizeof(s_amp_param_tooltips) / sizeof(s_amp_param_tooltips[0]));
+
+/* ── Pedal one-line descriptions for gallery tooltips ─────── */
+
+struct PedalTooltip { fx_pedal_type_t type; const char *desc; };
+static const PedalTooltip s_pedal_tooltips[] = {
+    { FX_PEDAL_JADE_DRIVE,    "Smooth overdrive with mid-hump character (TS-style)" },
+    { FX_PEDAL_GOLD_DRIVE,    "Transparent overdrive - clean blend with tanh clipping" },
+    { FX_PEDAL_BLUES_GRIT,    "Warm gritty blues overdrive with presence boost" },
+    { FX_PEDAL_RODENT,        "Aggressive distortion with backwards tone filter (RAT-style)" },
+    { FX_PEDAL_ORANGE_DIST,   "High-gain distortion with scooped mids" },
+    { FX_PEDAL_METAL_ZONE,    "Modern metal distortion with graphic EQ contour" },
+    { FX_PEDAL_AMP_BOX,       "Amp-in-a-box - simulates a pushed tube amp preamp" },
+    { FX_PEDAL_MAMMOTH_FUZZ,  "Big Muff-style fuzz with 4-stage clipping and scooped mids" },
+    { FX_PEDAL_ROUND_FUZZ,    "Germanium fuzz - smooth and woolly, cleans up with guitar volume" },
+    { FX_PEDAL_WRAITH_FUZZ,   "Velcro-style octave fuzz with harmonic overtones" },
+    { FX_PEDAL_CHAOS_FUZZ,    "Sputtery gated fuzz with oscillation control" },
+    { FX_PEDAL_ECHO_DELAY,    "Digital echo delay - Time, Feedback, Mix" },
+    { FX_PEDAL_CARBON_DELAY,  "BBD analog delay - repeats darken progressively" },
+    { FX_PEDAL_TAPE_MACHINE,  "Tape echo with wow/flutter and tape degradation" },
+    { FX_PEDAL_MEMORY_ECHO,   "Warm analog-voiced delay with modulation" },
+    { FX_PEDAL_DRIP_VERB,     "Spring reverb with characteristic drip transient" },
+    { FX_PEDAL_HALL_VERB,     "Lush hall reverb (Freeverb algorithm)" },
+    { FX_PEDAL_PLATE_VERB,    "Dense plate reverb with diffusion network" },
+    { FX_PEDAL_SHIMMER_VERB,  "Reverb with octave-up pitch in feedback for pads" },
+    { FX_PEDAL_CLOUD_VERB,    "Ambient reverb with infinite decay / freeze mode" },
+    { FX_PEDAL_LIQUID_CHORUS, "Lush BBD-style chorus with stereo spread" },
+    { FX_PEDAL_PHASE_SWEEP,   "Analog-voiced phaser with sweeping notch filters" },
+    { FX_PEDAL_JET_FLANGER,   "Through-zero flanger with classic jet-plane sweep" },
+    { FX_PEDAL_PULSE_TREM,    "Tremolo - amplitude modulation at LFO rate" },
+    { FX_PEDAL_DRIFT_VIBRATO, "True pitch vibrato (not amplitude) via delay modulation" },
+    { FX_PEDAL_SQUEEZE_BOX,   "Compressor with peak-detecting envelope follower (4:1 ratio)" },
+    { FX_PEDAL_GLASS_COMP,    "Optical-style transparent compressor" },
+    { FX_PEDAL_PUNCH_COMP,    "FET-style punchy compressor for attack-heavy sounds" },
+    { FX_PEDAL_NOISE_GATE,    "Noise gate - silences signal below threshold" },
+    { FX_PEDAL_HOWL_WAH,      "Expression wah - bandpass sweep controlled by expression (0-1)" },
+    { FX_PEDAL_QUACK_FILTER,  "Auto-wah - envelope follower drives bandpass cutoff" },
+    { FX_PEDAL_TONE_SCULPTOR, "7-band graphic EQ for precise frequency shaping" },
+    { FX_PEDAL_PRECISION_EQ,  "Parametric EQ with sweepable frequency bands" },
+    { FX_PEDAL_OCTAVE_ENGINE, "Polyphonic octave - sub-octave and octave-up tracking" },
+    { FX_PEDAL_PITCH_WARP,    "Pitch shifter with intelligent note tracking" },
+    { FX_PEDAL_GRIT_CRUSH,    "Bitcrusher - reduces bit depth and sample rate for lo-fi tones" },
+    { FX_PEDAL_RING_TONE,     "Ring modulator - carrier frequency creates metallic tones" },
+    { FX_PEDAL_WARM_TAPE,     "Tape saturation - adds harmonic warmth and soft limiting" },
+    { FX_PEDAL_INFINITE_HOLD, "Freeze pedal - captures audio frame and loops as infinite drone" },
+    { FX_PEDAL_GRAIN_CLOUD,   "Granular delay - chops audio into grains for textural sounds" },
+    { FX_PEDAL_LOOP_STATION,  "Looper - record, overdub, play and undo loops (up to 5 min)" },
+};
+static const int s_pedal_tooltip_count =
+    (int)(sizeof(s_pedal_tooltips) / sizeof(s_pedal_tooltips[0]));
+
+static const char *get_pedal_tooltip(fx_pedal_type_t type) {
+    for (int i = 0; i < s_pedal_tooltip_count; i++) {
+        if (s_pedal_tooltips[i].type == type) return s_pedal_tooltips[i].desc;
+    }
+    return nullptr;
+}
 
 /* ── Colors — "worn grime" dark theme ─────────────────────────── */
 
@@ -153,8 +329,10 @@ static void install_borderless_wndproc(SDL_Window *window) {
 enum NodeKind {
     NODE_INPUT = 0,
     NODE_PEDAL_PRE,
+    NODE_SPLIT,       /* Y-split diamond node (signal splits here) */
     NODE_AMP,
     NODE_CAB,
+    NODE_MERGE,       /* merge/mix diamond node (paths join here) */
     NODE_PEDAL_POST,
     NODE_OUTPUT
 };
@@ -164,6 +342,7 @@ struct ChainNode {
     NodeKind    kind;
     int         slot;       /* index into pre/post pedal arrays, or -1 */
     fx_pedal_id pedal_id;   /* valid only for PEDAL nodes */
+    int         chain_id;   /* which parallel chain (0=top, 1=bottom) for AMP/CAB in split mode */
 };
 
 /* Node colors by kind */
@@ -172,19 +351,23 @@ static ImU32 node_color(NodeKind kind, bool bypassed) {
     switch (kind) {
         case NODE_INPUT:      return IM_COL32(50, 120, 80, 255);
         case NODE_PEDAL_PRE:  return IM_COL32(60, 100, 160, 255);
+        case NODE_SPLIT:      return IM_COL32(200, 160, 30, 255);
         case NODE_AMP:        return IM_COL32(180, 90, 30, 255);
         case NODE_CAB:        return IM_COL32(140, 80, 50, 255);
+        case NODE_MERGE:      return IM_COL32(200, 160, 30, 255);
         case NODE_PEDAL_POST: return IM_COL32(100, 60, 160, 255);
         case NODE_OUTPUT:     return IM_COL32(50, 120, 80, 255);
         default:              return IM_COL32(80, 80, 80, 255);
     }
 }
 
-static const char *node_label(NodeKind kind, fx_engine_t *engine, fx_pedal_id pid) {
+static const char *node_label(NodeKind kind, fx_engine_t *engine, fx_pedal_id pid, int chain_id) {
     switch (kind) {
         case NODE_INPUT:      return "INPUT";
-        case NODE_AMP:        return fx_amp_get_type_name(fx_amp_get_model(engine, FX_CHAIN_DEFAULT));
-        case NODE_CAB:        return "CAB";
+        case NODE_SPLIT:      return "SPLIT";
+        case NODE_AMP:        return fx_amp_get_type_name(fx_amp_get_model(engine, (fx_chain_id)chain_id));
+        case NODE_CAB:        return (chain_id == 0) ? "CAB A" : "CAB B";
+        case NODE_MERGE:      return "MIX";
         case NODE_OUTPUT:     return "OUTPUT";
         case NODE_PEDAL_PRE:
         case NODE_PEDAL_POST: {
@@ -478,7 +661,12 @@ int main(int argc, char *argv[]) {
 
     /* Signal chain selection state */
     static int  s_selected_node = -1;  /* index into the flattened chain array */
-    static int  s_cab_type = 0;        /* current cab type (for texture lookup) */
+    static int  s_selected_chain_id = 0; /* chain_id of the selected AMP/CAB/MERGE node */
+    static int  s_cab_type = 0;        /* current cab type for chain 0 (for texture lookup) */
+    static int  s_cab_type_b = 0;      /* cab type for chain 1 (dual mode) */
+
+    /* Dual-chain (Y-split) state */
+    static fx_chain_id s_chain_b = -1; /* chain ID for the second parallel path, -1 = single */
 
     /* Layout constants */
     static const float TOOLBAR_H      = 50.0f;
@@ -510,6 +698,16 @@ int main(int argc, char *argv[]) {
         float win_w = io.DisplaySize.x;
         float win_h = io.DisplaySize.y;
 
+        /* ── Theme textures (loaded once) ────────────────────────── */
+        static uintptr_t s_tex_pedalboard  = 0;
+        static uintptr_t s_tex_tolex       = 0;
+        static bool      s_theme_tex_tried = false;
+        if (!s_theme_tex_tried) {
+            s_tex_pedalboard = fx_texture_load("resources/theme/pedalboard_surface_nobg.png");
+            s_tex_tolex      = fx_texture_load("resources/theme/tolex_surface_nobg.png");
+            s_theme_tex_tried = true;
+        }
+
         /* ── Toolbar ──────────────────────────────────────────── */
         {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -517,6 +715,24 @@ int main(int argc, char *argv[]) {
             ImGui::Begin("##toolbar", NULL,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+
+            /* Toolbar gradient: slightly lighter at top, darker at bottom */
+            {
+                ImDrawList *dl_tb = ImGui::GetWindowDrawList();
+                ImVec2 tb_min = ImGui::GetWindowPos();
+                ImVec2 tb_max = ImVec2(tb_min.x + win_w, tb_min.y + TOOLBAR_H);
+                dl_tb->AddRectFilledMultiColor(
+                    tb_min, tb_max,
+                    IM_COL32(32, 28, 24, 255),  /* top-left  — slightly lighter */
+                    IM_COL32(32, 28, 24, 255),  /* top-right — slightly lighter */
+                    IM_COL32(18, 16, 13, 255),  /* bot-right — darker */
+                    IM_COL32(18, 16, 13, 255)); /* bot-left  — darker */
+                /* Bottom edge separator line */
+                dl_tb->AddLine(
+                    ImVec2(tb_min.x, tb_max.y - 1.0f),
+                    ImVec2(tb_max.x, tb_max.y - 1.0f),
+                    IM_COL32(60, 50, 38, 180), 1.0f);
+            }
 
             /* Neon logo image (cached) */
             {
@@ -755,6 +971,63 @@ int main(int argc, char *argv[]) {
                 ImGui::EndPopup();
             }
 
+            ImGui::SameLine();
+
+            /* ── DUAL/SINGLE chain toggle ──────────────────────── */
+            {
+                bool is_dual = (s_chain_b >= 0);
+                if (is_dual) {
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        ImVec4(0.25f, 0.18f, 0.06f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        ImVec4(0.40f, 0.28f, 0.08f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        ImVec4(0.55f, 0.38f, 0.10f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.95f, 0.75f, 0.20f, 1.0f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        ImVec4(0.15f, 0.13f, 0.11f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        ImVec4(0.25f, 0.22f, 0.18f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.55f, 0.50f, 0.40f, 1.0f));
+                }
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                if (ImGui::Button(is_dual ? "DUAL##split" : "SINGLE##split",
+                                  ImVec2(72.0f, 32.0f))) {
+                    if (is_dual) {
+                        /* Switch back to SINGLE — destroy chain B */
+                        if (s_chain_b >= 0) {
+                            fx_chain_destroy(engine, s_chain_b);
+                            s_chain_b = -1;
+                        }
+                        /* Deselect if we had selected chain B's nodes */
+                        s_selected_node = -1;
+                    } else {
+                        /* Switch to DUAL — create chain B */
+                        s_chain_b = fx_chain_create(engine);
+                        if (s_chain_b >= 0) {
+                            fx_chain_set_mix(engine, FX_CHAIN_DEFAULT, 0.5f);
+                            fx_chain_set_mix(engine, s_chain_b, 0.5f);
+                            FX_INFO("Dual chain enabled: chain B id=%d", (int)s_chain_b);
+                        }
+                    }
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(4);
+
+                /* Glow border when dual is active */
+                if (is_dual) {
+                    ImDrawList *dl = ImGui::GetWindowDrawList();
+                    ImVec2 bmin = ImGui::GetItemRectMin(), bmax = ImGui::GetItemRectMax();
+                    dl->AddRect(ImVec2(bmin.x-2,bmin.y-2), ImVec2(bmax.x+2,bmax.y+2),
+                                IM_COL32(200, 160, 30, 180), 6.0f, 0, 1.5f);
+                }
+            }
+
             /* ── Window controls: _ [] X (borderless) ─────────── */
             {
                 ImVec2 wc_sz(35.0f, 28.0f);
@@ -862,32 +1135,56 @@ int main(int argc, char *argv[]) {
 
         /* ============================================================
          * BUILD THE FLATTENED SIGNAL CHAIN
-         * INPUT -> [pre pedals] -> AMP -> CAB -> [post pedals] -> OUTPUT
+         *
+         * SINGLE: INPUT -> [pre pedals] -> AMP -> CAB -> [post pedals] -> OUTPUT
+         * DUAL:   INPUT -> [pre pedals] -> SPLIT -> AMP A -> CAB A -> MERGE
+         *                                        -> AMP B -> CAB B ->
+         *                               -> [post pedals] -> OUTPUT
+         *
+         * In DUAL mode the chain array stores nodes sequentially; the
+         * special SPLIT/MERGE nodes encode where paths diverge/converge.
+         * The second path's nodes carry chain_id=s_chain_b so the
+         * renderer can lay them out on a separate vertical lane.
          * ============================================================ */
-        ChainNode chain[128];
+        ChainNode chain[256];
         int chain_len = 0;
+        bool is_dual = (s_chain_b >= 0);
 
         /* INPUT */
-        chain[chain_len++] = { NODE_INPUT, -1, -1 };
+        chain[chain_len++] = { NODE_INPUT, -1, -1, 0 };
 
         /* Pre-amp pedals */
-        for (int i = 0; i < s_pre_id_count && chain_len < 126; i++) {
-            chain[chain_len++] = { NODE_PEDAL_PRE, i, s_pre_ids[i] };
+        for (int i = 0; i < s_pre_id_count && chain_len < 250; i++) {
+            chain[chain_len++] = { NODE_PEDAL_PRE, i, s_pre_ids[i], 0 };
         }
 
-        /* AMP */
-        chain[chain_len++] = { NODE_AMP, -1, -1 };
+        if (is_dual) {
+            /* SPLIT diamond */
+            chain[chain_len++] = { NODE_SPLIT, -1, -1, 0 };
 
-        /* CAB */
-        chain[chain_len++] = { NODE_CAB, -1, -1 };
+            /* Chain A: AMP A + CAB A (chain 0 = top lane) */
+            chain[chain_len++] = { NODE_AMP, -1, -1, 0 };
+            chain[chain_len++] = { NODE_CAB, -1, -1, 0 };
+
+            /* Chain B: AMP B + CAB B (s_chain_b = bottom lane) */
+            chain[chain_len++] = { NODE_AMP, -1, -1, (int)s_chain_b };
+            chain[chain_len++] = { NODE_CAB, -1, -1, (int)s_chain_b };
+
+            /* MERGE (mix) diamond */
+            chain[chain_len++] = { NODE_MERGE, -1, -1, 0 };
+        } else {
+            /* Single path AMP + CAB */
+            chain[chain_len++] = { NODE_AMP, -1, -1, 0 };
+            chain[chain_len++] = { NODE_CAB, -1, -1, 0 };
+        }
 
         /* Post-amp pedals */
-        for (int i = 0; i < s_post_id_count && chain_len < 127; i++) {
-            chain[chain_len++] = { NODE_PEDAL_POST, i, s_post_ids[i] };
+        for (int i = 0; i < s_post_id_count && chain_len < 254; i++) {
+            chain[chain_len++] = { NODE_PEDAL_POST, i, s_post_ids[i], 0 };
         }
 
         /* OUTPUT */
-        chain[chain_len++] = { NODE_OUTPUT, -1, -1 };
+        chain[chain_len++] = { NODE_OUTPUT, -1, -1, 0 };
 
         /* Clamp selected_node */
         if (s_selected_node >= chain_len) s_selected_node = -1;
@@ -906,6 +1203,52 @@ int main(int argc, char *argv[]) {
             ImDrawList *dl = ImGui::GetWindowDrawList();
             ImVec2 win_pos = ImGui::GetWindowPos();
             ImVec2 content_min = ImGui::GetCursorScreenPos();
+
+            /* ── Signal chain area background: pedalboard surface ──── */
+            {
+                ImVec2 bg_min = win_pos;
+                ImVec2 bg_max = ImVec2(win_pos.x + win_w, win_pos.y + chain_area_h);
+
+                if (s_tex_pedalboard) {
+                    /* Tile the pedalboard surface texture at 256x256 with low
+                     * alpha for the "worn grime" look — dark pedalboard planks */
+                    const float TILE = 256.0f;
+                    dl->PushClipRect(bg_min, bg_max, true);
+                    for (float ty = bg_min.y; ty < bg_max.y; ty += TILE) {
+                        for (float tx = bg_min.x; tx < bg_max.x; tx += TILE) {
+                            float tx1 = (tx + TILE < bg_max.x) ? tx + TILE : bg_max.x;
+                            float ty1 = (ty + TILE < bg_max.y) ? ty + TILE : bg_max.y;
+                            float u1 = (tx1 - tx) / TILE;
+                            float v1 = (ty1 - ty) / TILE;
+                            dl->AddImage((ImTextureID)s_tex_pedalboard,
+                                ImVec2(tx, ty), ImVec2(tx1, ty1),
+                                ImVec2(0.0f, 0.0f), ImVec2(u1, v1),
+                                IM_COL32(255, 255, 255, 55));
+                        }
+                    }
+                    dl->PopClipRect();
+                } else {
+                    /* Fallback: dark grid pattern evoking pedalboard rubber */
+                    dl->AddRectFilled(bg_min, bg_max, IM_COL32(22, 19, 15, 255));
+                    for (float gy = bg_min.y + 16.0f; gy < bg_max.y; gy += 16.0f)
+                        dl->AddLine(ImVec2(bg_min.x, gy), ImVec2(bg_max.x, gy),
+                                    IM_COL32(30, 26, 20, 255), 1.0f);
+                    for (float gx = bg_min.x + 16.0f; gx < bg_max.x; gx += 16.0f)
+                        dl->AddLine(ImVec2(gx, bg_min.y), ImVec2(gx, bg_max.y),
+                                    IM_COL32(30, 26, 20, 255), 1.0f);
+                }
+
+                /* Top vignette: shadow from toolbar edge */
+                dl->AddRectFilledMultiColor(
+                    bg_min, ImVec2(bg_max.x, bg_min.y + 10.0f),
+                    IM_COL32(0, 0, 0, 90), IM_COL32(0, 0, 0, 90),
+                    IM_COL32(0, 0, 0,  0), IM_COL32(0, 0, 0,  0));
+                /* Bottom vignette: fade into detail view */
+                dl->AddRectFilledMultiColor(
+                    ImVec2(bg_min.x, bg_max.y - 10.0f), bg_max,
+                    IM_COL32(0, 0, 0,  0), IM_COL32(0, 0, 0,  0),
+                    IM_COL32(0, 0, 0, 70), IM_COL32(0, 0, 0, 70));
+            }
 
             /* Center nodes vertically in the chain area */
             float cy = win_pos.y + chain_area_h * 0.45f;
@@ -985,7 +1328,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 /* Node label (centered below node) */
-                const char *lbl = node_label(n.kind, engine, n.pedal_id);
+                const char *lbl = node_label(n.kind, engine, n.pedal_id, n.chain_id);
 
                 /* Truncate label if it's too long for the node */
                 char short_lbl[16];
@@ -1006,12 +1349,28 @@ int main(int argc, char *argv[]) {
                                         : IM_COL32(210, 200, 180, 255),
                             lbl);
 
-                /* Bypass indicator — small "X" on bypassed pedals */
-                if (is_bypassed && (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST)) {
-                    dl->AddLine(ImVec2(nx + 4, ny + 4), ImVec2(nx + 16, ny + 16),
-                                IM_COL32(200, 60, 50, 200), 2.0f);
-                    dl->AddLine(ImVec2(nx + 16, ny + 4), ImVec2(nx + 4, ny + 16),
-                                IM_COL32(200, 60, 50, 200), 2.0f);
+                /* Bypass LED — green when active, red-off when bypassed */
+                if (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST) {
+                    const char *led_path = is_bypassed
+                        ? "resources/leds/led_red_off_nobg.png"
+                        : "resources/leds/led_green_on_nobg.png";
+                    uintptr_t led_tex = fx_texture_load(led_path);
+                    const float LED_SZ = 12.0f;
+                    float led_x = nx + NODE_W - LED_SZ - 3.0f;
+                    float led_y = ny + 3.0f;
+                    if (led_tex) {
+                        ImGui::SetCursorScreenPos(ImVec2(led_x, led_y));
+                        ImGui::Image((ImTextureID)(uintptr_t)led_tex,
+                                     ImVec2(LED_SZ, LED_SZ));
+                    } else {
+                        /* Fallback: colored dot */
+                        ImU32 dot_col = is_bypassed
+                            ? IM_COL32(200, 60, 50, 200)
+                            : IM_COL32(60, 200, 60, 220);
+                        dl->AddCircleFilled(
+                            ImVec2(led_x + LED_SZ * 0.5f, led_y + LED_SZ * 0.5f),
+                            LED_SZ * 0.5f, dot_col, 12);
+                    }
                 }
 
                 /* Invisible button for click detection */
@@ -1262,6 +1621,48 @@ int main(int argc, char *argv[]) {
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
                 ImGuiWindowFlags_HorizontalScrollbar);
+
+            /* ── Detail view background: amp rack interior (tolex) ── */
+            {
+                ImDrawList *dl_dv = ImGui::GetWindowDrawList();
+                ImVec2 dv_min = ImGui::GetWindowPos();
+                ImVec2 dv_max = ImVec2(dv_min.x + win_w, dv_min.y + detail_h);
+
+                if (s_tex_tolex) {
+                    /* Tile tolex texture at 256x256 — even more subtle than
+                     * pedalboard; this is the amp rack padded interior */
+                    const float TILE = 256.0f;
+                    dl_dv->PushClipRect(dv_min, dv_max, true);
+                    for (float ty = dv_min.y; ty < dv_max.y; ty += TILE) {
+                        for (float tx = dv_min.x; tx < dv_max.x; tx += TILE) {
+                            float tx1 = (tx + TILE < dv_max.x) ? tx + TILE : dv_max.x;
+                            float ty1 = (ty + TILE < dv_max.y) ? ty + TILE : dv_max.y;
+                            float u1 = (tx1 - tx) / TILE;
+                            float v1 = (ty1 - ty) / TILE;
+                            /* Darker than pedalboard (alpha 40 vs 55) */
+                            dl_dv->AddImage((ImTextureID)s_tex_tolex,
+                                ImVec2(tx, ty), ImVec2(tx1, ty1),
+                                ImVec2(0.0f, 0.0f), ImVec2(u1, v1),
+                                IM_COL32(255, 255, 255, 40));
+                        }
+                    }
+                    dl_dv->PopClipRect();
+                } else {
+                    /* Fallback: slightly different shade than pedalboard area */
+                    dl_dv->AddRectFilled(dv_min, dv_max, IM_COL32(18, 16, 13, 255));
+                }
+
+                /* Top inner shadow: chain area "casts" shadow downward */
+                dl_dv->AddRectFilledMultiColor(
+                    dv_min, ImVec2(dv_max.x, dv_min.y + 14.0f),
+                    IM_COL32(0, 0, 0, 100), IM_COL32(0, 0, 0, 100),
+                    IM_COL32(0, 0, 0,   0), IM_COL32(0, 0, 0,   0));
+                /* Thin top border line separating chain from detail */
+                dl_dv->AddLine(
+                    ImVec2(dv_min.x, dv_min.y),
+                    ImVec2(dv_max.x, dv_min.y),
+                    IM_COL32(45, 38, 28, 200), 1.0f);
+            }
 
             if (s_selected_node < 0 || s_selected_node >= chain_len) {
                 /* Nothing selected */
@@ -1555,6 +1956,24 @@ int main(int argc, char *argv[]) {
 
                         /* Bottom row: bypass + reorder + remove */
                         {
+                            /* LED indicator next to the bypass button */
+                            {
+                                const char *led_path = bypassed
+                                    ? "resources/leds/led_red_off_nobg.png"
+                                    : "resources/leds/led_green_on_nobg.png";
+                                uintptr_t led_tex = fx_texture_load(led_path);
+                                const float LED_SZ = 18.0f;
+                                if (led_tex) {
+                                    /* Vertically center the LED with the button (30px tall) */
+                                    float cur_y = ImGui::GetCursorPosY();
+                                    ImGui::SetCursorPosY(cur_y + (30.0f - LED_SZ) * 0.5f);
+                                    ImGui::Image((ImTextureID)(uintptr_t)led_tex,
+                                                 ImVec2(LED_SZ, LED_SZ));
+                                    ImGui::SetCursorPosY(cur_y);
+                                    ImGui::SameLine(0, 6);
+                                }
+                            }
+
                             char bp_id[48];
                             snprintf(bp_id, sizeof(bp_id), "%s##bp_detail",
                                      bypassed ? "BYPASS" : "ACTIVE");
@@ -1637,6 +2056,25 @@ int main(int argc, char *argv[]) {
             ImGui::Begin("##status", NULL,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+
+            /* ── Status bar: dark background + inner shadow at top ── */
+            {
+                ImDrawList *dl_sb = ImGui::GetWindowDrawList();
+                ImVec2 sb_min = ImGui::GetWindowPos();
+                ImVec2 sb_max = ImVec2(sb_min.x + win_w, sb_min.y + STATUS_H);
+                /* Solid dark base (slightly warmer than pure black) */
+                dl_sb->AddRectFilled(sb_min, sb_max, IM_COL32(14, 12, 10, 255));
+                /* Inner shadow at top edge: detail view "sits over" the status bar */
+                dl_sb->AddRectFilledMultiColor(
+                    sb_min, ImVec2(sb_max.x, sb_min.y + 8.0f),
+                    IM_COL32(0, 0, 0, 110), IM_COL32(0, 0, 0, 110),
+                    IM_COL32(0, 0, 0,   0), IM_COL32(0, 0, 0,   0));
+                /* Top separator line */
+                dl_sb->AddLine(
+                    ImVec2(sb_min.x, sb_min.y),
+                    ImVec2(sb_max.x, sb_min.y),
+                    IM_COL32(40, 34, 26, 200), 1.0f);
+            }
 
             float in_level  = fx_engine_get_input_level(engine);
             float out_level = fx_engine_get_output_level(engine);

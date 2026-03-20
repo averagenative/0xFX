@@ -59,4 +59,23 @@ int knob_core_ext(const char *id_str,
                   /* ImVec2 */ float pos_x, float pos_y,
                   float size_x, float size_y);
 
+/*
+ * Texture-mapped knob: renders a PNG sprite rotated to reflect the current
+ * value, with the same mouse interaction as knob_float().
+ *
+ * The sprite is rotated around its centre:
+ *   angle = 135° - (normalized_value * 270°)
+ * so that minimum maps to bottom-left and maximum to bottom-right.
+ *
+ * knob_texture_path: path to a _nobg.png knob sprite (square recommended).
+ *                    Falls back to the arc-drawing knob_float() if the
+ *                    texture cannot be loaded.
+ *
+ * Returns 1 if the value changed, 0 otherwise.
+ */
+int knob_textured(const char *label,
+                  float *value, float min, float max,
+                  float default_val, float step,
+                  const char *knob_texture_path);
+
 #endif /* SQ_KNOBS_H */

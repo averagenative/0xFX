@@ -13,6 +13,10 @@
 
 #include "imgui.h"
 
+extern "C" {
+#include "texture.h"
+}
+
 #include <math.h>
 #include <stdio.h>
 
@@ -258,6 +262,145 @@ int knob_core_ext(const char *id_str,
 {
     return knob_core(id_str, value, min, max, default_val, step,
                      ImVec2(pos_x, pos_y), ImVec2(size_x, size_y));
+}
+
+/* --- Texture-mapped knob --------------------------------------------------- */
+
+/*
+ * Rotate a 2-D point (px, py) around (cx, cy) by angle_rad.
+ */
+static void rotate_point(float px, float py,
+                          float cx, float cy,
+                          float angle_rad,
+                          float *out_x, float *out_y)
+{
+    float s = sinf(angle_rad);
+    float c = cosf(angle_rad);
+    float dx = px - cx;
+    float dy = py - cy;
+    *out_x = cx + dx * c - dy * s;
+    *out_y = cy + dx * s + dy * c;
+}
+
+int knob_textured(const char *label,
+                  float *value, float min, float max,
+                  float default_val, float step,
+                  const char *knob_texture_path)
+{
+    /* Try to load the texture.  Fall back gracefully to arc knob. */
+    uintptr_t tex = 0;
+    if (knob_texture_path && knob_texture_path[0])
+        tex = fx_texture_load(knob_texture_path);
+
+    if (!tex)
+        return knob_float(label, value, min, max, default_val, step);
+
+    ImGui::PushID(label);
+
+    const float knob_sz = 40.0f;   /* rendered size (square) */
+    const float group_w = knob_sz + 8.0f;
+
+    ImGui::BeginGroup();
+
+    /* Label (centered above knob) */
+    float label_w = ImGui::CalcTextSize(label).x;
+    float label_indent = (group_w - label_w) * 0.5f;
+    if (label_indent > 0.0f)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + label_indent);
+    ImGui::TextUnformatted(label);
+
+    /* Knob position */
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImVec2 size(knob_sz, knob_sz);
+
+    /* Normalized value [0, 1] */
+    float norm = 0.0f;
+    if (max > min)
+        norm = (*value - min) / (max - min);
+    if (norm < 0.0f) norm = 0.0f;
+    if (norm > 1.0f) norm = 1.0f;
+
+    /* Rotation: 135° at min, -135° at max (ImGui Y-down = negate standard math) */
+    const float DEG_TO_RAD = 3.14159265f / 180.0f;
+    float angle_deg = 135.0f - norm * 270.0f;
+    float angle_rad = angle_deg * DEG_TO_RAD;
+
+    /* Centre of the knob quad */
+    float cx = pos.x + size.x * 0.5f;
+    float cy = pos.y + size.y * 0.5f;
+    float hw = size.x * 0.5f;
+    float hh = size.y * 0.5f;
+
+    /* Corners before rotation (screen space) */
+    float corners[4][2] = {
+        { pos.x,          pos.y          },   /* top-left  */
+        { pos.x + size.x, pos.y          },   /* top-right */
+        { pos.x + size.x, pos.y + size.y },   /* bot-right */
+        { pos.x,          pos.y + size.y },   /* bot-left  */
+    };
+    (void)hw; (void)hh;
+
+    /* Rotate corners around centre */
+    ImVec2 rv[4];
+    for (int i = 0; i < 4; i++) {
+        float rx, ry;
+        rotate_point(corners[i][0], corners[i][1], cx, cy, angle_rad, &rx, &ry);
+        rv[i] = ImVec2(rx, ry);
+    }
+
+    /* UV corners (standard quad mapping) */
+    ImVec2 uv0(0.0f, 0.0f);
+    ImVec2 uv1(1.0f, 0.0f);
+    ImVec2 uv2(1.0f, 1.0f);
+    ImVec2 uv3(0.0f, 1.0f);
+
+    /* Draw rotated quad */
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    dl->AddImageQuad((ImTextureID)(uintptr_t)tex,
+                     rv[0], rv[1], rv[2], rv[3],
+                     uv0, uv1, uv2, uv3,
+                     IM_COL32_WHITE);
+
+    /* Mouse interaction — identical to knob_core() */
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::InvisibleButton(label, size);
+    bool is_active  = ImGui::IsItemActive();
+    bool is_hovered = ImGui::IsItemHovered();
+
+    ImGuiIO &io = ImGui::GetIO();
+    float old_val = *value;
+
+    if (is_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+        float dy = io.MouseDelta.y;
+        if (dy != 0.0f) {
+            float range = max - min;
+            float speed = (range > 0.0f) ? range / 200.0f : step;
+            if (io.KeyShift) speed *= 0.1f;
+            *value -= dy * speed;
+            if (*value < min) *value = min;
+            if (*value > max) *value = max;
+        }
+    }
+
+    if (is_hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        *value = default_val;
+
+    /* Value label (centered below knob) */
+    char val_text[16];
+    if (max - min > 100.0f)
+        snprintf(val_text, sizeof(val_text), "%.0f", *value);
+    else
+        snprintf(val_text, sizeof(val_text), "%.2f", *value);
+
+    float text_w    = ImGui::CalcTextSize(val_text).x;
+    float val_indent = (group_w - text_w) * 0.5f;
+    if (val_indent > 0.0f)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + val_indent);
+    ImGui::TextUnformatted(val_text);
+
+    ImGui::EndGroup();
+    ImGui::PopID();
+    return (*value != old_val) ? 1 : 0;
 }
 
 } /* extern "C" */
