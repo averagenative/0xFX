@@ -1936,33 +1936,21 @@ int main(int argc, char *argv[]) {
                     if (is_linear) {
                         float x_right = col_to_x(node_col[ni]) + NODE_W;
                         float x_next  = col_to_x(node_col[ni + 1]);
-                        float lcy     = node_cy;  /* use current node's lane */
+                        float lcy     = node_cy;
 
+                        /* [+] button: register invisible button first (for click detection),
+                         * but defer visual drawing until after cable is rendered */
+                        float add_x = 0, add_y = 0;
+                        bool add_clicked = false, add_hovered = false;
                         if (show_add) {
-                            float add_x = x_right + (x_next - x_right - ADD_BTN_W) * 0.5f;
-                            float add_y = lcy - ADD_BTN_W * 0.5f; /* centered on cable line, overlays cable */
+                            add_x = x_right + (x_next - x_right - ADD_BTN_W) * 0.5f;
+                            add_y = lcy - ADD_BTN_W * 0.5f;
+                            /* Register invisible button for click detection */
                             char inv_id[32];
                             snprintf(inv_id, sizeof(inv_id), "##addinv_%d", ni);
                             ImGui::SetCursorScreenPos(ImVec2(add_x, add_y));
-                            bool add_clicked = ImGui::InvisibleButton(inv_id, ImVec2(ADD_BTN_W, ADD_BTN_W));
-                            bool add_hovered = ImGui::IsItemHovered();
-
-                            float t_pulse = (float)ImGui::GetTime();
-                            float glow_a  = add_hovered ? 1.0f : 0.55f + 0.25f * sinf(t_pulse * 2.5f);
-                            ImU32 bcol = IM_COL32((int)(200*glow_a),(int)(140*glow_a),(int)(20*glow_a),(int)(220*glow_a));
-                            ImU32 bgcol = add_hovered ? IM_COL32(80,55,12,220) : IM_COL32(35,28,8,180);
-                            float r = 6.0f;
-                            dl->AddRectFilled(ImVec2(add_x,add_y), ImVec2(add_x+ADD_BTN_W,add_y+ADD_BTN_W), bgcol, r);
-                            dl->AddRect(ImVec2(add_x,add_y), ImVec2(add_x+ADD_BTN_W,add_y+ADD_BTN_W), bcol, r, 0, 2.0f);
-                            float cx2 = add_x + ADD_BTN_W * 0.5f;
-                            float cy2 = add_y + ADD_BTN_W * 0.5f;
-                            float arm = ADD_BTN_W * 0.28f;
-                            ImU32 pcol = IM_COL32((int)(230*glow_a),(int)(175*glow_a),(int)(40*glow_a),255);
-                            dl->AddLine(ImVec2(cx2-arm,cy2), ImVec2(cx2+arm,cy2), pcol, 2.5f);
-                            dl->AddLine(ImVec2(cx2,cy2-arm), ImVec2(cx2,cy2+arm), pcol, 2.5f);
-                            if (add_hovered)
-                                dl->AddRect(ImVec2(add_x-2,add_y-2),ImVec2(add_x+ADD_BTN_W+2,add_y+ADD_BTN_W+2),
-                                            IM_COL32(220,160,30,100), r+2, 0, 3.0f);
+                            add_clicked = ImGui::InvisibleButton(inv_id, ImVec2(ADD_BTN_W, ADD_BTN_W));
+                            add_hovered = ImGui::IsItemHovered();
                             if (add_clicked) {
                                 s_add_popup_pos = add_pos;
                                 s_add_popup_insert_slot = add_insert_slot;
@@ -1973,7 +1961,7 @@ int main(int argc, char *argv[]) {
                             }
                         }
 
-                        /* Cable — realistic patch cable between nodes */
+                        /* Cable — realistic patch cable between nodes (drawn BEFORE [+] so [+] is on top) */
                         float cable_x0 = x_right, cable_y0 = lcy;
                         float cable_x1 = x_next,  cable_y1 = lcy;
 
@@ -2024,6 +2012,26 @@ int main(int argc, char *argv[]) {
                             ImVec2(p2.x, p2.y - 1),
                             ImVec2(p3.x, p3.y - 1),
                             IM_COL32(70, 60, 45, 100), 1.5f, 24);
+
+                        /* [+] button visual — drawn ON TOP of cable */
+                        if (show_add) {
+                            float t_pulse = (float)ImGui::GetTime();
+                            float glow_a  = add_hovered ? 1.0f : 0.55f + 0.25f * sinf(t_pulse * 2.5f);
+                            ImU32 bcol = IM_COL32((int)(200*glow_a),(int)(140*glow_a),(int)(20*glow_a),(int)(220*glow_a));
+                            ImU32 bgcol = add_hovered ? IM_COL32(80,55,12,220) : IM_COL32(35,28,8,180);
+                            float r = 6.0f;
+                            dl->AddRectFilled(ImVec2(add_x,add_y), ImVec2(add_x+ADD_BTN_W,add_y+ADD_BTN_W), bgcol, r);
+                            dl->AddRect(ImVec2(add_x,add_y), ImVec2(add_x+ADD_BTN_W,add_y+ADD_BTN_W), bcol, r, 0, 2.0f);
+                            float cx2 = add_x + ADD_BTN_W * 0.5f;
+                            float cy2 = add_y + ADD_BTN_W * 0.5f;
+                            float arm = ADD_BTN_W * 0.28f;
+                            ImU32 pcol = IM_COL32((int)(230*glow_a),(int)(175*glow_a),(int)(40*glow_a),255);
+                            dl->AddLine(ImVec2(cx2-arm,cy2), ImVec2(cx2+arm,cy2), pcol, 2.5f);
+                            dl->AddLine(ImVec2(cx2,cy2-arm), ImVec2(cx2,cy2+arm), pcol, 2.5f);
+                            if (add_hovered)
+                                dl->AddRect(ImVec2(add_x-2,add_y-2),ImVec2(add_x+ADD_BTN_W+2,add_y+ADD_BTN_W+2),
+                                            IM_COL32(220,160,30,100), r+2, 0, 3.0f);
+                        }
                     }
                 }
             }
