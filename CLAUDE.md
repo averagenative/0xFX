@@ -142,12 +142,15 @@ JSON-based open format for presets, amp profiles, cab IR metadata, and user-desi
 - One GUI frontend (ImGui). No GTK. No frontend parity burden.
 - Skeuomorphic design — turnable knobs, photorealistic pedal/amp/cab graphics.
 - "Worn grime" visual aesthetic — beat-up, scuffed, road-worn gear. Dark theme with warm accents.
+- **Dropdown labels**: Always `Label | [Dropdown]` (label on the left, selector on the right). English readers read left-to-right — the label identifies what the dropdown controls before you see the value.
+- **Generated assets must not include labels or knobs** — knobs are rendered as interactive overlays, labels are added programmatically. Asset images should show the body/faceplate with knob holes (no knobs, no printed text labels).
 
 ### Naming Convention — No Trademarks
 - **Never use trademarked names** in code, API enums, UI labels, or preset files (no "Tube Screamer", "Marshall", "Fender", etc.)
 - Use **original creative names**: `jade_drive` (not tubescreamer), `brit_crunch` (not marshall), `fullerton_clean` (not fender_twin)
 - Real names acceptable in **docs/comments only** with "inspired by" framing
 - Follow the Line 6 Helix / LePou naming pattern (geographic hints, wordplay, original names)
+- **Avoid racially insensitive terms** — use "silver panel" instead of "blackface" when describing Fender amp eras
 - README includes trademark disclaimer
 
 ### Open Format

@@ -31,6 +31,12 @@ typedef enum {
     FX_AMP_SOUTHWEST_LEAD,       /* inspired by American high-gain amps */
     FX_AMP_ESSEX_CHIME,          /* inspired by British chime amps */
     FX_AMP_TWEED_BLUES,          /* inspired by American tweed-era amps */
+    FX_AMP_MERIDIAN_HIGH_GAIN,   /* inspired by American high-gain metal amps */
+    FX_AMP_CITRUS_ROAR,          /* inspired by British thick/fuzzy crunch amps */
+    FX_AMP_CITRUS_TERROR,        /* inspired by British low-wattage Class A amps */
+    FX_AMP_REGENT_800,           /* inspired by classic British rock/metal amps */
+    FX_AMP_SOLAR_MONOLITH,       /* inspired by massive clean-to-doom amps */
+    FX_AMP_ECLIPSE_DRONE,        /* inspired by extreme low-end drone amps */
     FX_AMP_COUNT
 } fx_amp_type_t;
 
@@ -46,6 +52,8 @@ typedef enum {
     FX_AMP_PARAM_MASTER,
     FX_AMP_PARAM_BRIGHT,     /* 0.0 = off, 1.0 = on */
     FX_AMP_PARAM_CUT,
+    FX_AMP_PARAM_TONE,        /* single tone control (combined EQ) */
+    FX_AMP_PARAM_FEEDBACK,    /* harmonic feedback sustain */
     FX_AMP_PARAM_COUNT
 } fx_amp_param_t;
 
@@ -132,6 +140,7 @@ void         fx_chain_remove_pedal(fx_engine_t *engine, fx_pedal_id id);
 void         fx_chain_move_pedal(fx_engine_t *engine, fx_pedal_id id,
                                  fx_chain_pos_t pos, int index);
 int          fx_chain_get_pedal_count(fx_engine_t *engine, fx_chain_pos_t pos);
+fx_pedal_id  fx_chain_get_pedal_at(fx_engine_t *engine, fx_chain_pos_t pos, int index);
 
 void         fx_pedal_set_param(fx_engine_t *engine, fx_pedal_id id,
                                 int param, float value);
@@ -204,6 +213,66 @@ bool         fx_cab_generate_ir(fx_engine_t *engine, fx_chain_id chain,
 void         fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain,
                                bool bypass);
 bool         fx_cab_get_bypass(fx_engine_t *engine, fx_chain_id chain);
+
+/* ── Microphone simulation — post-cab, pre-post-pedals ───────── */
+
+/* Mic types */
+typedef enum {
+    FX_MIC_DI = 0,               /* Direct inject — no mic coloration (default) */
+    FX_MIC_STAGE_WORKHORSE,      /* SM57-style dynamic */
+    FX_MIC_ROADIE_VOCAL,         /* SM58-style dynamic */
+    FX_MIC_BERLIN_DYNAMIC,       /* e609-style dynamic */
+    FX_MIC_SILVER_BULLET,        /* RE20-style dynamic */
+    FX_MIC_VELVET_RIBBON,        /* R-121-style ribbon */
+    FX_MIC_HERITAGE_RIBBON,      /* Coles 4038-style ribbon */
+    FX_MIC_STUDIO_LARGE,         /* U87-style condenser */
+    FX_MIC_AUSTRIAN_PENCIL,      /* C414-style condenser */
+    FX_MIC_ROOM_PENCIL,          /* C451/KM84-style condenser */
+    FX_MIC_COUNT
+} fx_mic_type_t;
+
+/* Mic placement parameters */
+typedef enum {
+    FX_MIC_PARAM_DISTANCE,       /* 0.0 (touching) to 1.0 (room) */
+    FX_MIC_PARAM_ANGLE,          /* 0.0 (on-axis) to 1.0 (off-axis) */
+    FX_MIC_PARAM_POSITION,       /* 0.0 (cone center) to 1.0 (cone edge) */
+    FX_MIC_PARAM_COUNT
+} fx_mic_param_t;
+
+void          fx_mic_set_type(fx_engine_t *engine, fx_chain_id chain,
+                               fx_mic_type_t type);
+fx_mic_type_t fx_mic_get_type(fx_engine_t *engine, fx_chain_id chain);
+void          fx_mic_set_param(fx_engine_t *engine, fx_chain_id chain,
+                                fx_mic_param_t param, float value);
+float         fx_mic_get_param(fx_engine_t *engine, fx_chain_id chain,
+                                fx_mic_param_t param);
+const char   *fx_mic_get_type_name(fx_mic_type_t type);
+
+/* ── Studio processors — post-amp rack gear ──────────────────── */
+
+typedef enum {
+    FX_STUDIO_IRON_SQUEEZE = 0,  /* FET compressor */
+    FX_STUDIO_GLASS_EQ,          /* Passive EQ */
+    FX_STUDIO_REEL_WARMTH,       /* Tape saturation */
+    FX_STUDIO_BRICK_WALL,        /* Limiter */
+    FX_STUDIO_COUNT
+} fx_studio_type_t;
+
+typedef int fx_studio_id;
+
+fx_studio_id  fx_studio_add(fx_engine_t *engine, fx_studio_type_t type);
+void          fx_studio_remove(fx_engine_t *engine, fx_studio_id id);
+void          fx_studio_set_param(fx_engine_t *engine, fx_studio_id id,
+                                   int param, float value);
+float         fx_studio_get_param(fx_engine_t *engine, fx_studio_id id,
+                                   int param);
+void          fx_studio_set_bypass(fx_engine_t *engine, fx_studio_id id,
+                                    bool bypass);
+bool          fx_studio_get_bypass(fx_engine_t *engine, fx_studio_id id);
+fx_studio_type_t fx_studio_get_type(fx_engine_t *engine, fx_studio_id id);
+const char   *fx_studio_get_type_name(fx_studio_type_t type);
+int           fx_studio_get_param_count(fx_studio_type_t type);
+const char   *fx_studio_get_param_name(fx_studio_type_t type, int param);
 
 /* ── Presets (.0xfx JSON) ─────────────────────────────────────── */
 

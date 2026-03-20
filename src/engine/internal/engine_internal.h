@@ -17,6 +17,7 @@
 #define FX_MAX_PEDALS_PER_POS  16
 #define FX_MAX_CHAINS          4
 #define FX_MAX_PEDALS_TOTAL    64
+#define FX_MAX_STUDIO_TOTAL    8
 #define FX_MAX_BLOCK_SIZE      4096
 
 /* ── Pedal instance ───────────────────────────────────────────── */
@@ -64,6 +65,9 @@ typedef struct {
     /* Power amp */
     float         power_envelope; /* compression envelope follower */
     float         sag_voltage;    /* simulated supply voltage (0-1) */
+
+    /* Feedback sustain (Eclipse Drone) */
+    float         feedback_z1;    /* feedback delay sample */
 } fx_amp_state_t;
 
 /* ── Noise gate state ─────────────────────────────────────────── */
@@ -94,14 +98,51 @@ typedef struct {
     int            block_size;     /* processing block size */
 } fx_cab_state_t;
 
+/* ── Microphone simulation state ──────────────────────────────── */
+
+#define FX_MIC_MAX_BIQUADS 4
+
+typedef struct {
+    fx_mic_type_t  type;
+    float          params[FX_MIC_PARAM_COUNT];
+
+    /* Biquad filter bank for mic character */
+    fx_biquad_t    character[FX_MIC_MAX_BIQUADS]; /* mic frequency response */
+    int            num_character;                   /* active character filters */
+
+    /* Placement-dependent filters */
+    fx_biquad_t    position_lp;    /* cone position HF rolloff */
+    fx_biquad_t    angle_lp;       /* off-axis HF rolloff */
+    fx_biquad_t    proximity;      /* low shelf for proximity effect */
+
+    /* Param cache — recalculate coefficients only on change */
+    float          cached_params[FX_MIC_PARAM_COUNT];
+    fx_mic_type_t  cached_type;
+    float          cached_sr;
+} fx_mic_state_t;
+
 /* ── Signal chain (one amp+cab+post-fx path) ──────────────────── */
 
 typedef struct {
     fx_amp_state_t amp;
     fx_cab_state_t cab;
+    fx_mic_state_t mic;
     float          mix;     /* 0.0 to 1.0 blend level */
     bool           active;
 } fx_signal_chain_t;
+
+/* ── Studio processor instance ────────────────────────────────── */
+
+#define FX_STUDIO_MAX_PARAMS 8
+
+typedef struct {
+    fx_studio_type_t type;
+    fx_studio_id     id;
+    bool             bypass;
+    float            params[FX_STUDIO_MAX_PARAMS];
+    void            *state;          /* heap-allocated DSP state */
+    int              order;          /* index in studio chain */
+} fx_studio_instance_t;
 
 /* ── Tuner state ──────────────────────────────────────────────── */
 
@@ -130,6 +171,11 @@ struct fx_engine {
     /* Signal chains (amp + cab + post-fx) */
     fx_signal_chain_t   chains[FX_MAX_CHAINS];
     int                 num_chains;
+
+    /* Studio processors (post-amp rack gear) */
+    fx_studio_instance_t studio[FX_MAX_STUDIO_TOTAL];
+    int                  num_studio;
+    fx_studio_id         next_studio_id;
 
     /* Tuner */
     fx_tuner_state_t    tuner;
@@ -172,6 +218,15 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
 bool fx_cab_load_bundled(fx_cab_state_t *cab, int preset_idx, int block_size);
 void fx_cab_process(fx_cab_state_t *cab, float *buf, int n);
 
+/* Studio processor DSP dispatch */
+void  fx_studio_init_state(fx_studio_instance_t *p, float sr);
+void  fx_studio_free_state(fx_studio_instance_t *p);
+void  fx_studio_process_dsp(fx_studio_instance_t *p, float *buf, int n, float sr);
+
+/* Mic simulation */
+void fx_mic_init(fx_mic_state_t *mic);
+void fx_mic_process(fx_mic_state_t *mic, float *buf, int n, float sr);
+
 /* Biquad helpers */
 void fx_biquad_lowshelf(fx_biquad_t *bq, float freq, float gain_db, float sr);
 void fx_biquad_highshelf(fx_biquad_t *bq, float freq, float gain_db, float sr);
@@ -182,6 +237,9 @@ static inline float fx_biquad_process(fx_biquad_t *bq, float in) {
     float out = bq->b0 * in + bq->z1;
     bq->z1 = bq->b1 * in - bq->a1 * out + bq->z2;
     bq->z2 = bq->b2 * in - bq->a2 * out;
+    /* Flush denormals to prevent self-oscillation */
+    if (bq->z1 > -1e-15f && bq->z1 < 1e-15f) bq->z1 = 0.0f;
+    if (bq->z2 > -1e-15f && bq->z2 < 1e-15f) bq->z2 = 0.0f;
     return out;
 }
 

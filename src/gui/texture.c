@@ -22,6 +22,7 @@
 #include "texture.h"
 #include "../core/log.h"
 
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -32,6 +33,8 @@
 typedef struct {
     char      path[512];
     uintptr_t gl_id;
+    int       width;
+    int       height;
 } TexEntry;
 
 static TexEntry s_cache[MAX_TEXTURES];
@@ -43,7 +46,7 @@ uintptr_t fx_texture_load(const char *path)
 {
     if (!path) return 0;
 
-    /* Check cache first */
+    /* Check cache first (includes previously failed loads cached with gl_id=0) */
     for (int i = 0; i < s_count; i++) {
         if (strncmp(s_cache[i].path, path, sizeof(s_cache[i].path) - 1) == 0) {
             return s_cache[i].gl_id;
@@ -61,6 +64,13 @@ uintptr_t fx_texture_load(const char *path)
     unsigned char *data = stbi_load(path, &w, &h, &channels, 4); /* force RGBA */
     if (!data) {
         FX_WARN("fx_texture_load: failed to load '%s': %s", path, stbi_failure_reason());
+        /* Cache the failure so we don't retry and spam warnings every frame */
+        TexEntry *e = &s_cache[s_count++];
+        strncpy(e->path, path, sizeof(e->path) - 1);
+        e->path[sizeof(e->path) - 1] = '\0';
+        e->gl_id  = 0;
+        e->width  = 0;
+        e->height = 0;
         return 0;
     }
 
@@ -85,9 +95,23 @@ uintptr_t fx_texture_load(const char *path)
     strncpy(e->path, path, sizeof(e->path) - 1);
     e->path[sizeof(e->path) - 1] = '\0';
     e->gl_id = (uintptr_t)tex_id;
+    e->width  = w;
+    e->height = h;
 
     FX_INFO("fx_texture_load: loaded '%s' (%dx%d) -> GL id %u", path, w, h, tex_id);
     return e->gl_id;
+}
+
+bool fx_texture_get_size(uintptr_t gl_id, int *out_w, int *out_h)
+{
+    for (int i = 0; i < s_count; i++) {
+        if (s_cache[i].gl_id == gl_id) {
+            if (out_w) *out_w = s_cache[i].width;
+            if (out_h) *out_h = s_cache[i].height;
+            return true;
+        }
+    }
+    return false;
 }
 
 void fx_texture_shutdown(void)

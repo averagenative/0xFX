@@ -48,11 +48,18 @@ static const char *amp_type_keys[FX_AMP_COUNT] = {
     "southwest_lead",
     "essex_chime",
     "tweed_blues",
+    "meridian_high_gain",
+    "citrus_roar",
+    "citrus_terror",
+    "regent_800",
+    "solar_monolith",
+    "eclipse_drone",
 };
 
 static const char *amp_param_keys[FX_AMP_PARAM_COUNT] = {
     "gain", "volume", "bass", "mid", "treble",
     "presence", "sag", "master", "bright", "cut",
+    "tone", "feedback",
 };
 
 static fx_pedal_type_t pedal_type_from_key(const char *key) {

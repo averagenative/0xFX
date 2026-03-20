@@ -265,8 +265,8 @@
     ],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
-      "Signal flow: input → gate → pre-pedals → amp → post-pedals → output",
-      "Multi-chain: split → per-chain amp+cab → sum with mix",
+      "Signal flow: input \u2192 gate \u2192 pre-pedals \u2192 amp \u2192 post-pedals \u2192 output",
+      "Multi-chain: split \u2192 per-chain amp+cab \u2192 sum with mix",
       "Test: all 5 amp models produce unique output"
     ],
     "files": [
@@ -307,7 +307,7 @@
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
       "Pedal add/remove/move/bypass API works",
-      "Internal dispatch table maps type → init/process/free",
+      "Internal dispatch table maps type \u2192 init/process/free",
       "Test: add pedal, set param, verify param"
     ],
     "files": [
@@ -317,7 +317,7 @@
   {
     "id": "TASK-018",
     "priority": "HIGH",
-    "title": "Port overdrive → Jade Drive",
+    "title": "Port overdrive \u2192 Jade Drive",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -380,7 +380,7 @@
   {
     "id": "TASK-021",
     "priority": "HIGH",
-    "title": "Port delay → Echo Delay",
+    "title": "Port delay \u2192 Echo Delay",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -402,7 +402,7 @@
   {
     "id": "TASK-022",
     "priority": "HIGH",
-    "title": "Port reverb → Hall Verb",
+    "title": "Port reverb \u2192 Hall Verb",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -424,7 +424,7 @@
   {
     "id": "TASK-023",
     "priority": "HIGH",
-    "title": "Port compressor → Squeeze Box",
+    "title": "Port compressor \u2192 Squeeze Box",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -658,7 +658,7 @@
     "acceptanceCriteria": [
       "Load .wav IR via dr_wav",
       "FFT via KissFFT",
-      "Per-block: FFT input → complex multiply → IFFT → overlap-add",
+      "Per-block: FFT input \u2192 complex multiply \u2192 IFFT \u2192 overlap-add",
       "Test: convolve impulse with known IR, verify output"
     ],
     "files": [
@@ -791,7 +791,7 @@
       "Parse .0xfx JSON",
       "Reconstruct engine state",
       "Validate all fields, clamp out-of-range",
-      "Test: save → load → process → identical output"
+      "Test: save \u2192 load \u2192 process \u2192 identical output"
     ],
     "files": [
       "src/engine/internal/preset.c"
@@ -871,7 +871,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Wraps fx_engine_process()",
-      "Mono in → engine → stereo out",
+      "Mono in \u2192 engine \u2192 stereo out",
       "CLAP loads in Reaper/Bitwig"
     ],
     "files": [
@@ -1458,7 +1458,7 @@
     "depends": [],
     "estimatedTokens": 80000,
     "acceptanceCriteria": [
-      "Top section: horizontal signal chain — pedal icons connected by visual cables/lines leading to amp then cab",
+      "Top section: horizontal signal chain \u2014 pedal icons connected by visual cables/lines leading to amp then cab",
       "Each element (pedal, amp, cab) is a clickable node in the chain",
       "Visual connections (lines/curves) between nodes showing signal flow",
       "SINGLE/DUAL chain toggle (like BIAS FX)",
@@ -1487,9 +1487,9 @@
     "estimatedTokens": 40000,
     "acceptanceCriteria": [
       "Bottom section: large detail view of selected element",
-      "Click pedal in chain → shows large pedal face with turnable knobs",
-      "Click amp in chain → shows large amp panel with all knobs (like BIAS FX screenshot)",
-      "Click cab in chain → shows cab selector with IR waveform",
+      "Click pedal in chain \u2192 shows large pedal face with turnable knobs",
+      "Click amp in chain \u2192 shows large amp panel with all knobs (like BIAS FX screenshot)",
+      "Click cab in chain \u2192 shows cab selector with IR waveform",
       "Smooth transition between detail views",
       "Detail view shows element name prominently"
     ],
@@ -1508,7 +1508,7 @@
     "depends": [],
     "estimatedTokens": 10000,
     "acceptanceCriteria": [
-      "Prominent LIVE button in toolbar — large, visible",
+      "Prominent LIVE button in toolbar \u2014 large, visible",
       "Lit up (bright green/amber glow) when audio is active",
       "Dim/dark when audio is off",
       "Click to toggle audio on/off",
@@ -1553,7 +1553,7 @@
     ],
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
-      "Bezier curves or straight lines connecting pedal → pedal → amp → cab",
+      "Bezier curves or straight lines connecting pedal \u2192 pedal \u2192 amp \u2192 cab",
       "Cables drawn on the ImGui foreground draw list",
       "Cable color changes based on signal presence (dim when muted, bright when LIVE)",
       "Input jack on left, output jack on right of each node"
@@ -1590,8 +1590,8 @@
     "title": "Toolbar overhaul: preset name, LIVE, signal indicator",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-302"
     ],
@@ -1618,7 +1618,7 @@
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [
-      "Save current rig as named preset (.0xfx JSON — already implemented)",
+      "Save current rig as named preset (.0xfx JSON \u2014 already implemented)",
       "Load preset from file browser",
       "Quick-save (Ctrl+S) overwrites current preset",
       "Quick-load last used preset on startup",
@@ -1800,8 +1800,8 @@
     "title": "Stomp footswitch toggle (click to bypass/activate)",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-202",
       "TASK-204"
@@ -1930,7 +1930,7 @@
     ],
     "estimatedTokens": 30000,
     "acceptanceCriteria": [
-      "Visual Y-split node in signal chain — signal splits to 2+ parallel paths",
+      "Visual Y-split node in signal chain \u2014 signal splits to 2+ parallel paths",
       "Each path has its own amp + cab nodes",
       "Paths merge at a mixer node with per-path level/blend",
       "Add/remove parallel paths via UI",
@@ -1956,7 +1956,7 @@
       "Texture cache: load once, return GL texture ID on subsequent calls",
       "Support transparency (RGBA)",
       "stb_image.h for PNG decoding (single-header, vendor into deps/)",
-      "API: GLuint fx_texture_load(const char *path) — returns cached texture ID"
+      "API: GLuint fx_texture_load(const char *path) \u2014 returns cached texture ID"
     ],
     "files": [
       "src/gui/texture.c",
@@ -2016,7 +2016,7 @@
     "title": "Textured knob rendering (PNG rotation)",
     "domain": "frontend",
     "phase": 7,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-311"
@@ -2118,6 +2118,311 @@
     ],
     "files": [
       "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-323",
+    "priority": "HIGH",
+    "title": "Input node: TRS guitar cable plug asset + rendering",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [
+      "TASK-312"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Generate PNG asset of a TRS guitar cable plug, angled upward, cable leading right into pedal chain",
+      "Worn grime aesthetic matching existing assets \u2014 scuffed metal, road-worn look",
+      "Transparent background (_nobg variant)",
+      "Replace the green INPUT rectangle in the signal chain with this asset",
+      "Cable portion connects visually to the first pedal/amp node"
+    ],
+    "files": [
+      "resources/amps/",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-324",
+    "priority": "MEDIUM",
+    "title": "Cable segment assets between signal chain nodes",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-312"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Generate straight cable segment PNG (patch cable between pedals, speaker cable between amps)",
+      "Cable segments rendered between nodes in the signal chain instead of plain lines",
+      "Different cable styles: patch cable (short, between pedals) and speaker cable (between amps/cabs)",
+      "Transparent backgrounds, worn grime aesthetic"
+    ],
+    "files": [
+      "resources/cables/",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-325",
+    "priority": "HIGH",
+    "title": "Output node: XLR microphone cable end asset + rendering",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [
+      "TASK-312"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Generate PNG asset of an XLR cable end (microphone cable), angled upward",
+      "Cable leading left from the last node in the chain",
+      "Worn grime aesthetic, transparent background",
+      "Replace the green OUTPUT rectangle in the signal chain with this asset"
+    ],
+    "files": [
+      "resources/cables/",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-326",
+    "priority": "HIGH",
+    "title": "Research: microphone profiles for cab simulation",
+    "domain": "engine",
+    "phase": 5,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "Research popular recording microphones: SM57, SM58, Sennheiser e609, Royer R-121, AKG C414, Neumann U87, etc.",
+      "Create original non-trademarked names for each mic model (Line 6 naming pattern)",
+      "Define frequency response profiles / EQ curves for each mic type",
+      "Define mic placement parameters: distance from cab, angle (on-axis vs off-axis), position (center cone vs edge)",
+      "Document how mic placement affects tone (proximity effect, high-frequency rolloff, etc.)",
+      "Design this as OPTIONAL feature \u2014 DI (direct inject) from cab is the default, mic placement is opt-in",
+      "Output: specification doc with mic models, original names, frequency profiles, and placement parameters"
+    ],
+    "files": [
+      "docs/microphone_profiles.md"
+    ]
+  },
+  {
+    "id": "TASK-327",
+    "priority": "MEDIUM",
+    "title": "Implement microphone simulation DSP + engine API",
+    "domain": "engine",
+    "phase": 5,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [
+      "TASK-326"
+    ],
+    "estimatedTokens": 50000,
+    "acceptanceCriteria": [
+      "Add fx_mic_* API functions to fx_engine.h for mic model selection and placement",
+      "Implement mic frequency response as post-cab EQ filtering",
+      "Implement placement parameters: distance, angle, position affecting tone",
+      "Proximity effect simulation for close-mic positions",
+      "Optional feature: defaults to DI (no mic coloration), user can enable per-chain",
+      "Real-time safe processing in audio callback"
+    ],
+    "files": [
+      "src/engine/fx_engine.h",
+      "src/engine/internal/mic_sim.c"
+    ]
+  },
+  {
+    "id": "TASK-328",
+    "priority": "MEDIUM",
+    "title": "Generate microphone PNG assets",
+    "domain": "frontend",
+    "phase": 5,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-326"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "Generate PNG assets for each microphone model defined in TASK-326",
+      "Worn grime aesthetic \u2014 beat-up studio mics, road-worn look",
+      "Transparent backgrounds (_nobg variants)",
+      "Show mic positioned in front of amp/cab in the signal chain visualization",
+      "Follow existing asset generation guide format"
+    ],
+    "files": [
+      "resources/mics/"
+    ]
+  },
+  {
+    "id": "TASK-329",
+    "priority": "HIGH",
+    "title": "Research: post-amp studio processing (replace pedal menu after amps)",
+    "domain": "engine",
+    "phase": 4,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "Research what studio processing is typically applied post-amp/cab in recording chains",
+      "Identify categories: studio compressors, studio EQ, limiters, de-essers, exciters, stereo wideners, tape saturation, etc.",
+      "Create original non-trademarked names for each (e.g., 'Iron Squeeze' instead of '1176', 'Glass EQ' instead of 'Pultec')",
+      "Define parameter sets for each studio processor type",
+      "The post-amp [+] button should show these studio processors instead of guitar pedals",
+      "Output: specification doc + task breakdown for implementing each processor"
+    ],
+    "files": [
+      "docs/studio_processors.md"
+    ]
+  },
+  {
+    "id": "TASK-330",
+    "priority": "HIGH",
+    "title": "Implement studio processors for post-amp chain",
+    "domain": "engine",
+    "phase": 4,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [
+      "TASK-329"
+    ],
+    "estimatedTokens": 60000,
+    "acceptanceCriteria": [
+      "Add studio processor types to the engine (separate from pedal types)",
+      "Implement DSP for: studio compressor, studio EQ, limiter, tape saturation (minimum set)",
+      "Post-amp [+] button shows studio processor menu instead of pedal gallery",
+      "Pre-amp [+] continues to show guitar pedals as before",
+      "Generate PNG assets for studio processors (rack-mount gear aesthetic)",
+      "Real-time safe processing"
+    ],
+    "files": [
+      "src/engine/fx_engine.h",
+      "src/engine/internal/studio.c",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-331",
+    "priority": "HIGH",
+    "title": "Overlay knobs on amp/pedal images in detail view",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [
+      "TASK-203",
+      "TASK-312"
+    ],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "Amp detail view: render knobs overlaid on the amp face image at correct positions",
+      "Pedal detail view: render knobs overlaid on the pedal body image at correct positions",
+      "Define knob position maps for each amp model and pedal type (x,y coordinates on image)",
+      "Knobs are interactive \u2014 dragging them changes the parameter value",
+      "Knob visual rotation matches the parameter value",
+      "Use textured knob assets (knob_chicken_cream, knob_skirted_black, etc.) matched to each amp/pedal style"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/gui/knobs.cpp",
+      "src/gui/knobs.h"
+    ]
+  },
+  {
+    "id": "TASK-332",
+    "priority": "HIGH",
+    "title": "Show pedal image in detail view when selected",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [
+      "TASK-312"
+    ],
+    "estimatedTokens": 20000,
+    "acceptanceCriteria": [
+      "When a pedal is selected in the signal chain, its full body image appears in the detail panel",
+      "Image is centered and appropriately sized in the detail view",
+      "Knobs (from TASK-331) will be overlaid on this image once that task is done",
+      "Parameter controls still accessible below/around the image as fallback until TASK-331"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-333",
+    "priority": "HIGH",
+    "title": "Per-pedal and per-amp knob position mapping",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "done",
+    "claimedBy": null,
+    "depends": [
+      "TASK-331"
+    ],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "Analyze each pedal body image to find knob hole positions (normalized x,y coordinates)",
+      "Analyze each amp face image to find knob positions",
+      "Create a knob position map data structure for all 39 pedals and 5 amps",
+      "Overlay knobs align precisely with the knob holes/positions on each image",
+      "Consider using image analysis or manual marking to determine positions",
+      "Each pedal may have different knob counts and layouts (triangle, row, grid, etc.)"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-334",
+    "priority": "MEDIUM",
+    "title": "Mac .icns icon + AppImage desktop integration",
+    "domain": "infra",
+    "phase": 8,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 10000,
+    "acceptanceCriteria": [
+      "Generate .icns icon file for macOS from 0xfx logo (requires iconutil on Mac)",
+      "Create .desktop file for Linux AppImage with icon reference",
+      "AppImage uses a 256x256 or 512x512 PNG icon embedded in the .desktop file",
+      "Icon sizes needed for .icns: 16, 32, 64, 128, 256, 512, 1024 (in @1x and @2x)",
+      "Test icon appears correctly in macOS Dock, Finder, and Linux desktop/taskbar"
+    ],
+    "files": [
+      "resources/icon/",
+      "packaging/"
+    ]
+  },
+  {
+    "id": "TASK-335",
+    "priority": "HIGH",
+    "title": "Sync CLAP/VST3 plugin with new amp models + studio processors",
+    "domain": "infra",
+    "phase": 6,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 25000,
+    "acceptanceCriteria": [
+      "CLAP plugin exposes all 11 amp models (6 new metal/doom amps)",
+      "CLAP plugin exposes studio processor parameters",
+      "CLAP plugin exposes microphone simulation parameters",
+      "VST3 wrapper updated to match",
+      "Plugin parameter IDs are stable for DAW automation"
+    ],
+    "files": [
+      "src/plugin/plugin.c"
     ]
   }
 ]

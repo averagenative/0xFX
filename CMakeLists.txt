@@ -35,7 +35,9 @@ add_library(fx_engine STATIC
     src/engine/internal/noise_gate.c
     src/engine/internal/tuner.c
     src/engine/internal/pedals.c
+    src/engine/internal/studio.c
     src/engine/internal/cab_ir.c
+    src/engine/internal/mic_sim.c
     src/engine/internal/preset.c
     deps/cJSON.c
     deps/kissfft/kiss_fft.c
@@ -86,6 +88,7 @@ endif()
 add_executable(0xfx_standalone
     src/standalone/main.c
     src/audio/audio_device.c
+    src/audio/debug_recorder.c
 )
 target_include_directories(0xfx_standalone PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -102,11 +105,20 @@ endif()
 
 # ── GUI application (SDL2 + ImGui + OpenGL) ───────────────────
 if(HAS_GUI)
+    # Windows icon resource
+    if(WIN32 OR MINGW)
+        set(GUI_RC resources/icon/0xfx.rc)
+    else()
+        set(GUI_RC "")
+    endif()
+
     add_executable(0xfx_gui
         src/gui/gui_main.cpp
         src/gui/knobs.cpp
         src/gui/texture.c
         src/audio/audio_device.c
+        src/audio/debug_recorder.c
+        ${GUI_RC}
     )
     target_include_directories(0xfx_gui PRIVATE
         ${CMAKE_SOURCE_DIR}/src

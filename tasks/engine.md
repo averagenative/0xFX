@@ -200,7 +200,44 @@
 
 ---
 
-## Phase 5: Expanded Effects
+## Phase 4C: Post-Amp Studio Processing
 
-> Tasks TASK-047 through TASK-065. See openspec/changes/fx-engine/tasks.md for full details.
+### TASK-329: Research — post-amp studio processing
+- **Status**: queued
+- **Phase**: 4
+- **Priority**: P1
+- **Notes**: Research studio processors (compressors, EQ, limiters, tape saturation). Original names. Replace pedal menu in post-amp [+] with studio gear.
+
+### TASK-330: Implement studio processors for post-amp chain
+- **Status**: queued
+- **Phase**: 4
+- **Priority**: P1
+- **Depends**: TASK-329
+- **Notes**: Studio processor DSP. Post-amp [+] shows studio menu, pre-amp [+] stays pedals. Generate rack-mount PNG assets.
+
+---
+
+## Phase 5: Expanded Effects + Microphone Simulation
+
+### TASK-326: Research — microphone profiles for cab simulation
+- **Status**: queued
+- **Phase**: 5
+- **Priority**: P1
+- **Notes**: Research SM57, e609, R-121, U87, etc. Original names. Frequency profiles. Placement params. OPTIONAL — DI default, mic opt-in.
+
+### TASK-327: Implement microphone simulation DSP + engine API
+- **Status**: queued
+- **Phase**: 5
+- **Priority**: P2
+- **Depends**: TASK-326
+- **Notes**: fx_mic_* API. Post-cab EQ filtering for mic response. Placement affects tone. Proximity effect. RT-safe.
+
+### TASK-328: Generate microphone PNG assets
+- **Status**: queued
+- **Phase**: 5
+- **Priority**: P2
+- **Depends**: TASK-326
+- **Notes**: PNG assets per mic model. Worn grime aesthetic. Show mic in front of cab.
+
+> Additional tasks TASK-047 through TASK-065. See openspec/changes/fx-engine/tasks.md for full details.
 > Will be expanded here as Phase 4 nears completion.

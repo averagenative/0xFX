@@ -78,4 +78,21 @@ int knob_textured(const char *label,
                   float default_val, float step,
                   const char *knob_texture_path);
 
+/*
+ * Overlay knob: render a textured knob at an absolute screen position
+ * on top of an existing image (e.g., amp face or pedal body).
+ * No label or value text — just the interactive rotatable knob.
+ * Shows param name + value on hover tooltip.
+ *
+ * scr_x, scr_y: screen coordinates (top-left of knob bounding box)
+ * knob_sz:      knob width and height (square)
+ *
+ * Returns 1 if the value changed, 0 otherwise.
+ */
+int knob_overlay(const char *id_str,
+                 float *value, float min, float max,
+                 float default_val, float step,
+                 float scr_x, float scr_y, float knob_sz,
+                 const char *knob_texture_path);
+
 #endif /* SQ_KNOBS_H */

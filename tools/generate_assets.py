@@ -275,7 +275,7 @@ def amp_body_prompt(name):
 
 AMP_DEFS = {
     "fullerton_clean": {
-        "style": "classic American blackface-era",
+        "style": "classic American silver panel-era",
         "covering": "black tolex",
         "faceplate": "silver anodized aluminum",
         "knobs": 7,

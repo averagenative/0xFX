@@ -20,6 +20,7 @@ fx_engine_t *fx_engine_create(float sample_rate) {
 
     e->sample_rate = sample_rate;
     e->next_pedal_id = 1;
+    e->next_studio_id = 1;
 
     /* Initialize noise gate with sensible defaults */
     fx_gate_init(&e->gate);
@@ -30,6 +31,7 @@ fx_engine_t *fx_engine_create(float sample_rate) {
     e->chains[0].mix = 1.0f;
     fx_amp_init(&e->chains[0].amp, FX_AMP_FULLERTON_CLEAN);
     fx_cab_init(&e->chains[0].cab);
+    fx_mic_init(&e->chains[0].mic);
 
     /* Initialize tuner */
     fx_tuner_init(&e->tuner);
@@ -43,6 +45,11 @@ void fx_engine_destroy(fx_engine_t *engine) {
     /* Free all pedal states */
     for (int i = 0; i < engine->num_pedals; i++) {
         fx_pedal_free_state(&engine->pedals[i]);
+    }
+
+    /* Free all studio processor states */
+    for (int i = 0; i < engine->num_studio; i++) {
+        fx_studio_free_state(&engine->studio[i]);
     }
 
     /* Free cab IR buffers */
@@ -79,6 +86,12 @@ void fx_engine_process(fx_engine_t *engine,
     float *buf = engine->scratch_a;
     memcpy(buf, input, (size_t)num_frames * sizeof(float));
 
+    /* DEBUG: passthrough mode — skip all processing to isolate issue */
+    #if 0
+    memcpy(output, input, (size_t)num_frames * sizeof(float));
+    return;
+    #endif
+
     /* Feed tuner (always on, reads input before processing) */
     fx_tuner_feed(&engine->tuner, input, num_frames, engine->sample_rate);
 
@@ -99,6 +112,7 @@ void fx_engine_process(fx_engine_t *engine,
         /* Single chain: process in-place, no mixing needed */
         fx_amp_process(&engine->chains[0].amp, buf, num_frames, sr);
         fx_cab_process(&engine->chains[0].cab, buf, num_frames);
+        fx_mic_process(&engine->chains[0].mic, buf, num_frames, sr);
 
         /* Post-amp pedals */
         for (int i = 0; i < engine->num_pedals; i++) {
@@ -118,9 +132,10 @@ void fx_engine_process(fx_engine_t *engine,
             float chain_buf[FX_MAX_BLOCK_SIZE];
             memcpy(chain_buf, buf, (size_t)num_frames * sizeof(float));
 
-            /* Amp + cab for this chain */
+            /* Amp + cab + mic sim for this chain */
             fx_amp_process(&engine->chains[c].amp, chain_buf, num_frames, sr);
             fx_cab_process(&engine->chains[c].cab, chain_buf, num_frames);
+            fx_mic_process(&engine->chains[c].mic, chain_buf, num_frames, sr);
 
             /* TODO: per-chain post-fx (needs chain-specific pedal assignment) */
 
@@ -141,7 +156,21 @@ void fx_engine_process(fx_engine_t *engine,
         }
     }
 
-    /* ── Output ──────────────────────────────────────────────── */
+    /* ── Studio processors (post-amp rack gear) ────────────── */
+    for (int i = 0; i < engine->num_studio; i++) {
+        fx_studio_process_dsp(&engine->studio[i], buf, num_frames, sr);
+    }
+
+    /* ── Output cleanup ─────────────────────────────────────── */
+    for (int i = 0; i < num_frames; i++) {
+        float s = buf[i];
+        /* Kill denormals that cause biquad filter self-oscillation */
+        if (s > -1e-20f && s < 1e-20f) s = 0.0f;
+        /* Hard clip safety */
+        if (s > 1.0f) s = 1.0f;
+        if (s < -1.0f) s = -1.0f;
+        buf[i] = s;
+    }
     memcpy(output, buf, (size_t)num_frames * sizeof(float));
 
     /* Track output peak */
@@ -216,6 +245,18 @@ void fx_chain_move_pedal(fx_engine_t *engine, fx_pedal_id id,
     }
 }
 
+fx_pedal_id fx_chain_get_pedal_at(fx_engine_t *engine, fx_chain_pos_t pos, int index) {
+    if (!engine) return -1;
+    int count = 0;
+    for (int i = 0; i < engine->num_pedals; i++) {
+        if (engine->pedals[i].position == pos) {
+            if (count == index) return engine->pedals[i].id;
+            count++;
+        }
+    }
+    return -1;
+}
+
 int fx_chain_get_pedal_count(fx_engine_t *engine, fx_chain_pos_t pos) {
     if (!engine) return 0;
     int count = 0;
@@ -263,6 +304,78 @@ fx_pedal_type_t fx_pedal_get_type(fx_engine_t *engine, fx_pedal_id id) {
     return p ? p->type : FX_PEDAL_TYPE_COUNT;
 }
 
+/* ── Studio processor management ──────────────────────────────── */
+
+static fx_studio_instance_t *find_studio(fx_engine_t *engine, fx_studio_id id) {
+    if (!engine) return NULL;
+    for (int i = 0; i < engine->num_studio; i++) {
+        if (engine->studio[i].id == id) return &engine->studio[i];
+    }
+    return NULL;
+}
+
+fx_studio_id fx_studio_add(fx_engine_t *engine, fx_studio_type_t type) {
+    if (!engine || engine->num_studio >= FX_MAX_STUDIO_TOTAL) return -1;
+    if (type < 0 || type >= FX_STUDIO_COUNT) return -1;
+
+    fx_studio_instance_t *p = &engine->studio[engine->num_studio];
+    memset(p, 0, sizeof(*p));
+
+    p->type = type;
+    p->id = engine->next_studio_id++;
+    p->bypass = false;
+    p->order = engine->num_studio;
+
+    fx_studio_init_state(p, engine->sample_rate);
+
+    engine->num_studio++;
+    return p->id;
+}
+
+void fx_studio_remove(fx_engine_t *engine, fx_studio_id id) {
+    if (!engine) return;
+
+    for (int i = 0; i < engine->num_studio; i++) {
+        if (engine->studio[i].id == id) {
+            fx_studio_free_state(&engine->studio[i]);
+            /* Shift remaining processors down */
+            for (int j = i; j < engine->num_studio - 1; j++) {
+                engine->studio[j] = engine->studio[j + 1];
+            }
+            engine->num_studio--;
+            return;
+        }
+    }
+}
+
+void fx_studio_set_param(fx_engine_t *engine, fx_studio_id id,
+                          int param, float value) {
+    fx_studio_instance_t *p = find_studio(engine, id);
+    if (!p || param < 0 || param >= FX_STUDIO_MAX_PARAMS) return;
+    p->params[param] = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+}
+
+float fx_studio_get_param(fx_engine_t *engine, fx_studio_id id, int param) {
+    fx_studio_instance_t *p = find_studio(engine, id);
+    if (!p || param < 0 || param >= FX_STUDIO_MAX_PARAMS) return 0.0f;
+    return p->params[param];
+}
+
+void fx_studio_set_bypass(fx_engine_t *engine, fx_studio_id id, bool bypass) {
+    fx_studio_instance_t *p = find_studio(engine, id);
+    if (p) p->bypass = bypass;
+}
+
+bool fx_studio_get_bypass(fx_engine_t *engine, fx_studio_id id) {
+    fx_studio_instance_t *p = find_studio(engine, id);
+    return p ? p->bypass : false;
+}
+
+fx_studio_type_t fx_studio_get_type(fx_engine_t *engine, fx_studio_id id) {
+    fx_studio_instance_t *p = find_studio(engine, id);
+    return p ? p->type : FX_STUDIO_COUNT;
+}
+
 /* ── Multi-chain management ───────────────────────────────────── */
 
 fx_chain_id fx_chain_create(fx_engine_t *engine) {
@@ -275,6 +388,7 @@ fx_chain_id fx_chain_create(fx_engine_t *engine) {
     c->mix = 0.5f;
     fx_amp_init(&c->amp, FX_AMP_FULLERTON_CLEAN);
     fx_cab_init(&c->cab);
+    fx_mic_init(&c->mic);
 
     engine->num_chains++;
     return id;
@@ -367,6 +481,36 @@ void fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain, bool bypass) {
 bool fx_cab_get_bypass(fx_engine_t *engine, fx_chain_id chain) {
     if (!engine || chain < 0 || chain >= engine->num_chains) return false;
     return engine->chains[chain].cab.bypass;
+}
+
+/* ── Microphone simulation — per chain ────────────────────────── */
+
+void fx_mic_set_type(fx_engine_t *engine, fx_chain_id chain,
+                     fx_mic_type_t type) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return;
+    if (type < 0 || type >= FX_MIC_COUNT) return;
+    engine->chains[chain].mic.type = type;
+}
+
+fx_mic_type_t fx_mic_get_type(fx_engine_t *engine, fx_chain_id chain) {
+    if (!engine || chain < 0 || chain >= engine->num_chains)
+        return FX_MIC_DI;
+    return engine->chains[chain].mic.type;
+}
+
+void fx_mic_set_param(fx_engine_t *engine, fx_chain_id chain,
+                      fx_mic_param_t param, float value) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return;
+    if (param < 0 || param >= FX_MIC_PARAM_COUNT) return;
+    engine->chains[chain].mic.params[param] =
+        value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+}
+
+float fx_mic_get_param(fx_engine_t *engine, fx_chain_id chain,
+                       fx_mic_param_t param) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return 0.0f;
+    if (param < 0 || param >= FX_MIC_PARAM_COUNT) return 0.0f;
+    return engine->chains[chain].mic.params[param];
 }
 
 /* ── Presets are implemented in preset.c ──────────────────────── */

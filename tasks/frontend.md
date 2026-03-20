@@ -174,6 +174,41 @@
 - **Depends**: TASK-206
 - **Notes**: Visual cables: input → pedals → amp → cab → output. Textured bezier curves or cable sprites. Redraws on pedal reorder. Optional sag physics.
 
+### TASK-323: Input node — TRS guitar cable plug asset + rendering
+- **Status**: queued
+- **Phase**: 3
+- **Priority**: P1
+- **Depends**: TASK-312
+- **Notes**: Generate TRS cable plug PNG (angled upward, cable leading right). Replace green INPUT rectangle.
+
+### TASK-324: Cable segment assets between signal chain nodes
+- **Status**: queued
+- **Phase**: 3
+- **Priority**: P2
+- **Depends**: TASK-312
+- **Notes**: Straight cable segment PNGs between pedals and amps. Patch cable + speaker cable styles.
+
+### TASK-325: Output node — XLR microphone cable end asset + rendering
+- **Status**: queued
+- **Phase**: 3
+- **Priority**: P1
+- **Depends**: TASK-312
+- **Notes**: Generate XLR cable end PNG (angled upward, cable leading left). Replace green OUTPUT rectangle.
+
+### TASK-331: Overlay knobs on amp/pedal images in detail view
+- **Status**: queued
+- **Phase**: 3
+- **Priority**: P1
+- **Depends**: TASK-203, TASK-312
+- **Notes**: Knobs rendered on amp face / pedal body images at mapped positions. Interactive — drag to change param.
+
+### TASK-332: Show pedal image in detail view when selected
+- **Status**: queued
+- **Phase**: 3
+- **Priority**: P1
+- **Depends**: TASK-312
+- **Notes**: Full pedal body image in detail panel when pedal selected. Knobs overlaid once TASK-331 is done.
+
 ---
 
 ## Phase 6: Plugin GUI Embedding

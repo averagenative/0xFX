@@ -70,7 +70,7 @@ vintage guitar amplifier front control panel, [style] aesthetic, aged [covering]
 ```
 
 **Per-model details:**
-- Fullerton Clean: black tolex, silver faceplate, 7 knobs, "blackface" era look
+- Fullerton Clean: black tolex, silver faceplate, 7 knobs, "silver panel" era look
 - British Crunch: dark green/gold tolex, gold faceplate, 8 knobs, plexi-era look
 - Southwest Lead: black tolex, brushed aluminum faceplate, 8 knobs, industrial look
 - Essex Chime: dark brown/tan tolex, copper faceplate, 7 knobs, diamond grille cloth visible
@@ -144,3 +144,38 @@ resources/
 ```
 
 All final assets: PNG, pre-multiplied alpha where transparency is needed.
+
+## Knob Position Detection
+
+Generated amp and pedal images include knobs at positions that vary per image. To map interactive overlay knobs to the correct positions, we use **red dot markers**.
+
+### Workflow
+
+1. **Generate the asset** normally (knobs are part of the generated image)
+2. **Mark knob centers** by placing a small bright red dot (R>200, G<60, B<60) at the center of each knob hole or knob in the image. Use GIMP or any editor.
+3. **Run detection**: `python3 tools/detect_knob_positions.py resources/amps/amp_name_nobg.png`
+4. **Update code** with the normalized (x,y) coordinates in the knob position maps
+
+### Prompt Guidance for Knob Holes
+
+When generating **body images** (without knobs, for overlay rendering), add to the prompt:
+```
+each knob position marked with a small bright red circle dot on the faceplate where the knob shaft would be
+```
+
+This gives the detection script clear markers to find. After detection, the red dots can be painted over with the background color, or the image can be regenerated without the markers for the final asset.
+
+### Detection Script Usage
+
+```bash
+# Detect red dots in an amp image
+python3 tools/detect_knob_positions.py resources/amps/brit_crunch_nobg.png
+
+# Detect in all amp images
+python3 tools/detect_knob_positions.py resources/amps/*_nobg.png
+
+# Detect in pedal images
+python3 tools/detect_knob_positions.py resources/pedals/*_body_nobg.png
+```
+
+Output: normalized (x, y) coordinates for each detected knob center, sorted left-to-right.

@@ -11,19 +11,27 @@
  *   Input  bus 0 — 1 channel  (mono guitar)
  *   Output bus 0 — 2 channels (stereo, engine output duplicated L+R)
  *
- * Parameters (35 total):
- *   Indices  0-9   : Amp knobs (Gain, Volume, Bass, Mid, Treble, Presence,
- *                               Sag, Master, Bright, Cut)
- *   Index   10     : Amp model selector (0 .. FX_AMP_COUNT-1)
- *   Indices 11-14  : Pre-pedal slot 0  (type + 3 generic params)
- *   Indices 15-18  : Pre-pedal slot 1
- *   Indices 19-22  : Pre-pedal slot 2
- *   Indices 23-26  : Post-pedal slot 0
- *   Indices 27-30  : Post-pedal slot 1
- *   Indices 31-34  : Post-pedal slot 2
+ * Parameters (59 total):
+ *   Indices  0-11  : Amp knobs (Gain, Volume, Bass, Mid, Treble, Presence,
+ *                               Sag, Master, Bright, Cut, Tone, Feedback)
+ *   Index   12     : Amp model selector (0 .. FX_AMP_COUNT-1)
+ *   Index   13     : Cab type selector (0 .. FX_CAB_TYPE_COUNT-1)
+ *   Index   14     : Cab bypass (0/1)
+ *   Index   15     : Mic type selector (0 .. FX_MIC_COUNT-1)
+ *   Indices 16-18  : Mic params (Distance, Angle, Position)
+ *   Indices 19-22  : Studio slot 0  (type + 3 generic params)
+ *   Indices 23-26  : Studio slot 1
+ *   Indices 27-30  : Studio slot 2
+ *   Indices 31-34  : Studio slot 3
+ *   Indices 35-38  : Pre-pedal slot 0  (type + 3 generic params)
+ *   Indices 39-42  : Pre-pedal slot 1
+ *   Indices 43-46  : Pre-pedal slot 2
+ *   Indices 47-50  : Post-pedal slot 0
+ *   Indices 51-54  : Post-pedal slot 1
+ *   Indices 55-58  : Post-pedal slot 2
  *
- * Pedal type selector value 0 means "no pedal" (slot empty).
- * Values 1 .. FX_PEDAL_TYPE_COUNT map to fx_pedal_type_t (value - 1).
+ * Pedal/studio type selector value 0 means "no pedal/processor" (slot empty).
+ * Values 1 .. TYPE_COUNT map to the corresponding type enum (value - 1).
  */
 
 #include <cplug.h>
@@ -37,17 +45,36 @@
 
 /* ── Parameter layout constants ─────────────────────────────────── */
 
-#define NUM_AMP_KNOBS    10
-#define NUM_AMP_PARAMS   (NUM_AMP_KNOBS + 1)   /* knobs + model selector */
+#define NUM_AMP_KNOBS    12
+#define IDX_AMP_MODEL    NUM_AMP_KNOBS          /* index 12 */
+#define NUM_AMP_PARAMS   (NUM_AMP_KNOBS + 1)    /* 13: knobs + model selector */
+
+#define IDX_CAB_TYPE     NUM_AMP_PARAMS         /* index 13 */
+#define IDX_CAB_BYPASS   (IDX_CAB_TYPE + 1)     /* index 14 */
+#define NUM_CAB_PARAMS   2
+
+#define IDX_MIC_TYPE     (IDX_CAB_BYPASS + 1)   /* index 15 */
+#define IDX_MIC_DISTANCE (IDX_MIC_TYPE + 1)     /* index 16 */
+#define IDX_MIC_ANGLE    (IDX_MIC_TYPE + 2)     /* index 17 */
+#define IDX_MIC_POSITION (IDX_MIC_TYPE + 3)     /* index 18 */
+#define NUM_MIC_PARAMS   4                      /* type + 3 placement */
+
+#define NUM_STUDIO_SLOTS   4
+#define PARAMS_PER_STUDIO  4   /* type selector + 3 generic params */
+#define IDX_STUDIO_START   (IDX_MIC_TYPE + NUM_MIC_PARAMS)  /* index 19 */
 
 #define NUM_PEDAL_SLOTS  6   /* 3 pre + 3 post */
 #define PARAMS_PER_PEDAL 4   /* type selector + 3 generic knob params */
+#define IDX_PEDAL_START  (IDX_STUDIO_START + NUM_STUDIO_SLOTS * PARAMS_PER_STUDIO)  /* index 35 */
 
-#define NUM_PARAMS       (NUM_AMP_PARAMS + NUM_PEDAL_SLOTS * PARAMS_PER_PEDAL)
-/* = 11 + 24 = 35 */
+#define NUM_PARAMS       (IDX_PEDAL_START + NUM_PEDAL_SLOTS * PARAMS_PER_PEDAL)
+/* = 35 + 24 = 59 */
 
 /* First param index for pedal block n (0-based) */
-#define PEDAL_BLOCK_START(n)  (NUM_AMP_PARAMS + (n) * PARAMS_PER_PEDAL)
+#define PEDAL_BLOCK_START(n)   (IDX_PEDAL_START + (n) * PARAMS_PER_PEDAL)
+
+/* First param index for studio block n (0-based) */
+#define STUDIO_BLOCK_START(n)  (IDX_STUDIO_START + (n) * PARAMS_PER_STUDIO)
 
 /* ── Amp parameter table ─────────────────────────────────────────── */
 
@@ -60,7 +87,13 @@ typedef struct {
     const char   *name;
 } AmpParamDef;
 
-#define PARAM_ID_AMP_MODEL  'axAM'
+#define PARAM_ID_AMP_MODEL   'axAM'
+#define PARAM_ID_CAB_TYPE    'cxTY'
+#define PARAM_ID_CAB_BYPASS  'cxBP'
+#define PARAM_ID_MIC_TYPE    'mxTY'
+#define PARAM_ID_MIC_DIST    'mx00'
+#define PARAM_ID_MIC_ANGLE   'mx01'
+#define PARAM_ID_MIC_POS     'mx02'
 
 static const AmpParamDef AMP_KNOBS[NUM_AMP_KNOBS] = {
     { 'ax00', FX_AMP_PARAM_GAIN,     0.0f, 10.0f, 5.0f, "Gain"     },
@@ -73,6 +106,8 @@ static const AmpParamDef AMP_KNOBS[NUM_AMP_KNOBS] = {
     { 'ax07', FX_AMP_PARAM_MASTER,   0.0f, 10.0f, 5.0f, "Master"   },
     { 'ax08', FX_AMP_PARAM_BRIGHT,   0.0f,  1.0f, 0.0f, "Bright"   },
     { 'ax09', FX_AMP_PARAM_CUT,      0.0f, 10.0f, 5.0f, "Cut"      },
+    { 'ax10', FX_AMP_PARAM_TONE,     0.0f, 10.0f, 5.0f, "Tone"     },
+    { 'ax11', FX_AMP_PARAM_FEEDBACK, 0.0f, 10.0f, 0.0f, "Feedback" },
 };
 
 /* ── Pedal slot descriptors ─────────────────────────────────────── */
@@ -86,8 +121,16 @@ static const AmpParamDef AMP_KNOBS[NUM_AMP_KNOBS] = {
 
 static uint32_t pedal_param_id(int slot, int sub)
 {
-    /* slot 0-5, sub 0-3 → unique 4-byte ID */
+    /* slot 0-5, sub 0-3 -> unique 4-byte ID */
     return (uint32_t)('p' | ((uint32_t)'x' << 8) |
+                      ((uint32_t)('0' + slot) << 16) |
+                      ((uint32_t)('0' + sub) << 24));
+}
+
+/* Studio slot param IDs: 'sx' prefix + slot + sub */
+static uint32_t studio_param_id(int slot, int sub)
+{
+    return (uint32_t)('s' | ((uint32_t)'x' << 8) |
                       ((uint32_t)('0' + slot) << 16) |
                       ((uint32_t)('0' + sub) << 24));
 }
@@ -106,7 +149,7 @@ typedef struct {
     float     sample_rate;
     uint32_t  max_block_size;
 
-    /* Parameter shadow values — all 35 params */
+    /* Parameter shadow values — all params */
     float     param_values[NUM_PARAMS];
 
     /*
@@ -114,21 +157,26 @@ typedef struct {
      * -1 means empty (no pedal in this slot).
      */
     fx_pedal_id pedal_ids[NUM_PEDAL_SLOTS];
+
+    /*
+     * Active studio processor IDs for each slot.
+     * -1 means empty (no processor in this slot).
+     */
+    fx_studio_id studio_ids[NUM_STUDIO_SLOTS];
 } OxFXPlugin;
 
-/* ── Pedal type mapping helpers ─────────────────────────────────── */
+/* ── Type-from-param helpers ────────────────────────────────────── */
 
 /*
- * The type-selector parameter uses value 0 = "no pedal", values 1..N map
- * to fx_pedal_type_t values 0..N-1.  This keeps 0.0 as the natural default
- * (empty slot).
+ * Type-selector parameters use value 0 = "none", values 1..N map
+ * to the corresponding type enum (value - 1).
  */
-static int pedal_type_from_param(float v)
+static int type_from_param(float v, int type_count)
 {
     int t = (int)(v + 0.5f) - 1;
     if (t < 0) return -1;
-    if (t >= FX_PEDAL_TYPE_COUNT) t = FX_PEDAL_TYPE_COUNT - 1;
-    return t; /* -1 means no pedal */
+    if (t >= type_count) t = type_count - 1;
+    return t; /* -1 means empty */
 }
 
 /* ── Param index helpers ─────────────────────────────────────────── */
@@ -139,12 +187,30 @@ static int find_param_index(uint32_t param_id)
 {
     /* Amp model selector */
     if (param_id == PARAM_ID_AMP_MODEL)
-        return NUM_AMP_KNOBS; /* index 10 */
+        return IDX_AMP_MODEL;
+
+    /* Cab params */
+    if (param_id == PARAM_ID_CAB_TYPE)   return IDX_CAB_TYPE;
+    if (param_id == PARAM_ID_CAB_BYPASS) return IDX_CAB_BYPASS;
+
+    /* Mic params */
+    if (param_id == PARAM_ID_MIC_TYPE)   return IDX_MIC_TYPE;
+    if (param_id == PARAM_ID_MIC_DIST)   return IDX_MIC_DISTANCE;
+    if (param_id == PARAM_ID_MIC_ANGLE)  return IDX_MIC_ANGLE;
+    if (param_id == PARAM_ID_MIC_POS)    return IDX_MIC_POSITION;
 
     /* Amp knobs */
     for (int i = 0; i < NUM_AMP_KNOBS; i++) {
         if (AMP_KNOBS[i].id == param_id)
             return i;
+    }
+
+    /* Studio params */
+    for (int slot = 0; slot < NUM_STUDIO_SLOTS; slot++) {
+        for (int sub = 0; sub < PARAMS_PER_STUDIO; sub++) {
+            if (studio_param_id(slot, sub) == param_id)
+                return STUDIO_BLOCK_START(slot) + sub;
+        }
     }
 
     /* Pedal params */
@@ -160,32 +226,61 @@ static int find_param_index(uint32_t param_id)
 
 static float param_min(int index)
 {
-    if (index < NUM_AMP_KNOBS)    return AMP_KNOBS[index].min_val;
-    if (index == NUM_AMP_KNOBS)   return 0.0f; /* amp model */
+    if (index < NUM_AMP_KNOBS)      return AMP_KNOBS[index].min_val;
+    if (index == IDX_AMP_MODEL)     return 0.0f;
+    if (index == IDX_CAB_TYPE)      return 0.0f;
+    if (index == IDX_CAB_BYPASS)    return 0.0f;
+    if (index == IDX_MIC_TYPE)      return 0.0f;
+    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) return 0.0f;
+
+    /* Studio sub-params */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START)
+        return 0.0f;
 
     /* Pedal sub-params */
-    int offset = index - NUM_AMP_PARAMS;
-    int sub    = offset % PARAMS_PER_PEDAL;
-    if (sub == 0) return 0.0f; /* type selector: 0..FX_PEDAL_TYPE_COUNT */
-    return 0.0f;               /* generic knob params 0..1 */
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS)
+        return 0.0f;
+
+    return 0.0f;
 }
 
 static float param_max(int index)
 {
-    if (index < NUM_AMP_KNOBS)    return AMP_KNOBS[index].max_val;
-    if (index == NUM_AMP_KNOBS)   return (float)(FX_AMP_COUNT - 1);
+    if (index < NUM_AMP_KNOBS)      return AMP_KNOBS[index].max_val;
+    if (index == IDX_AMP_MODEL)     return (float)(FX_AMP_COUNT - 1);
+    if (index == IDX_CAB_TYPE)      return (float)(FX_CAB_TYPE_COUNT - 1);
+    if (index == IDX_CAB_BYPASS)    return 1.0f;
+    if (index == IDX_MIC_TYPE)      return (float)(FX_MIC_COUNT - 1);
+    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) return 1.0f;
 
-    int offset = index - NUM_AMP_PARAMS;
-    int sub    = offset % PARAMS_PER_PEDAL;
-    if (sub == 0) return (float)FX_PEDAL_TYPE_COUNT; /* 0 = none, 1..N = type */
+    /* Studio sub-params */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
+        int offset = index - IDX_STUDIO_START;
+        int sub    = offset % PARAMS_PER_STUDIO;
+        if (sub == 0) return (float)FX_STUDIO_COUNT; /* 0 = none, 1..N = type */
+        return 1.0f;
+    }
+
+    /* Pedal sub-params */
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+        int offset = index - IDX_PEDAL_START;
+        int sub    = offset % PARAMS_PER_PEDAL;
+        if (sub == 0) return (float)FX_PEDAL_TYPE_COUNT; /* 0 = none, 1..N = type */
+        return 1.0f;
+    }
+
     return 1.0f;
 }
 
 static float param_default(int index)
 {
-    if (index < NUM_AMP_KNOBS)    return AMP_KNOBS[index].default_val;
-    if (index == NUM_AMP_KNOBS)   return 0.0f;
-    return 0.0f; /* pedal slots: empty / knobs at min */
+    if (index < NUM_AMP_KNOBS)      return AMP_KNOBS[index].default_val;
+    if (index == IDX_AMP_MODEL)     return 0.0f;
+    if (index == IDX_CAB_TYPE)      return 0.0f;  /* 1x12 open */
+    if (index == IDX_CAB_BYPASS)    return 0.0f;  /* cab enabled */
+    if (index == IDX_MIC_TYPE)      return 0.0f;  /* DI (no coloration) */
+    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) return 0.5f;
+    return 0.0f; /* studio/pedal slots: empty / knobs at min */
 }
 
 /* ── Engine apply helpers ────────────────────────────────────────── */
@@ -237,6 +332,45 @@ static fx_pedal_id sync_pedal_slot(OxFXPlugin *p, int slot, int type_idx)
     return new_id;
 }
 
+/*
+ * Ensure a studio slot matches the requested type.
+ * Same pattern as sync_pedal_slot.
+ */
+static fx_studio_id sync_studio_slot(OxFXPlugin *p, int slot, int type_idx)
+{
+    fx_studio_id cur_id = p->studio_ids[slot];
+
+    if (cur_id >= 0) {
+        fx_studio_type_t cur_type = fx_studio_get_type(p->engine, cur_id);
+        if (type_idx < 0) {
+            fx_studio_remove(p->engine, cur_id);
+            p->studio_ids[slot] = -1;
+            return -1;
+        }
+        if ((int)cur_type == type_idx) {
+            return cur_id;
+        }
+        fx_studio_remove(p->engine, cur_id);
+        p->studio_ids[slot] = -1;
+    }
+
+    if (type_idx < 0) return -1;
+
+    fx_studio_id new_id = fx_studio_add(p->engine,
+                                         (fx_studio_type_t)type_idx);
+    p->studio_ids[slot] = new_id;
+
+    /* Restore the 3 generic param values for this slot */
+    if (new_id >= 0) {
+        int base = STUDIO_BLOCK_START(slot);
+        for (int sub = 1; sub < PARAMS_PER_STUDIO; sub++) {
+            fx_studio_set_param(p->engine, new_id, sub - 1,
+                                p->param_values[base + sub]);
+        }
+    }
+    return new_id;
+}
+
 /* Apply a parameter value to the engine */
 static void apply_param(OxFXPlugin *p, int index, float value)
 {
@@ -250,7 +384,7 @@ static void apply_param(OxFXPlugin *p, int index, float value)
     }
 
     /* Amp model selector */
-    if (index == NUM_AMP_KNOBS) {
+    if (index == IDX_AMP_MODEL) {
         int model = (int)(value + 0.5f);
         if (model < 0) model = 0;
         if (model >= FX_AMP_COUNT) model = FX_AMP_COUNT - 1;
@@ -258,21 +392,89 @@ static void apply_param(OxFXPlugin *p, int index, float value)
         return;
     }
 
-    /* Pedal param */
-    int offset = index - NUM_AMP_PARAMS;
-    int slot   = offset / PARAMS_PER_PEDAL;
-    int sub    = offset % PARAMS_PER_PEDAL;
+    /* Cab type */
+    if (index == IDX_CAB_TYPE) {
+        int cab = (int)(value + 0.5f);
+        if (cab < 0) cab = 0;
+        if (cab >= FX_CAB_TYPE_COUNT) cab = FX_CAB_TYPE_COUNT - 1;
+        /* Generate a synthetic IR with the selected cab type and current mic pos */
+        fx_cab_params_t params;
+        params.cab_type   = (fx_cab_type_t)cab;
+        params.mic_pos    = FX_MIC_ON_AXIS;
+        params.speaker_fs = 80.0f;
+        params.brightness = 0.5f;
+        params.resonance  = 0.5f;
+        fx_cab_generate_ir(p->engine, FX_CHAIN_DEFAULT, &params);
+        return;
+    }
 
-    if (sub == 0) {
-        /* Type selector — may add or remove the pedal */
-        int type_idx = pedal_type_from_param(value);
-        sync_pedal_slot(p, slot, type_idx);
-    } else {
-        /* Generic knob param (0-indexed: sub-1) */
-        fx_pedal_id pid = p->pedal_ids[slot];
-        if (pid >= 0) {
-            fx_pedal_set_param(p->engine, pid, sub - 1, value);
+    /* Cab bypass */
+    if (index == IDX_CAB_BYPASS) {
+        fx_cab_set_bypass(p->engine, FX_CHAIN_DEFAULT, value >= 0.5f);
+        return;
+    }
+
+    /* Mic type */
+    if (index == IDX_MIC_TYPE) {
+        int mic = (int)(value + 0.5f);
+        if (mic < 0) mic = 0;
+        if (mic >= FX_MIC_COUNT) mic = FX_MIC_COUNT - 1;
+        fx_mic_set_type(p->engine, FX_CHAIN_DEFAULT, (fx_mic_type_t)mic);
+        return;
+    }
+
+    /* Mic placement params */
+    if (index == IDX_MIC_DISTANCE) {
+        fx_mic_set_param(p->engine, FX_CHAIN_DEFAULT, FX_MIC_PARAM_DISTANCE, value);
+        return;
+    }
+    if (index == IDX_MIC_ANGLE) {
+        fx_mic_set_param(p->engine, FX_CHAIN_DEFAULT, FX_MIC_PARAM_ANGLE, value);
+        return;
+    }
+    if (index == IDX_MIC_POSITION) {
+        fx_mic_set_param(p->engine, FX_CHAIN_DEFAULT, FX_MIC_PARAM_POSITION, value);
+        return;
+    }
+
+    /* Studio processor param */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
+        int offset = index - IDX_STUDIO_START;
+        int slot   = offset / PARAMS_PER_STUDIO;
+        int sub    = offset % PARAMS_PER_STUDIO;
+
+        if (sub == 0) {
+            /* Type selector — may add or remove the processor */
+            int type_idx = type_from_param(value, FX_STUDIO_COUNT);
+            sync_studio_slot(p, slot, type_idx);
+        } else {
+            /* Generic knob param (0-indexed: sub-1) */
+            fx_studio_id sid = p->studio_ids[slot];
+            if (sid >= 0) {
+                fx_studio_set_param(p->engine, sid, sub - 1, value);
+            }
         }
+        return;
+    }
+
+    /* Pedal param */
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+        int offset = index - IDX_PEDAL_START;
+        int slot   = offset / PARAMS_PER_PEDAL;
+        int sub    = offset % PARAMS_PER_PEDAL;
+
+        if (sub == 0) {
+            /* Type selector — may add or remove the pedal */
+            int type_idx = type_from_param(value, FX_PEDAL_TYPE_COUNT);
+            sync_pedal_slot(p, slot, type_idx);
+        } else {
+            /* Generic knob param (0-indexed: sub-1) */
+            fx_pedal_id pid = p->pedal_ids[slot];
+            if (pid >= 0) {
+                fx_pedal_set_param(p->engine, pid, sub - 1, value);
+            }
+        }
+        return;
     }
 }
 
@@ -294,6 +496,10 @@ void *cplug_createPlugin(CplugHostContext *ctx)
     /* Initialise pedal IDs to "empty" */
     for (int i = 0; i < NUM_PEDAL_SLOTS; i++)
         p->pedal_ids[i] = -1;
+
+    /* Initialise studio IDs to "empty" */
+    for (int i = 0; i < NUM_STUDIO_SLOTS; i++)
+        p->studio_ids[i] = -1;
 
     p->engine = fx_engine_create(p->sample_rate);
     if (!p->engine) {
@@ -349,14 +555,32 @@ uint32_t cplug_getParameterID(void *ptr, uint32_t param_index)
 {
     (void)ptr;
     int i = (int)param_index;
-    if (i < NUM_AMP_KNOBS)    return AMP_KNOBS[i].id;
-    if (i == NUM_AMP_KNOBS)   return PARAM_ID_AMP_MODEL;
-    if (i < NUM_PARAMS) {
-        int offset = i - NUM_AMP_PARAMS;
+
+    if (i < NUM_AMP_KNOBS)      return AMP_KNOBS[i].id;
+    if (i == IDX_AMP_MODEL)     return PARAM_ID_AMP_MODEL;
+    if (i == IDX_CAB_TYPE)      return PARAM_ID_CAB_TYPE;
+    if (i == IDX_CAB_BYPASS)    return PARAM_ID_CAB_BYPASS;
+    if (i == IDX_MIC_TYPE)      return PARAM_ID_MIC_TYPE;
+    if (i == IDX_MIC_DISTANCE)  return PARAM_ID_MIC_DIST;
+    if (i == IDX_MIC_ANGLE)     return PARAM_ID_MIC_ANGLE;
+    if (i == IDX_MIC_POSITION)  return PARAM_ID_MIC_POS;
+
+    /* Studio params */
+    if (i >= IDX_STUDIO_START && i < IDX_PEDAL_START) {
+        int offset = i - IDX_STUDIO_START;
+        int slot   = offset / PARAMS_PER_STUDIO;
+        int sub    = offset % PARAMS_PER_STUDIO;
+        return studio_param_id(slot, sub);
+    }
+
+    /* Pedal params */
+    if (i >= IDX_PEDAL_START && i < NUM_PARAMS) {
+        int offset = i - IDX_PEDAL_START;
         int slot   = offset / PARAMS_PER_PEDAL;
         int sub    = offset % PARAMS_PER_PEDAL;
         return pedal_param_id(slot, sub);
     }
+
     return 0;
 }
 
@@ -369,7 +593,25 @@ uint32_t cplug_getParameterFlags(void *ptr, uint32_t param_id)
     uint32_t flags = CPLUG_FLAG_PARAMETER_IS_AUTOMATABLE;
 
     /* Amp model selector — integer enum */
-    if (index == NUM_AMP_KNOBS) {
+    if (index == IDX_AMP_MODEL) {
+        flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
+        return flags;
+    }
+
+    /* Cab type selector — integer enum */
+    if (index == IDX_CAB_TYPE) {
+        flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
+        return flags;
+    }
+
+    /* Cab bypass — boolean */
+    if (index == IDX_CAB_BYPASS) {
+        flags |= CPLUG_FLAG_PARAMETER_IS_BOOL;
+        return flags;
+    }
+
+    /* Mic type selector — integer enum */
+    if (index == IDX_MIC_TYPE) {
         flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
         return flags;
     }
@@ -381,9 +623,17 @@ uint32_t cplug_getParameterFlags(void *ptr, uint32_t param_id)
         return flags;
     }
 
+    /* Studio type selectors — integer enum */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
+        int offset = index - IDX_STUDIO_START;
+        int sub    = offset % PARAMS_PER_STUDIO;
+        if (sub == 0)
+            flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
+    }
+
     /* Pedal type selectors — integer enum */
-    if (index >= NUM_AMP_PARAMS) {
-        int offset = index - NUM_AMP_PARAMS;
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+        int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0)
             flags |= CPLUG_FLAG_PARAMETER_IS_INTEGER;
@@ -405,18 +655,58 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
 {
     (void)ptr;
     int index = find_param_index(param_id);
+
     if (index < NUM_AMP_KNOBS) {
         snprintf(buf, buflen, "%s", AMP_KNOBS[index].name);
         return;
     }
-    if (index == NUM_AMP_KNOBS) {
+    if (index == IDX_AMP_MODEL) {
         snprintf(buf, buflen, "Amp Model");
         return;
     }
-    if (index < NUM_PARAMS) {
-        int offset = index - NUM_AMP_PARAMS;
-        int slot   = offset / PARAMS_PER_PEDAL;
-        int sub    = offset % PARAMS_PER_PEDAL;
+    if (index == IDX_CAB_TYPE) {
+        snprintf(buf, buflen, "Cab Type");
+        return;
+    }
+    if (index == IDX_CAB_BYPASS) {
+        snprintf(buf, buflen, "Cab Bypass");
+        return;
+    }
+    if (index == IDX_MIC_TYPE) {
+        snprintf(buf, buflen, "Mic Type");
+        return;
+    }
+    if (index == IDX_MIC_DISTANCE) {
+        snprintf(buf, buflen, "Mic Distance");
+        return;
+    }
+    if (index == IDX_MIC_ANGLE) {
+        snprintf(buf, buflen, "Mic Angle");
+        return;
+    }
+    if (index == IDX_MIC_POSITION) {
+        snprintf(buf, buflen, "Mic Position");
+        return;
+    }
+
+    /* Studio slot params */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
+        int offset   = index - IDX_STUDIO_START;
+        int slot     = offset / PARAMS_PER_STUDIO;
+        int sub      = offset % PARAMS_PER_STUDIO;
+        if (sub == 0) {
+            snprintf(buf, buflen, "Studio %d Type", slot + 1);
+        } else {
+            snprintf(buf, buflen, "Studio %d P%d", slot + 1, sub);
+        }
+        return;
+    }
+
+    /* Pedal slot params */
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+        int offset   = index - IDX_PEDAL_START;
+        int slot     = offset / PARAMS_PER_PEDAL;
+        int sub      = offset % PARAMS_PER_PEDAL;
         const char *pos_name = (slot < 3) ? "Pre" : "Post";
         int slot_num = (slot < 3) ? slot + 1 : slot - 2;
         if (sub == 0) {
@@ -426,6 +716,7 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
         }
         return;
     }
+
     snprintf(buf, buflen, "Unknown");
 }
 
@@ -498,16 +789,29 @@ double cplug_parameterStringToValue(void *ptr, uint32_t param_id, const char *st
     int index = find_param_index(param_id);
     if (index >= NUM_PARAMS) return 0.0;
 
-    /* Integer params */
-    if (index == NUM_AMP_KNOBS) return (double)atoi(str);
+    /* Integer / boolean params */
+    if (index == IDX_AMP_MODEL)  return (double)atoi(str);
+    if (index == IDX_CAB_TYPE)   return (double)atoi(str);
+    if (index == IDX_CAB_BYPASS) return (double)atoi(str);
+    if (index == IDX_MIC_TYPE)   return (double)atoi(str);
     if (index < NUM_AMP_KNOBS &&
         AMP_KNOBS[index].amp_param == FX_AMP_PARAM_BRIGHT)
         return (double)atoi(str);
-    if (index >= NUM_AMP_PARAMS) {
-        int offset = index - NUM_AMP_PARAMS;
+
+    /* Studio type selectors */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
+        int offset = index - IDX_STUDIO_START;
+        int sub    = offset % PARAMS_PER_STUDIO;
+        if (sub == 0) return (double)atoi(str);
+    }
+
+    /* Pedal type selectors */
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+        int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0) return (double)atoi(str);
     }
+
     return atof(str);
 }
 
@@ -518,30 +822,86 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
     int index = find_param_index(param_id);
     if (index >= NUM_PARAMS) { snprintf(buf, bufsize, "0"); return; }
 
-    if (index == NUM_AMP_KNOBS) {
-        /* Amp model name */
+    /* Amp model name */
+    if (index == IDX_AMP_MODEL) {
         int model = (int)(value + 0.5);
         if (model < 0) model = 0;
         if (model >= FX_AMP_COUNT) model = FX_AMP_COUNT - 1;
         static const char *amp_names[] = {
             "Fullerton Clean", "Brit Crunch", "Southwest Lead",
-            "Essex Chime", "Tweed Blues"
+            "Essex Chime", "Tweed Blues", "Meridian High Gain",
+            "Citrus Roar", "Citrus Terror", "Regent 800",
+            "Solar Monolith", "Eclipse Drone"
         };
         snprintf(buf, bufsize, "%s", amp_names[model]);
         return;
     }
 
+    /* Cab type name */
+    if (index == IDX_CAB_TYPE) {
+        int cab = (int)(value + 0.5);
+        if (cab < 0) cab = 0;
+        if (cab >= FX_CAB_TYPE_COUNT) cab = FX_CAB_TYPE_COUNT - 1;
+        static const char *cab_names[] = {
+            "1x12 Open", "2x12 Closed", "4x12 Straight",
+            "4x12 Slant", "Direct"
+        };
+        snprintf(buf, bufsize, "%s", cab_names[cab]);
+        return;
+    }
+
+    /* Cab bypass */
+    if (index == IDX_CAB_BYPASS) {
+        snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
+        return;
+    }
+
+    /* Mic type name */
+    if (index == IDX_MIC_TYPE) {
+        int mic = (int)(value + 0.5);
+        if (mic < 0) mic = 0;
+        if (mic >= FX_MIC_COUNT) mic = FX_MIC_COUNT - 1;
+        snprintf(buf, bufsize, "%s",
+                 fx_mic_get_type_name((fx_mic_type_t)mic));
+        return;
+    }
+
+    /* Mic placement params */
+    if (index >= IDX_MIC_DISTANCE && index <= IDX_MIC_POSITION) {
+        snprintf(buf, bufsize, "%.0f%%", value * 100.0);
+        return;
+    }
+
+    /* Bright switch */
     if (index < NUM_AMP_KNOBS &&
         AMP_KNOBS[index].amp_param == FX_AMP_PARAM_BRIGHT) {
         snprintf(buf, bufsize, "%s", value >= 0.5 ? "On" : "Off");
         return;
     }
 
-    if (index >= NUM_AMP_PARAMS) {
-        int offset = index - NUM_AMP_PARAMS;
+    /* Studio type selector */
+    if (index >= IDX_STUDIO_START && index < IDX_PEDAL_START) {
+        int offset = index - IDX_STUDIO_START;
+        int sub    = offset % PARAMS_PER_STUDIO;
+        if (sub == 0) {
+            int t = (int)(value + 0.5);
+            if (t <= 0) {
+                snprintf(buf, bufsize, "None");
+            } else {
+                int type = t - 1;
+                if (type >= FX_STUDIO_COUNT) type = FX_STUDIO_COUNT - 1;
+                snprintf(buf, bufsize, "%s",
+                         fx_studio_get_type_name((fx_studio_type_t)type));
+            }
+            return;
+        }
+    }
+
+    /* Pedal type selector */
+    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+        int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0) {
-            /* Pedal type selector */
             int t = (int)(value + 0.5);
             if (t <= 0) {
                 snprintf(buf, bufsize, "None");
@@ -577,6 +937,10 @@ void cplug_setSampleRateAndBlockSize(void *ptr, double sample_rate, uint32_t max
     /* Clear cached pedal IDs — they belong to the old engine */
     for (int i = 0; i < NUM_PEDAL_SLOTS; i++)
         p->pedal_ids[i] = -1;
+
+    /* Clear cached studio IDs */
+    for (int i = 0; i < NUM_STUDIO_SLOTS; i++)
+        p->studio_ids[i] = -1;
 
     p->engine = fx_engine_create(p->sample_rate);
 

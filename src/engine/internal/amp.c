@@ -138,6 +138,78 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .tone_range_db = 14.0f,
         .power_threshold = 0.72f,
     },
+    /* Meridian High Gain — inspired by American high-gain metal amps
+     * 4 stages, aggressive hard clipping, scooped mids, tight low end
+     * Pre-gain HP at 100Hz for tightness, deep scoop at 400Hz, presence peak at 5kHz */
+    [FX_AMP_MERIDIAN_HIGH_GAIN] = {
+        .num_stages = 4,
+        .stage_gains = { 6.0f, 5.0f, 4.5f, 4.0f },
+        .shaper = waveshape_hard,
+        .bass_freq = 100.0f, .mid_freq = 400.0f,
+        .treble_freq = 4000.0f, .presence_freq = 5000.0f,
+        .tone_range_db = 20.0f,
+        .power_threshold = 0.65f,
+    },
+    /* Citrus Roar — inspired by British thick/fuzzy crunch amps
+     * 3 stages, soft clipping (tanh) for EL34 warmth
+     * Warm low-mids, less fizzy top end */
+    [FX_AMP_CITRUS_ROAR] = {
+        .num_stages = 3,
+        .stage_gains = { 4.5f, 3.5f, 3.0f, 0 },
+        .shaper = waveshape_tanh,
+        .bass_freq = 110.0f, .mid_freq = 600.0f,
+        .treble_freq = 3000.0f, .presence_freq = 4500.0f,
+        .tone_range_db = 14.0f,
+        .power_threshold = 0.72f,
+    },
+    /* Citrus Terror — inspired by British low-wattage Class A amps
+     * 2 stages, asymmetric clipping for Class A character
+     * Simple 3-knob design: Gain, Tone, Volume */
+    [FX_AMP_CITRUS_TERROR] = {
+        .num_stages = 2,
+        .stage_gains = { 4.0f, 3.5f, 0, 0 },
+        .shaper = waveshape_asym,
+        .bass_freq = 120.0f, .mid_freq = 800.0f,
+        .treble_freq = 3500.0f, .presence_freq = 5000.0f,
+        .tone_range_db = 14.0f,
+        .power_threshold = 0.78f,
+    },
+    /* Regent 800 — inspired by classic British rock/metal amps
+     * 2 stages, moderate hard clipping, bright channel character
+     * Mid-forward voicing, classic British aggression */
+    [FX_AMP_REGENT_800] = {
+        .num_stages = 2,
+        .stage_gains = { 5.0f, 4.0f, 0, 0 },
+        .shaper = waveshape_hard,
+        .bass_freq = 100.0f, .mid_freq = 1000.0f,
+        .treble_freq = 3800.0f, .presence_freq = 5500.0f,
+        .tone_range_db = 16.0f,
+        .power_threshold = 0.73f,
+    },
+    /* Solar Monolith — inspired by massive clean-to-doom amps
+     * 2 stages but with HUGE headroom before clipping
+     * Deep low end (bass shelf at 40Hz), thunderous */
+    [FX_AMP_SOLAR_MONOLITH] = {
+        .num_stages = 2,
+        .stage_gains = { 3.0f, 2.5f, 0, 0 },
+        .shaper = waveshape_atan,
+        .bass_freq = 40.0f, .mid_freq = 500.0f,
+        .treble_freq = 2500.0f, .presence_freq = 4000.0f,
+        .tone_range_db = 18.0f,
+        .power_threshold = 0.90f,
+    },
+    /* Eclipse Drone — inspired by extreme low-end drone amps
+     * 2 stages, aggressive saturation, subsonic emphasis
+     * Feedback parameter adds harmonic feedback sustain */
+    [FX_AMP_ECLIPSE_DRONE] = {
+        .num_stages = 2,
+        .stage_gains = { 4.5f, 4.0f, 0, 0 },
+        .shaper = waveshape_tanh,
+        .bass_freq = 30.0f, .mid_freq = 400.0f,
+        .treble_freq = 2000.0f, .presence_freq = 3500.0f,
+        .tone_range_db = 20.0f,
+        .power_threshold = 0.88f,
+    },
 };
 
 /* ── Tone stack update ────────────────────────────────────────── */
@@ -146,11 +218,23 @@ static void amp_update_tone_stack(fx_amp_state_t *amp, float sr) {
     const amp_model_config_t *cfg = &amp_configs[amp->type];
     float range = cfg->tone_range_db;
 
-    /* Map 0-1 knob to -range..+range dB */
-    float bass_db   = (amp->params[FX_AMP_PARAM_BASS]   - 0.5f) * 2.0f * range;
-    float mid_db    = (amp->params[FX_AMP_PARAM_MID]    - 0.5f) * 2.0f * range;
-    float treble_db = (amp->params[FX_AMP_PARAM_TREBLE] - 0.5f) * 2.0f * range;
-    float pres_db   = (amp->params[FX_AMP_PARAM_PRESENCE] - 0.5f) * 2.0f * 8.0f;
+    float bass_db, mid_db, treble_db, pres_db;
+
+    if (amp->type == FX_AMP_CITRUS_TERROR) {
+        /* Single Tone knob: 0.0 = dark, 1.0 = bright
+         * Controls a tilt-style EQ: bass goes down as treble goes up */
+        float tone = amp->params[FX_AMP_PARAM_TONE];
+        bass_db   = (0.5f - tone) * 2.0f * range;
+        mid_db    = 0.0f;  /* mids stay flat */
+        treble_db = (tone - 0.5f) * 2.0f * range;
+        pres_db   = (tone - 0.5f) * 8.0f;
+    } else {
+        /* Map 0-1 knob to -range..+range dB */
+        bass_db   = (amp->params[FX_AMP_PARAM_BASS]   - 0.5f) * 2.0f * range;
+        mid_db    = (amp->params[FX_AMP_PARAM_MID]    - 0.5f) * 2.0f * range;
+        treble_db = (amp->params[FX_AMP_PARAM_TREBLE] - 0.5f) * 2.0f * range;
+        pres_db   = (amp->params[FX_AMP_PARAM_PRESENCE] - 0.5f) * 2.0f * 8.0f;
+    }
 
     fx_biquad_lowshelf(&amp->tone_bass, cfg->bass_freq, bass_db, sr);
     fx_biquad_peak(&amp->tone_mid, cfg->mid_freq, mid_db, 0.7f, sr);
@@ -158,16 +242,24 @@ static void amp_update_tone_stack(fx_amp_state_t *amp, float sr) {
     fx_biquad_highshelf(&amp->presence_filter, cfg->presence_freq, pres_db, sr);
 
     /* Cache current values so we know when to recalculate */
-    amp->tone_cache[0] = amp->params[FX_AMP_PARAM_BASS];
-    amp->tone_cache[1] = amp->params[FX_AMP_PARAM_MID];
-    amp->tone_cache[2] = amp->params[FX_AMP_PARAM_TREBLE];
-    amp->tone_cache[3] = amp->params[FX_AMP_PARAM_PRESENCE];
+    if (amp->type == FX_AMP_CITRUS_TERROR) {
+        amp->tone_cache[0] = amp->params[FX_AMP_PARAM_TONE];
+    } else {
+        amp->tone_cache[0] = amp->params[FX_AMP_PARAM_BASS];
+        amp->tone_cache[1] = amp->params[FX_AMP_PARAM_MID];
+        amp->tone_cache[2] = amp->params[FX_AMP_PARAM_TREBLE];
+        amp->tone_cache[3] = amp->params[FX_AMP_PARAM_PRESENCE];
+    }
     amp->tone_sr = sr;
 }
 
 static inline bool tone_params_changed(fx_amp_state_t *amp, float sr) {
-    return amp->tone_sr != sr ||
-           amp->tone_cache[0] != amp->params[FX_AMP_PARAM_BASS] ||
+    if (amp->tone_sr != sr) return true;
+    if (amp->type == FX_AMP_CITRUS_TERROR) {
+        /* Citrus Terror uses single Tone knob — store in cache[0] */
+        return amp->tone_cache[0] != amp->params[FX_AMP_PARAM_TONE];
+    }
+    return amp->tone_cache[0] != amp->params[FX_AMP_PARAM_BASS] ||
            amp->tone_cache[1] != amp->params[FX_AMP_PARAM_MID] ||
            amp->tone_cache[2] != amp->params[FX_AMP_PARAM_TREBLE] ||
            amp->tone_cache[3] != amp->params[FX_AMP_PARAM_PRESENCE];
@@ -189,6 +281,8 @@ void fx_amp_init(fx_amp_state_t *amp, fx_amp_type_t type) {
     amp->params[FX_AMP_PARAM_PRESENCE] = 0.5f;
     amp->params[FX_AMP_PARAM_SAG]      = 0.3f;
     amp->params[FX_AMP_PARAM_MASTER]   = 0.5f;
+    amp->params[FX_AMP_PARAM_TONE]     = 0.5f;
+    amp->params[FX_AMP_PARAM_FEEDBACK] = 0.0f;
 
     amp->num_stages = amp_configs[type].num_stages;
     amp->sag_voltage = 1.0f;
@@ -236,6 +330,16 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
         x = fx_biquad_process(&amp->tone_mid, x);
         x = fx_biquad_process(&amp->tone_treble, x);
         x = fx_biquad_process(&amp->presence_filter, x);
+
+        /* ── Eclipse Drone: Harmonic feedback sustain ────────── */
+        if (amp->type == FX_AMP_ECLIPSE_DRONE) {
+            float fb = amp->params[FX_AMP_PARAM_FEEDBACK];
+            if (fb > 0.01f) {
+                /* Feed back a saturated version of previous output */
+                x += amp->feedback_z1 * fb * 0.6f;
+                amp->feedback_z1 = tanhf(x);  /* soft-limit feedback */
+            }
+        }
 
         /* ── Stage 3: Power amp ──────────────────────────────── */
 
@@ -291,20 +395,33 @@ static const char *amp_type_names[FX_AMP_COUNT] = {
     "Southwest Lead",
     "Essex Chime",
     "Tweed Blues",
+    "Meridian High Gain",
+    "Citrus Roar",
+    "Citrus Terror",
+    "Regent 800",
+    "Solar Monolith",
+    "Eclipse Drone",
 };
 
 static const char *amp_param_names[FX_AMP_PARAM_COUNT] = {
     "Gain", "Volume", "Bass", "Mid", "Treble",
     "Presence", "Sag", "Master", "Bright", "Cut",
+    "Tone", "Feedback",
 };
 
 int fx_amp_get_param_count(fx_amp_type_t type) {
     switch (type) {
-        case FX_AMP_FULLERTON_CLEAN: return 7;
-        case FX_AMP_BRIT_CRUNCH:     return 8;
-        case FX_AMP_SOUTHWEST_LEAD:  return 8;
-        case FX_AMP_ESSEX_CHIME:     return 7;
-        case FX_AMP_TWEED_BLUES:     return 6;
+        case FX_AMP_FULLERTON_CLEAN:    return 7;
+        case FX_AMP_BRIT_CRUNCH:        return 8;
+        case FX_AMP_SOUTHWEST_LEAD:     return 8;
+        case FX_AMP_ESSEX_CHIME:        return 7;
+        case FX_AMP_TWEED_BLUES:        return 6;
+        case FX_AMP_MERIDIAN_HIGH_GAIN: return 7;  /* Gain, Bass, Mid, Treble, Presence, Volume, Master */
+        case FX_AMP_CITRUS_ROAR:        return 5;  /* Gain, Bass, Mid, Treble, Volume */
+        case FX_AMP_CITRUS_TERROR:      return 3;  /* Gain, Tone, Volume */
+        case FX_AMP_REGENT_800:         return 7;  /* Gain, Bass, Mid, Treble, Presence, Volume, Master */
+        case FX_AMP_SOLAR_MONOLITH:     return 6;  /* Gain, Bass, Mid, Treble, Volume, Master */
+        case FX_AMP_ECLIPSE_DRONE:      return 6;  /* Gain, Bass, Mid, Treble, Feedback, Volume */
         default: return 0;
     }
 }
