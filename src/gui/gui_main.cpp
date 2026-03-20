@@ -962,8 +962,6 @@ int main(int argc, char *argv[]) {
                         tex = load_cab_texture((int)s_cab_type);
                     }
                     if (tex) {
-                        ImVec2 uv_tint = is_bypassed
-                            ? ImVec2(1.0f, 1.0f) : ImVec2(1.0f, 1.0f);
                         ImVec4 tint = is_bypassed
                             ? ImVec4(0.5f, 0.5f, 0.5f, 0.7f)
                             : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1318,6 +1316,22 @@ int main(int argc, char *argv[]) {
                     }
 
                     ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                    /* Amp face background image */
+                    {
+                        const char *aname = fx_amp_get_type_name(amp_type);
+                        uintptr_t face_tex = load_amp_face_texture(aname);
+                        if (face_tex) {
+                            float img_w = 300.0f;
+                            float img_h = img_w * 0.5f;  /* approximate aspect */
+                            float img_x = (avail_w - img_w) * 0.5f;
+                            if (img_x < 0.0f) img_x = 0.0f;
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + img_x);
+                            ImGui::Image((ImTextureID)face_tex, ImVec2(img_w, img_h),
+                                         ImVec2(0, 0), ImVec2(1, 1),
+                                         ImVec4(1.0f, 1.0f, 1.0f, 0.35f));
+                        }
+                    }
 
                     /* Knob layout: PREAMP | EQ | POWER */
                     int param_count = fx_amp_get_param_count(amp_type);
@@ -1783,6 +1797,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Cleanup */
+    fx_texture_shutdown();
     fx_audio_shutdown();
     fx_engine_destroy(engine);
 
