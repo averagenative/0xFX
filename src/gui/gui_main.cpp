@@ -3,6 +3,12 @@
  *
  * SDL2 + OpenGL 3.3 + Dear ImGui
  * Borderless window with custom title bar (no Windows chrome)
+ *
+ * Layout: BIAS FX-inspired signal chain flow
+ *   Top:           Toolbar (logo, tuner, LIVE, _ [] X)
+ *   Middle-top:    Signal chain — horizontal node flow
+ *   Middle-bottom: Detail view — knobs for selected node
+ *   Bottom:        Status bar with level meters
  */
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -28,6 +34,7 @@ extern "C" {
 
 #include <stdio.h>
 #include <cmath>
+#include <cstring>
 
 /* ── Colors — "worn grime" dark theme ─────────────────────────── */
 
@@ -141,6 +148,88 @@ static void install_borderless_wndproc(SDL_Window *window) {
 }
 #endif /* _WIN32 */
 
+/* ── Signal chain node types ─────────────────────────────────────── */
+
+enum NodeKind {
+    NODE_INPUT = 0,
+    NODE_PEDAL_PRE,
+    NODE_AMP,
+    NODE_CAB,
+    NODE_PEDAL_POST,
+    NODE_OUTPUT
+};
+
+/* Signal chain node descriptor */
+struct ChainNode {
+    NodeKind    kind;
+    int         slot;       /* index into pre/post pedal arrays, or -1 */
+    fx_pedal_id pedal_id;   /* valid only for PEDAL nodes */
+};
+
+/* Node colors by kind */
+static ImU32 node_color(NodeKind kind, bool bypassed) {
+    if (bypassed) return IM_COL32(60, 55, 50, 255);
+    switch (kind) {
+        case NODE_INPUT:      return IM_COL32(50, 120, 80, 255);
+        case NODE_PEDAL_PRE:  return IM_COL32(60, 100, 160, 255);
+        case NODE_AMP:        return IM_COL32(180, 90, 30, 255);
+        case NODE_CAB:        return IM_COL32(140, 80, 50, 255);
+        case NODE_PEDAL_POST: return IM_COL32(100, 60, 160, 255);
+        case NODE_OUTPUT:     return IM_COL32(50, 120, 80, 255);
+        default:              return IM_COL32(80, 80, 80, 255);
+    }
+}
+
+static const char *node_label(NodeKind kind, fx_engine_t *engine, fx_pedal_id pid) {
+    switch (kind) {
+        case NODE_INPUT:      return "INPUT";
+        case NODE_AMP:        return fx_amp_get_type_name(fx_amp_get_model(engine, FX_CHAIN_DEFAULT));
+        case NODE_CAB:        return "CAB";
+        case NODE_OUTPUT:     return "OUTPUT";
+        case NODE_PEDAL_PRE:
+        case NODE_PEDAL_POST: {
+            fx_pedal_type_t pt = fx_pedal_get_type(engine, pid);
+            if (pt < FX_PEDAL_TYPE_COUNT) return fx_pedal_get_type_name(pt);
+            return "???";
+        }
+        default: return "???";
+    }
+}
+
+/* Cab type names (engine doesn't expose these) */
+static const char *s_cab_type_names[] = {
+    "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant", "Direct"
+};
+
+/* Shared pedal menu for add-pedal popups */
+static const struct { fx_pedal_type_t type; const char *name; } s_pedal_menu[] = {
+    { FX_PEDAL_JADE_DRIVE,    "Jade Drive (OD)" },
+    { FX_PEDAL_GOLD_DRIVE,    "Gold Drive (Transparent OD)" },
+    { FX_PEDAL_RODENT,        "Rodent (Distortion)" },
+    { FX_PEDAL_ECHO_DELAY,    "Echo Delay" },
+    { FX_PEDAL_HALL_VERB,     "Hall Verb (Reverb)" },
+    { FX_PEDAL_DRIP_VERB,     "Drip Verb (Spring Reverb)" },
+    { FX_PEDAL_SQUEEZE_BOX,   "Squeeze Box (Compressor)" },
+    { FX_PEDAL_NOISE_GATE,    "Noise Gate" },
+    { FX_PEDAL_TONE_SCULPTOR, "Tone Sculptor (Graphic EQ)" },
+    { FX_PEDAL_MAMMOTH_FUZZ,  "Mammoth Fuzz (Big Muff)" },
+    { FX_PEDAL_ROUND_FUZZ,    "Round Fuzz (Germanium)" },
+    { FX_PEDAL_CHAOS_FUZZ,    "Chaos Fuzz (Gated)" },
+    { FX_PEDAL_GRIT_CRUSH,    "Grit Crush (Bitcrusher)" },
+    { FX_PEDAL_RING_TONE,     "Ring Tone (Ring Mod)" },
+    { FX_PEDAL_WARM_TAPE,     "Warm Tape (Tape Sat)" },
+    { FX_PEDAL_DRIFT_VIBRATO, "Drift Vibrato (Pitch Vibrato)" },
+    { FX_PEDAL_JET_FLANGER,   "Jet Flanger (Through-Zero)" },
+    { FX_PEDAL_PLATE_VERB,    "Plate Verb (Plate Reverb)" },
+    { FX_PEDAL_SHIMMER_VERB,  "Shimmer Verb (Octave Shimmer)" },
+    { FX_PEDAL_CLOUD_VERB,    "Cloud Verb (Ambient/Freeze)" },
+    { FX_PEDAL_OCTAVE_ENGINE, "Octave Engine (Polyphonic Octave)" },
+    { FX_PEDAL_LOOP_STATION,  "Loop Station (Looper)" },
+    { FX_PEDAL_INFINITE_HOLD, "Infinite Hold (Freeze/Drone)" },
+    { FX_PEDAL_GRAIN_CLOUD,   "Grain Cloud (Granular Delay)" },
+};
+static const int s_pedal_menu_count = 24;
+
 /* ── Main ─────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
@@ -213,8 +302,8 @@ int main(int argc, char *argv[]) {
     /* Audio device / settings state */
     int num_input_devices = fx_audio_get_device_count();
     int num_output_devices = fx_audio_get_output_count();
-    static int  s_selected_input   = -1;   /* -1 = no input selected (muted) */
-    static int  s_selected_output  = -1;   /* -1 = system default output */
+    static int  s_selected_input   = -1;
+    static int  s_selected_output  = -1;
     static int  s_selected_buf_idx = 2;    /* default: 256 frames */
     static int  s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
     static bool s_audio_active     = false;
@@ -224,7 +313,6 @@ int main(int argc, char *argv[]) {
     static const int   sr_values[]  = { 44100, 48000 };
     static const char *sr_labels[]  = { "44100 Hz", "48000 Hz" };
 
-    /* Launch MUTED — don't auto-start audio. User picks devices. */
     FX_INFO("Launched muted. Select input+output devices to start audio.");
 
     /* Auto-load default preset for sensible starting tone */
@@ -238,9 +326,23 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Pre-pedal ID registry — tracks IDs returned by fx_chain_add_pedal */
+    /* Pedal ID registries — tracks IDs returned by fx_chain_add_pedal */
     static fx_pedal_id s_pre_ids[32];
     static int         s_pre_id_count = 0;
+    static fx_pedal_id s_post_ids[32];
+    static int         s_post_id_count = 0;
+
+    /* Signal chain selection state */
+    static int  s_selected_node = -1;  /* index into the flattened chain array */
+
+    /* Layout constants */
+    static const float TOOLBAR_H      = 50.0f;
+    static const float STATUS_H       = 30.0f;
+    static const float NODE_W         = 80.0f;
+    static const float NODE_H         = 60.0f;
+    static const float NODE_SPACING   = 30.0f;
+    static const float ADD_BTN_W      = 24.0f;
+    static const float CHAIN_PADDING  = 20.0f;
 
     /* ── Main loop ────────────────────────────────────────────── */
     bool running = true;
@@ -260,10 +362,13 @@ int main(int argc, char *argv[]) {
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
+        float win_w = io.DisplaySize.x;
+        float win_h = io.DisplaySize.y;
+
         /* ── Toolbar ──────────────────────────────────────────── */
         {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
-            ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 50));
+            ImGui::SetNextWindowSize(ImVec2(win_w, TOOLBAR_H));
             ImGui::Begin("##toolbar", NULL,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
@@ -278,39 +383,34 @@ int main(int argc, char *argv[]) {
                 const char *note = active ? fx_tuner_get_note_name(engine) : "--";
                 float cents = active ? fx_tuner_get_cents(engine) : 0.0f;
 
-                /* Note name color: green if |cents|<5, yellow if <15, red otherwise */
                 ImVec4 note_color;
                 if (!active) {
-                    note_color = ImVec4(0.45f, 0.40f, 0.35f, 1.0f); /* disabled gray */
+                    note_color = ImVec4(0.45f, 0.40f, 0.35f, 1.0f);
                 } else if (cents < 0.0f ? -cents < 5.0f : cents < 5.0f) {
-                    note_color = ImVec4(0.20f, 0.90f, 0.30f, 1.0f); /* green */
+                    note_color = ImVec4(0.20f, 0.90f, 0.30f, 1.0f);
                 } else if (cents < 0.0f ? -cents < 15.0f : cents < 15.0f) {
-                    note_color = ImVec4(0.95f, 0.85f, 0.10f, 1.0f); /* yellow */
+                    note_color = ImVec4(0.95f, 0.85f, 0.10f, 1.0f);
                 } else {
-                    note_color = ImVec4(0.95f, 0.25f, 0.20f, 1.0f); /* red */
+                    note_color = ImVec4(0.95f, 0.25f, 0.20f, 1.0f);
                 }
 
-                /* Note name in large text */
                 ImGui::PushStyleColor(ImGuiCol_Text, note_color);
                 ImGui::SetWindowFontScale(1.4f);
                 ImGui::Text("%s", note);
                 ImGui::SetWindowFontScale(1.0f);
                 ImGui::PopStyleColor();
-
                 ImGui::SameLine();
 
-                /* Cents bar — drawn with the window draw list */
+                /* Cents bar */
                 {
                     const float bar_w    = 200.0f;
                     const float bar_h    = 10.0f;
                     const float dot_r    = 6.0f;
-                    const float padding  = dot_r; /* room for dot to extend past bar edge */
+                    const float padding  = dot_r;
 
-                    /* Reserve a region tall enough for bar + dot */
                     ImVec2 cursor = ImGui::GetCursorScreenPos();
-                    /* Vertically centre the bar+dot in the toolbar (toolbar h=50) */
                     float toolbar_top = ImGui::GetWindowPos().y;
-                    float bar_cx_y   = toolbar_top + 25.0f; /* mid-point of toolbar */
+                    float bar_cx_y   = toolbar_top + 25.0f;
                     float bar_top_y  = bar_cx_y - bar_h * 0.5f;
                     float bar_bot_y  = bar_cx_y + bar_h * 0.5f;
 
@@ -318,60 +418,32 @@ int main(int argc, char *argv[]) {
                     float bar_x1 = bar_x0 + bar_w;
 
                     ImDrawList *dl = ImGui::GetWindowDrawList();
+                    dl->AddRectFilled(ImVec2(bar_x0, bar_top_y), ImVec2(bar_x1, bar_bot_y),
+                                      IM_COL32(50, 45, 40, 255), 3.0f);
 
-                    /* Background track */
-                    dl->AddRectFilled(
-                        ImVec2(bar_x0, bar_top_y),
-                        ImVec2(bar_x1, bar_bot_y),
-                        IM_COL32(50, 45, 40, 255), 3.0f
-                    );
-
-                    /* Centre tick mark */
                     float mid_x = bar_x0 + bar_w * 0.5f;
-                    dl->AddRectFilled(
-                        ImVec2(mid_x - 1.0f, bar_top_y - 2.0f),
-                        ImVec2(mid_x + 1.0f, bar_bot_y + 2.0f),
-                        IM_COL32(120, 110, 90, 255)
-                    );
+                    dl->AddRectFilled(ImVec2(mid_x - 1.0f, bar_top_y - 2.0f),
+                                      ImVec2(mid_x + 1.0f, bar_bot_y + 2.0f),
+                                      IM_COL32(120, 110, 90, 255));
 
-                    /* Indicator dot */
                     if (active) {
-                        /* Map cents [-50, +50] → [bar_x0, bar_x1] */
-                        float t        = (cents + 50.0f) / 100.0f;
+                        float t = (cents + 50.0f) / 100.0f;
                         if (t < 0.0f) t = 0.0f;
                         if (t > 1.0f) t = 1.0f;
                         float dot_x = bar_x0 + t * bar_w;
-
                         ImU32 dot_col = IM_COL32(
-                            (int)(note_color.x * 255),
-                            (int)(note_color.y * 255),
-                            (int)(note_color.z * 255),
-                            255
-                        );
+                            (int)(note_color.x * 255), (int)(note_color.y * 255),
+                            (int)(note_color.z * 255), 255);
                         dl->AddCircleFilled(ImVec2(dot_x, bar_cx_y), dot_r, dot_col);
                     }
 
-                    /* Advance cursor past the bar area */
                     ImGui::Dummy(ImVec2(bar_w + padding * 2.0f, bar_h + dot_r * 2.0f));
                 }
             }
 
-            ImGui::SameLine(400);
+            ImGui::SameLine(450);
 
-            /* Amp selector */
-            static const char *amp_names[] = {
-                "Fullerton Clean", "British Crunch", "Southwest Lead",
-                "Essex Chime", "Tweed Blues"
-            };
-            int current_amp = (int)fx_amp_get_model(engine, FX_CHAIN_DEFAULT);
-            ImGui::SetNextItemWidth(180);
-            if (ImGui::Combo("Amp", &current_amp, amp_names, FX_AMP_COUNT)) {
-                fx_amp_set_model(engine, FX_CHAIN_DEFAULT, (fx_amp_type_t)current_amp);
-            }
-
-            ImGui::SameLine(620);
-
-            /* ── LIVE button — prominent toggle ─────────────────── */
+            /* ── LIVE button ─────────────────────────────────────── */
             {
                 ImVec2 live_sz(70.0f, 30.0f);
                 if (s_audio_active) {
@@ -436,33 +508,32 @@ int main(int argc, char *argv[]) {
                 ImGui::OpenPopup("audio_settings_popup");
             }
 
-            /* Audio settings popup — input + output device selection */
+            /* Audio settings popup */
             if (ImGui::BeginPopup("audio_settings_popup")) {
                 ImGui::Text("Audio Settings");
                 ImGui::Separator();
 
-                /* Input device (guitar interface) */
                 ImGui::TextDisabled("Input Device (Guitar):");
                 struct InGetter {
                     static bool get(void *, int idx, const char **out) {
                         const char *n = fx_audio_get_device_name(idx);
-                        if (!n) return false; *out = n; return true;
+                        if (!n) return false;
+                        *out = n; return true;
                     }
                 };
                 ImGui::SetNextItemWidth(300);
                 if (ImGui::Combo("##input", &s_selected_input,
                                  InGetter::get, nullptr, num_input_devices)) {
-                    /* Don't auto-start — user clicks Start */
                 }
 
                 ImGui::Spacing();
 
-                /* Output device (speakers/headphones) */
                 ImGui::TextDisabled("Output Device (Speakers/Headphones):");
                 struct OutGetter {
                     static bool get(void *, int idx, const char **out) {
                         const char *n = fx_audio_get_output_name(idx);
-                        if (!n) return false; *out = n; return true;
+                        if (!n) return false;
+                        *out = n; return true;
                     }
                 };
                 ImGui::SetNextItemWidth(300);
@@ -473,7 +544,6 @@ int main(int argc, char *argv[]) {
 
                 ImGui::Spacing();
 
-                /* Buffer size + sample rate */
                 ImGui::SetNextItemWidth(120);
                 if (ImGui::Combo("Buffer", &s_selected_buf_idx, buf_labels, 5)) {
                     fx_audio_set_buffer_size(engine, buf_sizes[s_selected_buf_idx]);
@@ -487,7 +557,6 @@ int main(int argc, char *argv[]) {
                 ImGui::Spacing();
                 ImGui::Separator();
 
-                /* Start / Stop audio button */
                 if (!s_audio_active) {
                     if (s_selected_input >= 0) {
                         if (ImGui::Button("Start Audio", ImVec2(200, 30))) {
@@ -525,7 +594,6 @@ int main(int argc, char *argv[]) {
                 float controls_w = wc_sz.x * 3 + 4 + 8;
                 ImGui::SameLine(ImGui::GetWindowWidth() - controls_w);
 
-                /* Minimize */
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
@@ -542,7 +610,6 @@ int main(int argc, char *argv[]) {
                 ImGui::PopStyleColor(4);
                 ImGui::SameLine(0, 2);
 
-                /* Maximize / Restore */
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
@@ -570,7 +637,6 @@ int main(int argc, char *argv[]) {
                 ImGui::PopStyleColor(4);
                 ImGui::SameLine(0, 2);
 
-                /* Close — red accent */
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.10f, 0.10f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.00f, 0.25f, 0.25f, 1.0f));
@@ -586,10 +652,9 @@ int main(int argc, char *argv[]) {
                 static bool dragging_window = false;
                 static int drag_start_wx, drag_start_wy, drag_start_mx, drag_start_my;
 
-                bool in_toolbar = (io.MousePos.y < 50);
+                bool in_toolbar = (io.MousePos.y < TOOLBAR_H);
                 bool over_widget = ImGui::IsAnyItemHovered() || ImGui::IsAnyItemActive();
 
-                /* Double-click toolbar: maximize/restore */
                 if (io.MouseDoubleClicked[0] && in_toolbar && !over_widget) {
 #ifdef _WIN32
                     SDL_SysWMinfo wmI; SDL_VERSION(&wmI.version);
@@ -627,261 +692,439 @@ int main(int argc, char *argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             running = false;
         }
-        /* Ctrl+S: save current preset */
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S)) {
-            if (fx_preset_save(engine, "presets/last_session.0xfx"))
-                FX_INFO("Preset saved: presets/last_session.0xfx");
-            else
-                FX_WARN("Failed to save preset");
+
+        /* ============================================================
+         * BUILD THE FLATTENED SIGNAL CHAIN
+         * INPUT -> [pre pedals] -> AMP -> CAB -> [post pedals] -> OUTPUT
+         * ============================================================ */
+        ChainNode chain[128];
+        int chain_len = 0;
+
+        /* INPUT */
+        chain[chain_len++] = { NODE_INPUT, -1, -1 };
+
+        /* Pre-amp pedals */
+        for (int i = 0; i < s_pre_id_count && chain_len < 126; i++) {
+            chain[chain_len++] = { NODE_PEDAL_PRE, i, s_pre_ids[i] };
         }
-        /* Ctrl+O: load preset */
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O)) {
-            if (fx_preset_load(engine, "presets/last_session.0xfx"))
-                FX_INFO("Preset loaded: presets/last_session.0xfx");
-            else
-                FX_WARN("Failed to load preset: presets/last_session.0xfx");
+
+        /* AMP */
+        chain[chain_len++] = { NODE_AMP, -1, -1 };
+
+        /* CAB */
+        chain[chain_len++] = { NODE_CAB, -1, -1 };
+
+        /* Post-amp pedals */
+        for (int i = 0; i < s_post_id_count && chain_len < 127; i++) {
+            chain[chain_len++] = { NODE_PEDAL_POST, i, s_post_ids[i] };
         }
-        /* Space / L: toggle LIVE on/off */
-        if (!io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_Space) ||
-                             ImGui::IsKeyPressed(ImGuiKey_L))) {
-            if (s_audio_active) {
-                fx_audio_shutdown(); fx_audio_init();
-                num_input_devices  = fx_audio_get_device_count();
-                num_output_devices = fx_audio_get_output_count();
-                s_audio_active = false;
-                FX_INFO("Audio stopped (LIVE off, keyboard)");
-            } else {
-                if (s_selected_input < 0 && num_input_devices > 0)  s_selected_input  = 0;
-                if (s_selected_output < 0 && num_output_devices > 0) s_selected_output = 0;
-                if (s_selected_input >= 0) {
-                    if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
-                    if (fx_audio_set_device(engine, s_selected_input)) {
-                        s_audio_active = true;
-                        FX_INFO("LIVE on (keyboard): in=%s out=%s",
-                            fx_audio_get_device_name(s_selected_input),
-                            s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
+
+        /* OUTPUT */
+        chain[chain_len++] = { NODE_OUTPUT, -1, -1 };
+
+        /* Clamp selected_node */
+        if (s_selected_node >= chain_len) s_selected_node = -1;
+
+        /* ============================================================
+         * SIGNAL CHAIN VIEW (~35% of window, below toolbar)
+         * ============================================================ */
+        {
+            float chain_area_h = (win_h - TOOLBAR_H - STATUS_H) * 0.35f;
+            ImGui::SetNextWindowPos(ImVec2(0, TOOLBAR_H));
+            ImGui::SetNextWindowSize(ImVec2(win_w, chain_area_h));
+            ImGui::Begin("##signal_chain", NULL,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_HorizontalScrollbar);
+
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+            ImVec2 win_pos = ImGui::GetWindowPos();
+            ImVec2 content_min = ImGui::GetCursorScreenPos();
+
+            /* Center nodes vertically in the chain area */
+            float cy = win_pos.y + chain_area_h * 0.45f;
+
+            /* Calculate total width needed for scrolling */
+            float total_w = chain_len * NODE_W + (chain_len - 1) * NODE_SPACING
+                          + CHAIN_PADDING * 2.0f;
+
+            /* Reserve scrollable content area */
+            ImGui::Dummy(ImVec2(total_w, chain_area_h - 20.0f));
+
+            /* Track where the [+] button popup should insert */
+            static fx_chain_pos_t s_add_popup_pos = FX_CHAIN_POS_PRE;
+            static int s_add_popup_insert_slot = -1;
+
+            float x_cursor = content_min.x + CHAIN_PADDING - ImGui::GetScrollX();
+
+            for (int ni = 0; ni < chain_len; ni++) {
+                ChainNode &n = chain[ni];
+                bool is_selected = (s_selected_node == ni);
+                bool is_bypassed = false;
+
+                if (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST) {
+                    is_bypassed = fx_pedal_get_bypass(engine, n.pedal_id);
+                } else if (n.kind == NODE_CAB) {
+                    is_bypassed = fx_cab_get_bypass(engine, FX_CHAIN_DEFAULT);
+                }
+
+                float nx = x_cursor;
+                float ny = cy - NODE_H * 0.5f;
+
+                /* Draw node rectangle */
+                ImU32 bg_col = node_color(n.kind, is_bypassed);
+                dl->AddRectFilled(ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
+                                  bg_col, 6.0f);
+
+                /* Selection highlight */
+                if (is_selected) {
+                    dl->AddRect(ImVec2(nx - 2, ny - 2),
+                                ImVec2(nx + NODE_W + 2, ny + NODE_H + 2),
+                                IM_COL32(230, 180, 60, 255), 6.0f, 0, 2.5f);
+                }
+
+                /* Node label (centered below node) */
+                const char *lbl = node_label(n.kind, engine, n.pedal_id);
+
+                /* Truncate label if it's too long for the node */
+                char short_lbl[16];
+                ImVec2 lbl_size = ImGui::CalcTextSize(lbl);
+                if (lbl_size.x > NODE_W - 4.0f) {
+                    int copy_len = 9;
+                    if (copy_len > (int)strlen(lbl)) copy_len = (int)strlen(lbl);
+                    memcpy(short_lbl, lbl, copy_len);
+                    short_lbl[copy_len] = '\0';
+                    lbl = short_lbl;
+                    lbl_size = ImGui::CalcTextSize(lbl);
+                }
+
+                float lbl_x = nx + (NODE_W - lbl_size.x) * 0.5f;
+                float lbl_y = ny + NODE_H + 4.0f;
+                dl->AddText(ImVec2(lbl_x, lbl_y),
+                            is_bypassed ? IM_COL32(100, 90, 80, 200)
+                                        : IM_COL32(210, 200, 180, 255),
+                            lbl);
+
+                /* Bypass indicator — small "X" on bypassed pedals */
+                if (is_bypassed && (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST)) {
+                    dl->AddLine(ImVec2(nx + 4, ny + 4), ImVec2(nx + 16, ny + 16),
+                                IM_COL32(200, 60, 50, 200), 2.0f);
+                    dl->AddLine(ImVec2(nx + 16, ny + 4), ImVec2(nx + 4, ny + 16),
+                                IM_COL32(200, 60, 50, 200), 2.0f);
+                }
+
+                /* Invisible button for click detection */
+                {
+                    char btn_id[32];
+                    snprintf(btn_id, sizeof(btn_id), "##node_%d", ni);
+                    ImGui::SetCursorScreenPos(ImVec2(nx, ny));
+                    if (ImGui::InvisibleButton(btn_id, ImVec2(NODE_W, NODE_H))) {
+                        /* Don't select INPUT or OUTPUT */
+                        if (n.kind != NODE_INPUT && n.kind != NODE_OUTPUT) {
+                            s_selected_node = (s_selected_node == ni) ? -1 : ni;
+                        }
                     }
                 }
-            }
-        }
-        /* 1-5: select amp model */
-        {
-            static const ImGuiKey amp_keys[5] = {
-                ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5
-            };
-            for (int k = 0; k < 5; k++) {
-                if (!io.KeyCtrl && ImGui::IsKeyPressed(amp_keys[k])) {
-                    fx_amp_set_model(engine, FX_CHAIN_DEFAULT, (fx_amp_type_t)k);
-                    FX_INFO("Amp model -> %s (key %d)", fx_amp_get_type_name((fx_amp_type_t)k), k + 1);
+
+                x_cursor += NODE_W;
+
+                /* Draw connecting line + [+] button to next node */
+                if (ni < chain_len - 1) {
+                    /* Determine if we should show [+] add button */
+                    bool show_add = false;
+                    fx_chain_pos_t add_pos = FX_CHAIN_POS_PRE;
+                    int add_insert_slot = 0;
+
+                    NodeKind cur_kind = chain[ni].kind;
+                    NodeKind nxt_kind = chain[ni + 1].kind;
+
+                    /* Pre-amp zone: INPUT..AMP */
+                    if ((cur_kind == NODE_INPUT || cur_kind == NODE_PEDAL_PRE) &&
+                        (nxt_kind == NODE_PEDAL_PRE || nxt_kind == NODE_AMP)) {
+                        show_add = true;
+                        add_pos = FX_CHAIN_POS_PRE;
+                        add_insert_slot = 0;
+                        for (int j = 0; j <= ni; j++) {
+                            if (chain[j].kind == NODE_PEDAL_PRE) add_insert_slot++;
+                        }
+                    }
+                    /* Post-amp zone: CAB..OUTPUT */
+                    else if ((cur_kind == NODE_CAB || cur_kind == NODE_PEDAL_POST) &&
+                             (nxt_kind == NODE_PEDAL_POST || nxt_kind == NODE_OUTPUT)) {
+                        show_add = true;
+                        add_pos = FX_CHAIN_POS_POST;
+                        add_insert_slot = 0;
+                        for (int j = 0; j <= ni; j++) {
+                            if (chain[j].kind == NODE_PEDAL_POST) add_insert_slot++;
+                        }
+                    }
+
+                    if (show_add) {
+                        float add_x = x_cursor + (NODE_SPACING - ADD_BTN_W) * 0.5f;
+                        float add_y = cy - ADD_BTN_W * 0.5f;
+                        char add_id[32];
+                        snprintf(add_id, sizeof(add_id), "+##add_%d", ni);
+                        ImGui::SetCursorScreenPos(ImVec2(add_x, add_y));
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.16f, 0.13f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.40f, 0.30f, 0.15f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.60f, 0.45f, 0.15f, 1.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ADD_BTN_W * 0.5f);
+                        if (ImGui::Button(add_id, ImVec2(ADD_BTN_W, ADD_BTN_W))) {
+                            s_add_popup_pos = add_pos;
+                            s_add_popup_insert_slot = add_insert_slot;
+                            ImGui::OpenPopup("add_pedal_popup");
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(3);
+                    }
+
+                    /* Draw connecting line */
+                    float line_x0 = x_cursor;
+                    float line_x1 = x_cursor + NODE_SPACING;
+                    dl->AddLine(ImVec2(line_x0, cy), ImVec2(line_x1, cy),
+                                IM_COL32(100, 90, 70, 200), 2.0f);
+
+                    x_cursor += NODE_SPACING;
                 }
             }
-        }
 
-        /* ── Amp panel ────────────────────────────────────────── */
-        {
-            ImGui::SetNextWindowPos(ImVec2(10, 60));
-            ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x - 20, 230));
-            ImGui::Begin("Amp", NULL,
-                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoScrollbar);
-
-            fx_amp_type_t amp_type = fx_amp_get_model(engine, FX_CHAIN_DEFAULT);
-
-            /* ── Amp name — large centered title ──────────────── */
-            {
-                const char *amp_name = fx_amp_get_type_name(amp_type);
-                float avail_w = ImGui::GetContentRegionAvail().x;
-                ImVec2 text_size = ImGui::CalcTextSize(amp_name);
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - text_size.x) * 0.5f);
-                ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", amp_name);
-            }
-            ImGui::Separator();
-            ImGui::Dummy(ImVec2(0.0f, 4.0f));
-
-            /*
-             * Knob sections: PREAMP | EQ | POWER
-             * The engine exposes params in enum order; count tells us how many
-             * are active for this model.  A param is present iff its enum index
-             * is less than the count for this amp type.
-             */
-            int param_count = fx_amp_get_param_count(amp_type);
-            auto has_param = [&](fx_amp_param_t p) -> bool {
-                return (int)p < param_count;
-            };
-
-            /* Draw a single amp knob, preceded by a small spacer. */
-            auto draw_amp_knob = [&](fx_amp_param_t p) {
-                if (!has_param(p)) return;
-                const char *name = fx_amp_get_param_name(amp_type, p);
-                float val = fx_amp_get_param(engine, FX_CHAIN_DEFAULT, p);
-                ImGui::Dummy(ImVec2(6.0f, 0.0f));
-                ImGui::SameLine();
-                if (knob_float(name, &val, 0.0f, 1.0f, 0.5f, 0.01f)) {
-                    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, p, val);
+            /* Add pedal popup (shared) */
+            if (ImGui::BeginPopup("add_pedal_popup")) {
+                ImGui::Text("Add Pedal");
+                ImGui::Separator();
+                for (int i = 0; i < s_pedal_menu_count; i++) {
+                    if (ImGui::MenuItem(s_pedal_menu[i].name)) {
+                        fx_pedal_id nid = fx_chain_add_pedal(engine, s_pedal_menu[i].type,
+                                                              s_add_popup_pos);
+                        if (nid >= 0) {
+                            if (s_add_popup_pos == FX_CHAIN_POS_PRE && s_pre_id_count < 32) {
+                                int slot = s_add_popup_insert_slot;
+                                if (slot > s_pre_id_count) slot = s_pre_id_count;
+                                for (int j = s_pre_id_count; j > slot; j--)
+                                    s_pre_ids[j] = s_pre_ids[j - 1];
+                                s_pre_ids[slot] = nid;
+                                s_pre_id_count++;
+                                fx_chain_move_pedal(engine, nid, FX_CHAIN_POS_PRE, slot);
+                            } else if (s_add_popup_pos == FX_CHAIN_POS_POST && s_post_id_count < 32) {
+                                int slot = s_add_popup_insert_slot;
+                                if (slot > s_post_id_count) slot = s_post_id_count;
+                                for (int j = s_post_id_count; j > slot; j--)
+                                    s_post_ids[j] = s_post_ids[j - 1];
+                                s_post_ids[slot] = nid;
+                                s_post_id_count++;
+                                fx_chain_move_pedal(engine, nid, FX_CHAIN_POS_POST, slot);
+                            }
+                        }
+                    }
                 }
-                ImGui::SameLine();
-            };
-
-            /* Helper: draw a thin vertical separator line */
-            auto draw_vsep = [&]() {
-                ImGui::SameLine(0, 0);
-                ImVec2 p0 = ImGui::GetCursorScreenPos();
-                p0.x += 6.0f;
-                ImVec2 p1 = ImVec2(p0.x, p0.y + 130.0f);
-                ImGui::GetWindowDrawList()->AddLine(p0, p1,
-                    IM_COL32(100, 88, 70, 180), 1.0f);
-                ImGui::SameLine(0, 18);
-            };
-
-            /* ── PREAMP section ──── Gain ─────────────────────── */
-            ImGui::BeginGroup();
-            ImGui::TextDisabled("PREAMP");
-            ImGui::Dummy(ImVec2(0.0f, 2.0f));
-            draw_amp_knob(FX_AMP_PARAM_GAIN);
-            ImGui::NewLine();
-            ImGui::EndGroup();
-
-            draw_vsep();
-
-            /* ── EQ section ──── Bass / Mid / Treble / Cut ─────── */
-            ImGui::BeginGroup();
-            ImGui::TextDisabled("EQ");
-            ImGui::Dummy(ImVec2(0.0f, 2.0f));
-            draw_amp_knob(FX_AMP_PARAM_BASS);
-            draw_amp_knob(FX_AMP_PARAM_MID);
-            draw_amp_knob(FX_AMP_PARAM_TREBLE);
-            draw_amp_knob(FX_AMP_PARAM_CUT);
-            ImGui::NewLine();
-            ImGui::EndGroup();
-
-            draw_vsep();
-
-            /* ── POWER section ── Presence / Sag / Master / Volume / Bright */
-            ImGui::BeginGroup();
-            ImGui::TextDisabled("POWER");
-            ImGui::Dummy(ImVec2(0.0f, 2.0f));
-            draw_amp_knob(FX_AMP_PARAM_PRESENCE);
-            draw_amp_knob(FX_AMP_PARAM_SAG);
-            draw_amp_knob(FX_AMP_PARAM_MASTER);
-            draw_amp_knob(FX_AMP_PARAM_VOLUME);
-            draw_amp_knob(FX_AMP_PARAM_BRIGHT);
-            ImGui::NewLine();
-            ImGui::EndGroup();
+                ImGui::EndPopup();
+            }
 
             ImGui::End();
         }
 
-        /* ── Pedalboard ───────────────────────────────────────── */
+        /* ============================================================
+         * DETAIL VIEW (~50% of window)
+         * Shows knobs/controls for the selected node
+         * ============================================================ */
         {
-            ImGui::SetNextWindowPos(ImVec2(10, 300));
-            ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x - 20,
-                                            io.DisplaySize.y - 330));
-            ImGui::Begin("Pedalboard", NULL,
-                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            float chain_area_h = (win_h - TOOLBAR_H - STATUS_H) * 0.35f;
+            float detail_y = TOOLBAR_H + chain_area_h;
+            float detail_h = win_h - detail_y - STATUS_H;
+
+            ImGui::SetNextWindowPos(ImVec2(0, detail_y));
+            ImGui::SetNextWindowSize(ImVec2(win_w, detail_h));
+            ImGui::Begin("##detail_view", NULL,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
                 ImGuiWindowFlags_HorizontalScrollbar);
 
-            /* Shared pedal menu */
-            static const struct { fx_pedal_type_t type; const char *name; } pedal_menu[] = {
-                { FX_PEDAL_JADE_DRIVE,    "Jade Drive (OD)" },
-                { FX_PEDAL_GOLD_DRIVE,    "Gold Drive (Transparent OD)" },
-                { FX_PEDAL_RODENT,        "Rodent (Distortion)" },
-                { FX_PEDAL_ECHO_DELAY,    "Echo Delay" },
-                { FX_PEDAL_HALL_VERB,     "Hall Verb (Reverb)" },
-                { FX_PEDAL_DRIP_VERB,     "Drip Verb (Spring Reverb)" },
-                { FX_PEDAL_SQUEEZE_BOX,    "Squeeze Box (Compressor)" },
-                { FX_PEDAL_NOISE_GATE,     "Noise Gate" },
-                { FX_PEDAL_TONE_SCULPTOR,  "Tone Sculptor (Graphic EQ)" },
-                { FX_PEDAL_MAMMOTH_FUZZ,   "Mammoth Fuzz (Big Muff)" },
-                { FX_PEDAL_ROUND_FUZZ,     "Round Fuzz (Germanium)" },
-                { FX_PEDAL_CHAOS_FUZZ,     "Chaos Fuzz (Gated)" },
-                { FX_PEDAL_GRIT_CRUSH,     "Grit Crush (Bitcrusher)" },
-                { FX_PEDAL_RING_TONE,      "Ring Tone (Ring Mod)" },
-                { FX_PEDAL_WARM_TAPE,      "Warm Tape (Tape Sat)" },
-                { FX_PEDAL_DRIFT_VIBRATO,  "Drift Vibrato (Pitch Vibrato)" },
-                { FX_PEDAL_JET_FLANGER,    "Jet Flanger (Through-Zero)" },
-                { FX_PEDAL_PLATE_VERB,     "Plate Verb (Plate Reverb)" },
-                { FX_PEDAL_SHIMMER_VERB,   "Shimmer Verb (Octave Shimmer)" },
-                { FX_PEDAL_CLOUD_VERB,     "Cloud Verb (Ambient/Freeze)" },
-                { FX_PEDAL_OCTAVE_ENGINE,  "Octave Engine (Polyphonic Octave)" },
-                { FX_PEDAL_LOOP_STATION,   "Loop Station (Looper)" },
-                { FX_PEDAL_INFINITE_HOLD,  "Infinite Hold (Freeze/Drone)" },
-                { FX_PEDAL_GRAIN_CLOUD,    "Grain Cloud (Granular Delay)" },
-            };
-            static const int pedal_menu_count = 24;
+            if (s_selected_node < 0 || s_selected_node >= chain_len) {
+                /* Nothing selected */
+                float avail_w = ImGui::GetContentRegionAvail().x;
+                float avail_h = ImGui::GetContentRegionAvail().y;
+                const char *msg = "Click a node in the signal chain to edit";
+                ImVec2 ts = ImGui::CalcTextSize(msg);
+                ImGui::SetCursorPos(ImVec2((avail_w - ts.x) * 0.5f, (avail_h - ts.y) * 0.5f));
+                ImGui::TextDisabled("%s", msg);
+            }
+            else {
+                ChainNode &sel = chain[s_selected_node];
 
-            /* Draw a pedal section (pre or post amp) */
-            auto draw_pedal_section = [&](const char *label, fx_chain_pos_t pos,
-                                          fx_pedal_id *ids, int *id_count,
-                                          const char *popup_id, int section_idx) {
-                ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", label);
-                ImGui::Separator();
-                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                /* ── AMP detail view ──────────────────────────── */
+                if (sel.kind == NODE_AMP) {
+                    fx_amp_type_t amp_type = fx_amp_get_model(engine, FX_CHAIN_DEFAULT);
 
-                if (*id_count == 0) {
-                    ImGui::TextDisabled("No pedals. Click [+] to add.");
+                    static const char *amp_names[] = {
+                        "Fullerton Clean", "British Crunch", "Southwest Lead",
+                        "Essex Chime", "Tweed Blues"
+                    };
+                    int current_amp = (int)amp_type;
+                    float avail_w = ImGui::GetContentRegionAvail().x;
+
+                    /* Title */
+                    {
+                        const char *amp_name = fx_amp_get_type_name(amp_type);
+                        ImVec2 text_size = ImGui::CalcTextSize(amp_name);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - text_size.x) * 0.5f);
+                        ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", amp_name);
+                    }
+
+                    ImGui::Separator();
                     ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                    /* Model selector */
+                    ImGui::SetNextItemWidth(200);
+                    if (ImGui::Combo("Model", &current_amp, amp_names, FX_AMP_COUNT)) {
+                        fx_amp_set_model(engine, FX_CHAIN_DEFAULT, (fx_amp_type_t)current_amp);
+                    }
+
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                    /* Knob layout: PREAMP | EQ | POWER */
+                    int param_count = fx_amp_get_param_count(amp_type);
+                    auto has_param = [&](fx_amp_param_t p) -> bool {
+                        return (int)p < param_count;
+                    };
+
+                    auto draw_amp_knob = [&](fx_amp_param_t p) {
+                        if (!has_param(p)) return;
+                        const char *name = fx_amp_get_param_name(amp_type, p);
+                        float val = fx_amp_get_param(engine, FX_CHAIN_DEFAULT, p);
+                        ImGui::Dummy(ImVec2(6.0f, 0.0f));
+                        ImGui::SameLine();
+                        if (knob_float(name, &val, 0.0f, 1.0f, 0.5f, 0.01f)) {
+                            fx_amp_set_param(engine, FX_CHAIN_DEFAULT, p, val);
+                        }
+                        ImGui::SameLine();
+                    };
+
+                    auto draw_vsep = [&]() {
+                        ImGui::SameLine(0, 0);
+                        ImVec2 p0 = ImGui::GetCursorScreenPos();
+                        p0.x += 6.0f;
+                        ImVec2 p1 = ImVec2(p0.x, p0.y + 130.0f);
+                        ImGui::GetWindowDrawList()->AddLine(p0, p1,
+                            IM_COL32(100, 88, 70, 180), 1.0f);
+                        ImGui::SameLine(0, 18);
+                    };
+
+                    /* PREAMP section */
+                    ImGui::BeginGroup();
+                    ImGui::TextDisabled("PREAMP");
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                    draw_amp_knob(FX_AMP_PARAM_GAIN);
+                    ImGui::NewLine();
+                    ImGui::EndGroup();
+
+                    draw_vsep();
+
+                    /* EQ section */
+                    ImGui::BeginGroup();
+                    ImGui::TextDisabled("EQ");
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                    draw_amp_knob(FX_AMP_PARAM_BASS);
+                    draw_amp_knob(FX_AMP_PARAM_MID);
+                    draw_amp_knob(FX_AMP_PARAM_TREBLE);
+                    draw_amp_knob(FX_AMP_PARAM_CUT);
+                    ImGui::NewLine();
+                    ImGui::EndGroup();
+
+                    draw_vsep();
+
+                    /* POWER section */
+                    ImGui::BeginGroup();
+                    ImGui::TextDisabled("POWER");
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                    draw_amp_knob(FX_AMP_PARAM_PRESENCE);
+                    draw_amp_knob(FX_AMP_PARAM_SAG);
+                    draw_amp_knob(FX_AMP_PARAM_MASTER);
+                    draw_amp_knob(FX_AMP_PARAM_VOLUME);
+                    draw_amp_knob(FX_AMP_PARAM_BRIGHT);
+                    ImGui::NewLine();
+                    ImGui::EndGroup();
                 }
 
-                int remove_idx = -1;
+                /* ── CAB detail view ──────────────────────────── */
+                else if (sel.kind == NODE_CAB) {
+                    float avail_w = ImGui::GetContentRegionAvail().x;
 
-                for (int pi = 0; pi < *id_count; pi++) {
-                    fx_pedal_id pid    = ids[pi];
+                    const char *title = "Cabinet";
+                    ImVec2 ts = ImGui::CalcTextSize(title);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                    ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", title);
+                    ImGui::Separator();
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                    /* Cab type selector */
+                    static int s_cab_type = 0;
+                    ImGui::SetNextItemWidth(200);
+                    if (ImGui::Combo("Cab Type", &s_cab_type, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
+                        fx_cab_params_t params;
+                        params.cab_type = (fx_cab_type_t)s_cab_type;
+                        params.mic_pos  = FX_MIC_ON_AXIS;
+                        params.speaker_fs = 80.0f;
+                        params.brightness = 0.5f;
+                        params.resonance  = 0.5f;
+                        fx_cab_generate_ir(engine, FX_CHAIN_DEFAULT, &params);
+                    }
+
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                    /* Bypass toggle */
+                    bool cab_bypassed = fx_cab_get_bypass(engine, FX_CHAIN_DEFAULT);
+                    ImGui::PushStyleColor(ImGuiCol_Button,
+                        cab_bypassed ? ImVec4(0.45f, 0.08f, 0.08f, 1.0f)
+                                     : ImVec4(0.08f, 0.40f, 0.08f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                        cab_bypassed ? ImVec4(0.60f, 0.12f, 0.12f, 1.0f)
+                                     : ImVec4(0.12f, 0.55f, 0.12f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                        cab_bypassed ? ImVec4(0.75f, 0.18f, 0.18f, 1.0f)
+                                     : ImVec4(0.18f, 0.70f, 0.18f, 1.0f));
+                    if (ImGui::Button(cab_bypassed ? "BYPASSED##cab" : "ACTIVE##cab",
+                                      ImVec2(120, 30))) {
+                        fx_cab_set_bypass(engine, FX_CHAIN_DEFAULT, !cab_bypassed);
+                    }
+                    ImGui::PopStyleColor(3);
+                }
+
+                /* ── PEDAL detail view ────────────────────────── */
+                else if (sel.kind == NODE_PEDAL_PRE || sel.kind == NODE_PEDAL_POST) {
+                    fx_pedal_id pid = sel.pedal_id;
                     fx_pedal_type_t pt = fx_pedal_get_type(engine, pid);
-                    if (pt == FX_PEDAL_TYPE_COUNT) continue;
-
-                    const char *pname = fx_pedal_get_type_name(pt);
-                    int nparam        = fx_pedal_get_param_count(pt);
-                    bool bypassed     = fx_pedal_get_bypass(engine, pid);
-
-                    char child_id[64];
-                    snprintf(child_id, sizeof(child_id), "pedal_%d_%d", section_idx, (int)pid);
-
-                    float box_w = 30.0f + (nparam > 0 ? nparam * 68.0f : 68.0f);
-                    if (box_w < 120.0f) box_w = 120.0f;
-
-                    ImVec4 bg = bypassed ? ImVec4(0.10f, 0.09f, 0.08f, 1.0f)
-                                        : ImVec4(0.14f, 0.13f, 0.11f, 1.0f);
-                    ImGui::PushStyleColor(ImGuiCol_ChildBg, bg);
-                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
-
-                    if (ImGui::BeginChild(child_id, ImVec2(box_w, 160), true)) {
+                    if (pt < FX_PEDAL_TYPE_COUNT) {
+                        const char *pname = fx_pedal_get_type_name(pt);
+                        int nparam = fx_pedal_get_param_count(pt);
+                        bool bypassed = fx_pedal_get_bypass(engine, pid);
                         float avail_w = ImGui::GetContentRegionAvail().x;
 
-                        /* [X] remove button (top-right) */
-                        char x_id[32];
-                        snprintf(x_id, sizeof(x_id), "X##rm_%d_%d", section_idx, (int)pid);
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - 20.0f);
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.08f, 0.08f, 0.8f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.1f, 0.1f, 1.0f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.15f, 0.15f, 1.0f));
-                        if (ImGui::SmallButton(x_id)) remove_idx = pi;
-                        ImGui::PopStyleColor(3);
-
-                        /* Pedal name */
-                        ImVec2 tsize = ImGui::CalcTextSize(pname);
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - tsize.x) * 0.5f);
-                        if (bypassed) ImGui::TextDisabled("%s", pname);
-                        else ImGui::Text("%s", pname);
-
-                        ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                        /* Title */
+                        {
+                            ImVec2 ts = ImGui::CalcTextSize(pname);
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                            if (bypassed) ImGui::TextDisabled("%s", pname);
+                            else ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.20f, 1.0f), "%s", pname);
+                        }
+                        ImGui::Separator();
+                        ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
                         /* Knobs */
                         for (int k = 0; k < nparam; k++) {
                             const char *kname = fx_pedal_get_param_name(pt, k);
                             float kval = fx_pedal_get_param(engine, pid, k);
-                            ImGui::Dummy(ImVec2(4.0f, 0.0f)); ImGui::SameLine();
+                            ImGui::Dummy(ImVec2(8.0f, 0.0f)); ImGui::SameLine();
                             if (knob_float(kname, &kval, 0.0f, 1.0f, 0.5f, 0.01f))
                                 fx_pedal_set_param(engine, pid, k, kval);
                             if (k < nparam - 1) ImGui::SameLine();
                         }
 
-                        ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                        ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
-                        /* Bottom row: bypass + reorder arrows */
+                        /* Bottom row: bypass + reorder + remove */
                         {
                             char bp_id[48];
-                            snprintf(bp_id, sizeof(bp_id), "%s##bp_%d_%d",
-                                     bypassed ? "BYPASS" : "ACTIVE", section_idx, (int)pid);
+                            snprintf(bp_id, sizeof(bp_id), "%s##bp_detail",
+                                     bypassed ? "BYPASS" : "ACTIVE");
                             ImGui::PushStyleColor(ImGuiCol_Button,
                                 bypassed ? ImVec4(0.45f, 0.08f, 0.08f, 1.0f)
                                          : ImVec4(0.08f, 0.40f, 0.08f, 1.0f));
@@ -891,101 +1134,83 @@ int main(int argc, char *argv[]) {
                             ImGui::PushStyleColor(ImGuiCol_ButtonActive,
                                 bypassed ? ImVec4(0.75f, 0.18f, 0.18f, 1.0f)
                                          : ImVec4(0.18f, 0.70f, 0.18f, 1.0f));
-                            float half_w = (avail_w - 16.0f) * 0.55f;
-                            if (ImGui::Button(bp_id, ImVec2(half_w, 0)))
+                            if (ImGui::Button(bp_id, ImVec2(120, 30)))
                                 fx_pedal_set_bypass(engine, pid, !bypassed);
                             ImGui::PopStyleColor(3);
 
-                            ImGui::SameLine();
+                            ImGui::SameLine(0, 12);
 
-                            /* Reorder arrows: < > */
-                            char lid[32], rid[32];
-                            snprintf(lid, sizeof(lid), "<##l_%d_%d", section_idx, (int)pid);
-                            snprintf(rid, sizeof(rid), ">##r_%d_%d", section_idx, (int)pid);
+                            /* Reorder arrows */
+                            fx_chain_pos_t pos = (sel.kind == NODE_PEDAL_PRE)
+                                                  ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
+                            fx_pedal_id *ids = (pos == FX_CHAIN_POS_PRE) ? s_pre_ids : s_post_ids;
+                            int *id_count = (pos == FX_CHAIN_POS_PRE) ? &s_pre_id_count : &s_post_id_count;
+                            int pi = sel.slot;
 
                             if (pi > 0) {
-                                if (ImGui::SmallButton(lid)) {
+                                if (ImGui::Button("<##reorder_l")) {
                                     fx_pedal_id tmp = ids[pi - 1];
                                     ids[pi - 1] = ids[pi]; ids[pi] = tmp;
                                     fx_chain_move_pedal(engine, pid, pos, pi - 1);
+                                    s_selected_node--;
                                 }
-                            } else { ImGui::TextDisabled("<"); }
-
+                            } else {
+                                ImGui::TextDisabled("<");
+                            }
                             ImGui::SameLine();
 
                             if (pi < *id_count - 1) {
-                                if (ImGui::SmallButton(rid)) {
+                                if (ImGui::Button(">##reorder_r")) {
                                     fx_pedal_id tmp = ids[pi + 1];
                                     ids[pi + 1] = ids[pi]; ids[pi] = tmp;
                                     fx_chain_move_pedal(engine, pid, pos, pi + 1);
+                                    s_selected_node++;
                                 }
-                            } else { ImGui::TextDisabled(">"); }
+                            } else {
+                                ImGui::TextDisabled(">");
+                            }
+
+                            ImGui::SameLine(0, 20);
+
+                            /* Remove button */
+                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.08f, 0.08f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.12f, 0.12f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.15f, 0.15f, 1.0f));
+                            if (ImGui::Button("Remove##rm_detail", ImVec2(90, 30))) {
+                                fx_chain_remove_pedal(engine, pid);
+                                for (int j = pi; j < *id_count - 1; j++)
+                                    ids[j] = ids[j + 1];
+                                (*id_count)--;
+                                s_selected_node = -1;
+                            }
+                            ImGui::PopStyleColor(3);
                         }
                     }
-                    ImGui::EndChild();
-                    ImGui::PopStyleColor();
-                    ImGui::PopStyleVar();
-                    ImGui::SameLine(0, 8);
                 }
 
-                /* Deferred remove */
-                if (remove_idx >= 0 && remove_idx < *id_count) {
-                    fx_chain_remove_pedal(engine, ids[remove_idx]);
-                    for (int j = remove_idx; j < *id_count - 1; j++) ids[j] = ids[j + 1];
-                    (*id_count)--;
+                /* ── INPUT / OUTPUT — nothing to show ─────────── */
+                else {
+                    ImGui::TextDisabled("No editable parameters.");
                 }
-
-                /* [+] Add button */
-                if (*id_count > 0) ImGui::NewLine();
-                char add_id[32];
-                snprintf(add_id, sizeof(add_id), "[+] Add##%s", popup_id);
-                if (ImGui::Button(add_id)) ImGui::OpenPopup(popup_id);
-                if (ImGui::BeginPopup(popup_id)) {
-                    for (int i = 0; i < pedal_menu_count; i++) {
-                        if (ImGui::MenuItem(pedal_menu[i].name)) {
-                            fx_pedal_id nid = fx_chain_add_pedal(engine, pedal_menu[i].type, pos);
-                            if (nid >= 0 && *id_count < 32) ids[(*id_count)++] = nid;
-                        }
-                    }
-                    ImGui::EndPopup();
-                }
-            };
-
-            /* ── Pre-Amp Pedals ───────────────────────────────── */
-            draw_pedal_section("Pre-Amp Pedals", FX_CHAIN_POS_PRE,
-                               s_pre_ids, &s_pre_id_count, "add_pre_popup", 0);
-
-            ImGui::Dummy(ImVec2(0.0f, 10.0f));
-            ImGui::TextColored(ImVec4(0.60f, 0.50f, 0.30f, 1.0f), ">>> %s >>>",
-                fx_amp_get_type_name(fx_amp_get_model(engine, FX_CHAIN_DEFAULT)));
-            ImGui::Dummy(ImVec2(0.0f, 10.0f));
-
-            /* ── Post-Amp Pedals ──────────────────────────────── */
-            static fx_pedal_id s_post_ids[32];
-            static int s_post_id_count = 0;
-
-            draw_pedal_section("Post-Amp Pedals", FX_CHAIN_POS_POST,
-                               s_post_ids, &s_post_id_count, "add_post_popup", 1);
+            }
 
             ImGui::End();
         }
 
         /* ── Status bar — level meters ────────────────────────── */
         {
-            ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - 30));
-            ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 30));
+            ImGui::SetNextWindowPos(ImVec2(0, win_h - STATUS_H));
+            ImGui::SetNextWindowSize(ImVec2(win_w, STATUS_H));
             ImGui::Begin("##status", NULL,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
 
-            /* Fetch live levels from engine */
             float in_level  = fx_engine_get_input_level(engine);
             float out_level = fx_engine_get_output_level(engine);
 
-            /* "No signal" detection — count frames below threshold */
             static int s_no_signal_frames = 0;
             const float NO_SIGNAL_THRESHOLD = 0.001f;
-            const int   NO_SIGNAL_FRAME_COUNT = 120; /* ~2 sec at 60fps */
+            const int   NO_SIGNAL_FRAME_COUNT = 120;
             if (in_level < NO_SIGNAL_THRESHOLD) {
                 s_no_signal_frames++;
             } else {
@@ -993,7 +1218,6 @@ int main(int argc, char *argv[]) {
             }
             bool no_signal = (s_no_signal_frames >= NO_SIGNAL_FRAME_COUNT);
 
-            /* Clip flash timers */
             static float s_in_clip_timer  = 0.0f;
             static float s_out_clip_timer = 0.0f;
             float dt = io.DeltaTime;
@@ -1006,18 +1230,13 @@ int main(int argc, char *argv[]) {
             ImVec2      win = ImGui::GetWindowPos();
             float bar_h     = 10.0f;
             float bar_w     = 180.0f;
-            float bar_y     = win.y + (30.0f - bar_h) * 0.5f;
+            float bar_y     = win.y + (STATUS_H - bar_h) * 0.5f;
 
-            /* Helper — draw a single LED-style VU bar */
             auto draw_meter = [&](float x0, float level, bool clip_flash) {
-                /* Background trough */
                 dl->AddRectFilled(ImVec2(x0, bar_y), ImVec2(x0 + bar_w, bar_y + bar_h),
                                   IM_COL32(30, 28, 24, 255), 2.0f);
 
-                /* Clamp for drawing */
                 float t = level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level);
-
-                /* Segmented LED look: 20 segments */
                 int num_segs    = 20;
                 float seg_w     = (bar_w - (num_segs - 1) * 1.0f) / (float)num_segs;
                 int   lit_segs  = (int)(t * num_segs + 0.5f);
@@ -1025,29 +1244,23 @@ int main(int argc, char *argv[]) {
                     float sx0 = x0 + s * (seg_w + 1.0f);
                     float sx1 = sx0 + seg_w;
                     if (s < lit_segs) {
-                        /* Color: green → yellow → red */
                         ImU32 col;
                         if (s < 14) {
-                            /* Green */
                             col = IM_COL32(40, 200, 60, 255);
                         } else if (s < 18) {
-                            /* Yellow */
                             int r = 180 + (s - 14) * 15;
                             col = IM_COL32(r, 200, 20, 255);
                         } else {
-                            /* Red */
                             col = IM_COL32(230, 40, 30, 255);
                         }
                         dl->AddRectFilled(ImVec2(sx0, bar_y), ImVec2(sx1, bar_y + bar_h),
                                           col, 1.5f);
                     } else {
-                        /* Dim unlit segment */
                         dl->AddRectFilled(ImVec2(sx0, bar_y), ImVec2(sx1, bar_y + bar_h),
                                           IM_COL32(40, 40, 36, 255), 1.5f);
                     }
                 }
 
-                /* Clip indicator — extra segment to the right */
                 float cx0 = x0 + bar_w + 3.0f;
                 float cx1 = cx0 + 8.0f;
                 ImU32 clip_col = clip_flash
@@ -1060,11 +1273,10 @@ int main(int argc, char *argv[]) {
             /* Left: input meter */
             float left_x = 10.0f;
             ImGui::SetCursorPosX(left_x);
-            ImGui::SetCursorPosY((30.0f - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::SetCursorPosY((STATUS_H - ImGui::GetTextLineHeight()) * 0.5f);
             ImGui::TextDisabled("IN");
             ImGui::SameLine(0, 4);
 
-            /* Reserve space for the drawn meter (ImGui layout tracks cursor) */
             ImVec2 in_meter_pos = ImGui::GetCursorScreenPos();
             in_meter_pos.y = bar_y;
             draw_meter(in_meter_pos.x, in_level, s_in_clip_timer > 0.0f);
@@ -1074,20 +1286,20 @@ int main(int argc, char *argv[]) {
             if (no_signal) {
                 const char *ns_text = "NO SIGNAL";
                 float text_w = ImGui::CalcTextSize(ns_text).x;
-                float cx = (io.DisplaySize.x - text_w) * 0.5f;
-                float cy = (30.0f - ImGui::GetTextLineHeight()) * 0.5f;
+                float cx = (win_w - text_w) * 0.5f;
+                float cy = (STATUS_H - ImGui::GetTextLineHeight()) * 0.5f;
                 ImGui::SetCursorPos(ImVec2(cx, cy));
                 ImGui::TextColored(ImVec4(0.55f, 0.50f, 0.40f, 0.7f), "%s", ns_text);
             }
 
-            /* Right: output meter — positioned from right edge */
+            /* Right: output meter */
             {
                 float right_margin  = 10.0f;
-                float clip_w        = 8.0f + 3.0f;   /* clip indicator width + gap */
+                float clip_w        = 8.0f + 3.0f;
                 float label_w       = ImGui::CalcTextSize("OUT").x + 4.0f;
-                float out_x         = io.DisplaySize.x - right_margin - clip_w - bar_w - label_w;
+                float out_x         = win_w - right_margin - clip_w - bar_w - label_w;
 
-                ImGui::SetCursorPos(ImVec2(out_x, (30.0f - ImGui::GetTextLineHeight()) * 0.5f));
+                ImGui::SetCursorPos(ImVec2(out_x, (STATUS_H - ImGui::GetTextLineHeight()) * 0.5f));
                 ImGui::TextDisabled("OUT");
                 ImGui::SameLine(0, 4);
 
@@ -1105,11 +1317,10 @@ int main(int argc, char *argv[]) {
             ImDrawList *fg = ImGui::GetForegroundDrawList();
             ImU32 border_col = IM_COL32(50, 45, 38, 200);
             fg->AddRect(ImVec2(0, 0),
-                        ImVec2(io.DisplaySize.x, io.DisplaySize.y),
+                        ImVec2(win_w, win_h),
                         border_col, 0.0f, 0, 2.0f);
-            /* Resize grip triangle — bottom-right */
             float gs = 14.0f;
-            float bx = io.DisplaySize.x, by = io.DisplaySize.y;
+            float bx = win_w, by = win_h;
             ImU32 grip_col = IM_COL32(80, 72, 58, 180);
             fg->AddTriangleFilled(
                 ImVec2(bx - gs, by), ImVec2(bx, by - gs), ImVec2(bx, by), grip_col);

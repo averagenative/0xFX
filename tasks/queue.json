@@ -1453,8 +1453,8 @@
     "title": "GUI overhaul: signal chain visual layout",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-agent",
     "depends": [],
     "estimatedTokens": 80000,
     "acceptanceCriteria": [
