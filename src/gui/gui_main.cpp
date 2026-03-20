@@ -685,7 +685,6 @@ int main(int argc, char *argv[]) {
 
     /* Signal chain selection state */
     static int  s_selected_node = -1;  /* index into the flattened chain array */
-    static int  s_selected_chain_id = 0; /* chain_id of the selected AMP/CAB/MERGE node */
     static int  s_cab_type = 0;        /* current cab type for chain 0 (for texture lookup) */
     static int  s_cab_type_b = 0;      /* cab type for chain 1 (dual mode) */
 
@@ -1548,7 +1547,6 @@ int main(int argc, char *argv[]) {
                     snprintf(btn_id, sizeof(btn_id), "##node_%d", ni);
                     if (ImGui::InvisibleButton(btn_id, ImVec2(dm * 2.0f, dm * 2.0f))) {
                         s_selected_node = (s_selected_node == ni) ? -1 : ni;
-                        s_selected_chain_id = n.chain_id;
                     }
                     continue;
                 }
@@ -1643,7 +1641,6 @@ int main(int argc, char *argv[]) {
                     if (ImGui::InvisibleButton(btn_id, ImVec2(NODE_W, NODE_H))) {
                         if (n.kind != NODE_INPUT && n.kind != NODE_OUTPUT) {
                             s_selected_node = (s_selected_node == ni) ? -1 : ni;
-                            s_selected_chain_id = n.chain_id;
                         }
                     }
                 }
@@ -2093,11 +2090,11 @@ int main(int argc, char *argv[]) {
                     auto draw_amp_knob = [&](fx_amp_param_t p) {
                         if (!has_param(p)) return;
                         const char *name = fx_amp_get_param_name(amp_type, p);
-                        float val = fx_amp_get_param(engine, FX_CHAIN_DEFAULT, p);
+                        float val = fx_amp_get_param(engine, amp_chain, p);
                         ImGui::Dummy(ImVec2(6.0f, 0.0f));
                         ImGui::SameLine();
                         if (knob_float(name, &val, 0.0f, 1.0f, 0.5f, 0.01f)) {
-                            fx_amp_set_param(engine, FX_CHAIN_DEFAULT, p, val);
+                            fx_amp_set_param(engine, amp_chain, p, val);
                         }
                         /* Tooltip on amp knob */
                         if (ImGui::IsItemHovered()) {
@@ -2156,19 +2153,21 @@ int main(int argc, char *argv[]) {
 
                 /* ── CAB detail view ──────────────────────────── */
                 else if (sel.kind == NODE_CAB) {
+                    fx_chain_id cab_chain = (fx_chain_id)sel.chain_id;
+                    int &cab_type_ref = (sel.chain_id == 0) ? s_cab_type : s_cab_type_b;
                     float avail_w = ImGui::GetContentRegionAvail().x;
 
                     /* Large title: "Cabinet" */
                     {
-                        const char *title = "Cabinet";
+                        const char *title = is_dual ? (sel.chain_id == 0 ? "Cabinet A" : "Cabinet B") : "Cabinet";
                         ImGui::SetWindowFontScale(1.35f);
                         ImVec2 ts = ImGui::CalcTextSize(title);
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
                         ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
                         ImGui::SetWindowFontScale(1.0f);
                         /* Subtitle: "Cabinet — 4x12 Straight" style */
-                        const char *cab_name = (s_cab_type >= 0 && s_cab_type < FX_CAB_TYPE_COUNT)
-                            ? s_cab_type_names[s_cab_type] : "Unknown";
+                        const char *cab_name = (cab_type_ref >= 0 && cab_type_ref < FX_CAB_TYPE_COUNT)
+                            ? s_cab_type_names[cab_type_ref] : "Unknown";
                         char sub[64];
                         snprintf(sub, sizeof(sub), "Cabinet \xe2\x80\x94 %s", cab_name);
                         ImVec2 sub_sz = ImGui::CalcTextSize(sub);
@@ -2187,20 +2186,20 @@ int main(int argc, char *argv[]) {
 
                     /* Cab type selector */
                     ImGui::SetNextItemWidth(200);
-                    if (ImGui::Combo("Cab Type", &s_cab_type, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
+                    if (ImGui::Combo("Cab Type##cab_sel", &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
                         fx_cab_params_t params;
-                        params.cab_type = (fx_cab_type_t)s_cab_type;
+                        params.cab_type = (fx_cab_type_t)cab_type_ref;
                         params.mic_pos  = FX_MIC_ON_AXIS;
                         params.speaker_fs = 80.0f;
                         params.brightness = 0.5f;
                         params.resonance  = 0.5f;
-                        fx_cab_generate_ir(engine, FX_CHAIN_DEFAULT, &params);
+                        fx_cab_generate_ir(engine, cab_chain, &params);
                     }
 
                     ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
                     /* Bypass toggle */
-                    bool cab_bypassed = fx_cab_get_bypass(engine, FX_CHAIN_DEFAULT);
+                    bool cab_bypassed = fx_cab_get_bypass(engine, cab_chain);
                     ImGui::PushStyleColor(ImGuiCol_Button,
                         cab_bypassed ? ImVec4(0.45f, 0.08f, 0.08f, 1.0f)
                                      : ImVec4(0.08f, 0.40f, 0.08f, 1.0f));
@@ -2212,7 +2211,7 @@ int main(int argc, char *argv[]) {
                                      : ImVec4(0.18f, 0.70f, 0.18f, 1.0f));
                     if (ImGui::Button(cab_bypassed ? "BYPASSED##cab" : "ACTIVE##cab",
                                       ImVec2(120, 30))) {
-                        fx_cab_set_bypass(engine, FX_CHAIN_DEFAULT, !cab_bypassed);
+                        fx_cab_set_bypass(engine, cab_chain, !cab_bypassed);
                     }
                     ImGui::PopStyleColor(3);
                 }

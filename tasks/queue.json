@@ -265,8 +265,8 @@
     ],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
-      "Signal flow: input \u2192 gate \u2192 pre-pedals \u2192 amp \u2192 post-pedals \u2192 output",
-      "Multi-chain: split \u2192 per-chain amp+cab \u2192 sum with mix",
+      "Signal flow: input → gate → pre-pedals → amp → post-pedals → output",
+      "Multi-chain: split → per-chain amp+cab → sum with mix",
       "Test: all 5 amp models produce unique output"
     ],
     "files": [
@@ -307,7 +307,7 @@
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
       "Pedal add/remove/move/bypass API works",
-      "Internal dispatch table maps type \u2192 init/process/free",
+      "Internal dispatch table maps type → init/process/free",
       "Test: add pedal, set param, verify param"
     ],
     "files": [
@@ -317,7 +317,7 @@
   {
     "id": "TASK-018",
     "priority": "HIGH",
-    "title": "Port overdrive \u2192 Jade Drive",
+    "title": "Port overdrive → Jade Drive",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -380,7 +380,7 @@
   {
     "id": "TASK-021",
     "priority": "HIGH",
-    "title": "Port delay \u2192 Echo Delay",
+    "title": "Port delay → Echo Delay",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -402,7 +402,7 @@
   {
     "id": "TASK-022",
     "priority": "HIGH",
-    "title": "Port reverb \u2192 Hall Verb",
+    "title": "Port reverb → Hall Verb",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -424,7 +424,7 @@
   {
     "id": "TASK-023",
     "priority": "HIGH",
-    "title": "Port compressor \u2192 Squeeze Box",
+    "title": "Port compressor → Squeeze Box",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -658,7 +658,7 @@
     "acceptanceCriteria": [
       "Load .wav IR via dr_wav",
       "FFT via KissFFT",
-      "Per-block: FFT input \u2192 complex multiply \u2192 IFFT \u2192 overlap-add",
+      "Per-block: FFT input → complex multiply → IFFT → overlap-add",
       "Test: convolve impulse with known IR, verify output"
     ],
     "files": [
@@ -791,7 +791,7 @@
       "Parse .0xfx JSON",
       "Reconstruct engine state",
       "Validate all fields, clamp out-of-range",
-      "Test: save \u2192 load \u2192 process \u2192 identical output"
+      "Test: save → load → process → identical output"
     ],
     "files": [
       "src/engine/internal/preset.c"
@@ -871,7 +871,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Wraps fx_engine_process()",
-      "Mono in \u2192 engine \u2192 stereo out",
+      "Mono in → engine → stereo out",
       "CLAP loads in Reaper/Bitwig"
     ],
     "files": [
@@ -1458,7 +1458,7 @@
     "depends": [],
     "estimatedTokens": 80000,
     "acceptanceCriteria": [
-      "Top section: horizontal signal chain \u2014 pedal icons connected by visual cables/lines leading to amp then cab",
+      "Top section: horizontal signal chain — pedal icons connected by visual cables/lines leading to amp then cab",
       "Each element (pedal, amp, cab) is a clickable node in the chain",
       "Visual connections (lines/curves) between nodes showing signal flow",
       "SINGLE/DUAL chain toggle (like BIAS FX)",
@@ -1487,9 +1487,9 @@
     "estimatedTokens": 40000,
     "acceptanceCriteria": [
       "Bottom section: large detail view of selected element",
-      "Click pedal in chain \u2192 shows large pedal face with turnable knobs",
-      "Click amp in chain \u2192 shows large amp panel with all knobs (like BIAS FX screenshot)",
-      "Click cab in chain \u2192 shows cab selector with IR waveform",
+      "Click pedal in chain → shows large pedal face with turnable knobs",
+      "Click amp in chain → shows large amp panel with all knobs (like BIAS FX screenshot)",
+      "Click cab in chain → shows cab selector with IR waveform",
       "Smooth transition between detail views",
       "Detail view shows element name prominently"
     ],
@@ -1508,7 +1508,7 @@
     "depends": [],
     "estimatedTokens": 10000,
     "acceptanceCriteria": [
-      "Prominent LIVE button in toolbar \u2014 large, visible",
+      "Prominent LIVE button in toolbar — large, visible",
       "Lit up (bright green/amber glow) when audio is active",
       "Dim/dark when audio is off",
       "Click to toggle audio on/off",
@@ -1553,7 +1553,7 @@
     ],
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
-      "Bezier curves or straight lines connecting pedal \u2192 pedal \u2192 amp \u2192 cab",
+      "Bezier curves or straight lines connecting pedal → pedal → amp → cab",
       "Cables drawn on the ImGui foreground draw list",
       "Cable color changes based on signal presence (dim when muted, bright when LIVE)",
       "Input jack on left, output jack on right of each node"
@@ -1618,7 +1618,7 @@
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [
-      "Save current rig as named preset (.0xfx JSON \u2014 already implemented)",
+      "Save current rig as named preset (.0xfx JSON — already implemented)",
       "Load preset from file browser",
       "Quick-save (Ctrl+S) overwrites current preset",
       "Quick-load last used preset on startup",
@@ -1923,14 +1923,14 @@
     "title": "Y-split visual: parallel amp chains in signal flow",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-agent",
     "depends": [
       "TASK-300"
     ],
     "estimatedTokens": 30000,
     "acceptanceCriteria": [
-      "Visual Y-split node in signal chain \u2014 signal splits to 2+ parallel paths",
+      "Visual Y-split node in signal chain — signal splits to 2+ parallel paths",
       "Each path has its own amp + cab nodes",
       "Paths merge at a mixer node with per-path level/blend",
       "Add/remove parallel paths via UI",
@@ -1956,7 +1956,7 @@
       "Texture cache: load once, return GL texture ID on subsequent calls",
       "Support transparency (RGBA)",
       "stb_image.h for PNG decoding (single-header, vendor into deps/)",
-      "API: GLuint fx_texture_load(const char *path) \u2014 returns cached texture ID"
+      "API: GLuint fx_texture_load(const char *path) — returns cached texture ID"
     ],
     "files": [
       "src/gui/texture.c",
