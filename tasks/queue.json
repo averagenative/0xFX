@@ -1394,8 +1394,8 @@
     "title": "Tooltips on knobs and features",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "main-agent",
     "depends": [],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
@@ -1613,8 +1613,8 @@
     "title": "Session/save state system (rig presets)",
     "domain": "infra",
     "phase": 4,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "main-agent",
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [

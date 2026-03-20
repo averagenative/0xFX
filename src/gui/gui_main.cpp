@@ -38,7 +38,7 @@ extern "C" {
 #include <sys/stat.h>
 
 extern "C" {
-#include "../../deps/cJSON.h"
+#include "cJSON.h"
 }
 
 /* ── Session config helpers (TASK-307) ───────────────────────── */
@@ -838,6 +838,8 @@ int main(int argc, char *argv[]) {
                     }
 
                     ImGui::Dummy(ImVec2(bar_w + padding * 2.0f, bar_h + dot_r * 2.0f));
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Chromatic tuner -- detects pitch of input signal");
                 }
             }
 
@@ -1190,7 +1192,7 @@ int main(int argc, char *argv[]) {
             if (ctrl && ImGui::IsKeyPressed(ImGuiKey_S)) {
                 if (shift) {
                     /* Ctrl+Shift+S = Save As */
-                    s_save_as_name[0] = ' ';
+                    strcpy(s_save_as_name, "");
                     s_save_as_open = true;
                     ImGui::OpenPopup("save_as_popup");
                 } else {
@@ -1215,7 +1217,7 @@ int main(int argc, char *argv[]) {
                                                   ImGuiInputTextFlags_EnterReturnsTrue);
             ImGui::Spacing();
             if ((ImGui::Button("Save", ImVec2(120, 0)) || enter_pressed) &&
-                s_save_as_name[0] != ' ') {
+                s_save_as_name[0] != '\0') {
                 char path[400];
                 snprintf(path, sizeof(path), "presets/%s.0xfx", s_save_as_name);
                 bool ok = fx_preset_save(engine, path);
@@ -1306,75 +1308,177 @@ int main(int argc, char *argv[]) {
             ImVec2 win_pos = ImGui::GetWindowPos();
             ImVec2 content_min = ImGui::GetCursorScreenPos();
 
-            /* ── Signal chain area background: pedalboard surface ──── */
-            {
-                ImVec2 bg_min = win_pos;
-                ImVec2 bg_max = ImVec2(win_pos.x + win_w, win_pos.y + chain_area_h);
-
-                if (s_tex_pedalboard) {
-                    /* Tile the pedalboard surface texture at 256x256 with low
-                     * alpha for the "worn grime" look — dark pedalboard planks */
-                    const float TILE = 256.0f;
-                    dl->PushClipRect(bg_min, bg_max, true);
-                    for (float ty = bg_min.y; ty < bg_max.y; ty += TILE) {
-                        for (float tx = bg_min.x; tx < bg_max.x; tx += TILE) {
-                            float tx1 = (tx + TILE < bg_max.x) ? tx + TILE : bg_max.x;
-                            float ty1 = (ty + TILE < bg_max.y) ? ty + TILE : bg_max.y;
-                            float u1 = (tx1 - tx) / TILE;
-                            float v1 = (ty1 - ty) / TILE;
-                            dl->AddImage((ImTextureID)s_tex_pedalboard,
-                                ImVec2(tx, ty), ImVec2(tx1, ty1),
-                                ImVec2(0.0f, 0.0f), ImVec2(u1, v1),
-                                IM_COL32(255, 255, 255, 55));
-                        }
-                    }
-                    dl->PopClipRect();
-                } else {
-                    /* Fallback: dark grid pattern evoking pedalboard rubber */
-                    dl->AddRectFilled(bg_min, bg_max, IM_COL32(22, 19, 15, 255));
-                    for (float gy = bg_min.y + 16.0f; gy < bg_max.y; gy += 16.0f)
-                        dl->AddLine(ImVec2(bg_min.x, gy), ImVec2(bg_max.x, gy),
-                                    IM_COL32(30, 26, 20, 255), 1.0f);
-                    for (float gx = bg_min.x + 16.0f; gx < bg_max.x; gx += 16.0f)
-                        dl->AddLine(ImVec2(gx, bg_min.y), ImVec2(gx, bg_max.y),
-                                    IM_COL32(30, 26, 20, 255), 1.0f);
-                }
-
-                /* Top vignette: shadow from toolbar edge */
-                dl->AddRectFilledMultiColor(
-                    bg_min, ImVec2(bg_max.x, bg_min.y + 10.0f),
-                    IM_COL32(0, 0, 0, 90), IM_COL32(0, 0, 0, 90),
-                    IM_COL32(0, 0, 0,  0), IM_COL32(0, 0, 0,  0));
-                /* Bottom vignette: fade into detail view */
-                dl->AddRectFilledMultiColor(
-                    ImVec2(bg_min.x, bg_max.y - 10.0f), bg_max,
-                    IM_COL32(0, 0, 0,  0), IM_COL32(0, 0, 0,  0),
-                    IM_COL32(0, 0, 0, 70), IM_COL32(0, 0, 0, 70));
-            }
-
-            /* Center nodes vertically in the chain area */
+            /* Vertical center of the chain area (used as the "main" lane) */
             float cy = win_pos.y + chain_area_h * 0.45f;
 
-            /* Calculate total width needed for scrolling */
-            float total_w = chain_len * NODE_W + (chain_len - 1) * NODE_SPACING
+            /* In DUAL mode we stack two lanes above/below cy */
+            const float LANE_OFFSET = NODE_H * 1.25f;  /* vertical gap between parallel paths */
+            float cy_a = is_dual ? cy - LANE_OFFSET * 0.5f : cy;  /* top lane (chain A) */
+            float cy_b = is_dual ? cy + LANE_OFFSET * 0.5f : cy;  /* bottom lane (chain B) */
+
+            /* ── Layout: compute x-column assignments ──────────────────
+             * SINGLE: each node occupies one column, separated by NODE_SPACING.
+             * DUAL:   SPLIT / MERGE columns span both lanes.
+             *         Chain-A and chain-B nodes share the same x-column
+             *         (stacked vertically).
+             *
+             * We compute a "column" index for each node, then map to x.
+             * ─────────────────────────────────────────────────────────── */
+            int node_col[256];  /* which x-column does node ni occupy? */
+            int num_cols = 0;
+            {
+                bool in_split = false;
+                int col = 0;
+                int amp_a_col = -1;
+                int cab_a_col = -1;
+                for (int ni = 0; ni < chain_len; ni++) {
+                    NodeKind k = chain[ni].kind;
+                    if (k == NODE_SPLIT) {
+                        node_col[ni] = col++;
+                        in_split = true;
+                        amp_a_col = -1; cab_a_col = -1;
+                    } else if (k == NODE_MERGE) {
+                        in_split = false;
+                        node_col[ni] = col++;
+                    } else if (in_split && k == NODE_AMP) {
+                        if (chain[ni].chain_id == 0) {
+                            amp_a_col = col;
+                            node_col[ni] = col++;
+                        } else {
+                            /* chain B AMP shares column with chain A AMP */
+                            node_col[ni] = (amp_a_col >= 0) ? amp_a_col : col;
+                        }
+                    } else if (in_split && k == NODE_CAB) {
+                        if (chain[ni].chain_id == 0) {
+                            cab_a_col = col;
+                            node_col[ni] = col++;
+                        } else {
+                            /* chain B CAB shares column with chain A CAB */
+                            node_col[ni] = (cab_a_col >= 0) ? cab_a_col : col;
+                        }
+                    } else {
+                        node_col[ni] = col++;
+                    }
+                }
+                num_cols = col;
+            }
+
+            /* Total width for scrolling */
+            float total_w = num_cols * NODE_W + (num_cols - 1) * NODE_SPACING
                           + CHAIN_PADDING * 2.0f;
 
-            /* Reserve scrollable content area */
-            ImGui::Dummy(ImVec2(total_w, chain_area_h - 20.0f));
+            /* Reserve scrollable content area (extra height for two lanes in dual mode) */
+            float content_h = is_dual ? chain_area_h * 0.85f : (chain_area_h - 20.0f);
+            ImGui::Dummy(ImVec2(total_w, content_h));
 
             /* Track where the [+] button popup should insert */
             static fx_chain_pos_t s_add_popup_pos = FX_CHAIN_POS_PRE;
             static int s_add_popup_insert_slot = -1;
 
-            /* Center the chain horizontally: if chain fits, center it;
-               otherwise start from CHAIN_PADDING (scrollable) */
+            /* Center the chain horizontally */
             float chain_area_w = win_w;
-            float chain_content_w = chain_len * NODE_W + (chain_len - 1) * NODE_SPACING;
+            float chain_content_w = num_cols * NODE_W + (num_cols - 1) * NODE_SPACING;
             float center_offset = (chain_area_w > chain_content_w)
                 ? (chain_area_w - chain_content_w) * 0.5f
                 : CHAIN_PADDING;
-            float x_cursor = content_min.x + center_offset - ImGui::GetScrollX();
 
+            /* Map column index -> screen x (left edge of node) */
+            auto col_to_x = [&](int col) -> float {
+                return content_min.x + center_offset - ImGui::GetScrollX()
+                     + col * (NODE_W + NODE_SPACING);
+            };
+
+            /* ── Draw SPLIT / MERGE bezier paths first (behind nodes) ── */
+            if (is_dual) {
+                /* Find the SPLIT and MERGE node columns */
+                int split_col = -1, merge_col = -1;
+                int amp_col_a = -1, cab_col_a = -1, cab_col_b = -1;
+                for (int ni = 0; ni < chain_len; ni++) {
+                    if (chain[ni].kind == NODE_SPLIT) split_col = node_col[ni];
+                    if (chain[ni].kind == NODE_MERGE) merge_col = node_col[ni];
+                    if (chain[ni].kind == NODE_AMP && chain[ni].chain_id == 0) amp_col_a = node_col[ni];
+                    if (chain[ni].kind == NODE_CAB && chain[ni].chain_id == 0) cab_col_a = node_col[ni];
+                    if (chain[ni].kind == NODE_CAB && chain[ni].chain_id != 0) cab_col_b = node_col[ni];
+                }
+                if (split_col >= 0 && merge_col >= 0 && amp_col_a >= 0) {
+                    float sx   = col_to_x(split_col) + NODE_W;   /* right of SPLIT */
+                    float mx   = col_to_x(merge_col);             /* left of MERGE  */
+                    float ax   = col_to_x(amp_col_a);             /* left of AMP column */
+                    float cp   = 40.0f;
+
+                    ImU32 cable_col = s_audio_active
+                        ? IM_COL32(210, 150, 30, 200)
+                        : IM_COL32(110, 85, 30, 160);
+                    ImU32 cable_shd = IM_COL32(20, 15, 5, 100);
+
+                    /* SPLIT -> AMP A (upper path) */
+                    {
+                        ImVec2 p0(sx, cy), p3(ax, cy_a + NODE_H * 0.5f);
+                        ImVec2 p1(sx + cp, cy), p2(ax - cp, cy_a + NODE_H * 0.5f);
+                        dl->AddBezierCubic(ImVec2(p0.x+1,p0.y+2),ImVec2(p1.x+1,p1.y+2),
+                                           ImVec2(p2.x+1,p2.y+2),ImVec2(p3.x+1,p3.y+2),
+                                           cable_shd, 2.5f, 16);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 2.5f, 16);
+                    }
+                    /* SPLIT -> AMP B (lower path) */
+                    {
+                        ImVec2 p0(sx, cy), p3(ax, cy_b + NODE_H * 0.5f);
+                        ImVec2 p1(sx + cp, cy), p2(ax - cp, cy_b + NODE_H * 0.5f);
+                        dl->AddBezierCubic(ImVec2(p0.x+1,p0.y+2),ImVec2(p1.x+1,p1.y+2),
+                                           ImVec2(p2.x+1,p2.y+2),ImVec2(p3.x+1,p3.y+2),
+                                           cable_shd, 2.5f, 16);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 2.5f, 16);
+                    }
+                    /* AMP A -> CAB A */
+                    if (cab_col_a >= 0) {
+                        float a_rx = col_to_x(amp_col_a) + NODE_W;
+                        float c_lx = col_to_x(cab_col_a);
+                        float acy  = cy_a + NODE_H * 0.5f;
+                        ImVec2 p0(a_rx, acy), p3(c_lx, acy);
+                        ImVec2 p1(a_rx + 20, acy), p2(c_lx - 20, acy);
+                        dl->AddBezierCubic(ImVec2(p0.x+1,p0.y+2),ImVec2(p1.x+1,p1.y+2),
+                                           ImVec2(p2.x+1,p2.y+2),ImVec2(p3.x+1,p3.y+2),
+                                           cable_shd, 2.5f, 12);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 2.5f, 12);
+                    }
+                    /* AMP B -> CAB B */
+                    if (cab_col_b >= 0) {
+                        float a_rx = col_to_x(amp_col_a) + NODE_W;
+                        float c_lx = col_to_x(cab_col_b);
+                        float bcy  = cy_b + NODE_H * 0.5f;
+                        ImVec2 p0(a_rx, bcy), p3(c_lx, bcy);
+                        ImVec2 p1(a_rx + 20, bcy), p2(c_lx - 20, bcy);
+                        dl->AddBezierCubic(ImVec2(p0.x+1,p0.y+2),ImVec2(p1.x+1,p1.y+2),
+                                           ImVec2(p2.x+1,p2.y+2),ImVec2(p3.x+1,p3.y+2),
+                                           cable_shd, 2.5f, 12);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 2.5f, 12);
+                    }
+                    /* CAB A -> MERGE */
+                    if (cab_col_a >= 0) {
+                        float c_rx = col_to_x(cab_col_a) + NODE_W;
+                        float acy  = cy_a + NODE_H * 0.5f;
+                        ImVec2 p0(c_rx, acy), p3(mx, cy);
+                        ImVec2 p1(c_rx + cp, acy), p2(mx - cp, cy);
+                        dl->AddBezierCubic(ImVec2(p0.x+1,p0.y+2),ImVec2(p1.x+1,p1.y+2),
+                                           ImVec2(p2.x+1,p2.y+2),ImVec2(p3.x+1,p3.y+2),
+                                           cable_shd, 2.5f, 16);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 2.5f, 16);
+                    }
+                    /* CAB B -> MERGE */
+                    if (cab_col_b >= 0) {
+                        float c_rx = col_to_x(cab_col_b) + NODE_W;
+                        float bcy  = cy_b + NODE_H * 0.5f;
+                        ImVec2 p0(c_rx, bcy), p3(mx, cy);
+                        ImVec2 p1(c_rx + cp, bcy), p2(mx - cp, cy);
+                        dl->AddBezierCubic(ImVec2(p0.x+1,p0.y+2),ImVec2(p1.x+1,p1.y+2),
+                                           ImVec2(p2.x+1,p2.y+2),ImVec2(p3.x+1,p3.y+2),
+                                           cable_shd, 2.5f, 16);
+                        dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 2.5f, 16);
+                    }
+                }
+            }
+
+            /* ── Draw all nodes ──────────────────────────────────────── */
             for (int ni = 0; ni < chain_len; ni++) {
                 ChainNode &n = chain[ni];
                 bool is_selected = (s_selected_node == ni);
@@ -1383,13 +1487,73 @@ int main(int argc, char *argv[]) {
                 if (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST) {
                     is_bypassed = fx_pedal_get_bypass(engine, n.pedal_id);
                 } else if (n.kind == NODE_CAB) {
-                    is_bypassed = fx_cab_get_bypass(engine, FX_CHAIN_DEFAULT);
+                    is_bypassed = fx_cab_get_bypass(engine, (fx_chain_id)n.chain_id);
                 }
 
-                float nx = x_cursor;
-                float ny = cy - NODE_H * 0.5f;
+                /* Determine Y position for this node */
+                float node_cy;
+                if (is_dual) {
+                    if (n.chain_id != 0) {
+                        node_cy = cy_b;  /* chain B = bottom lane */
+                    } else if (n.kind == NODE_AMP || n.kind == NODE_CAB) {
+                        node_cy = cy_a;  /* chain A amp/cab = top lane */
+                    } else {
+                        node_cy = cy;    /* center lane (pre/post/split/merge/in/out) */
+                    }
+                } else {
+                    node_cy = cy;
+                }
 
-                /* Draw node — try PNG texture first, fall back to colored rect */
+                float nx = col_to_x(node_col[ni]);
+                float ny = node_cy - NODE_H * 0.5f;
+
+                /* ── SPLIT / MERGE: draw as diamond ─────────────── */
+                if (n.kind == NODE_SPLIT || n.kind == NODE_MERGE) {
+                    float dm  = NODE_H * 0.55f;  /* half-size of diamond */
+                    float dcx = nx + NODE_W * 0.5f;
+                    float dcy = node_cy;
+                    ImU32 fill_col = IM_COL32(60, 48, 12, 255);
+                    ImU32 edge_col = is_selected
+                        ? IM_COL32(255, 220, 60, 255)
+                        : IM_COL32(220, 170, 30, 255);
+                    ImVec2 top(dcx, dcy - dm);
+                    ImVec2 rgt(dcx + dm, dcy);
+                    ImVec2 bot(dcx, dcy + dm);
+                    ImVec2 lft(dcx - dm, dcy);
+                    dl->AddQuadFilled(top, rgt, bot, lft, fill_col);
+                    dl->AddQuad(top, rgt, bot, lft, edge_col, 2.0f);
+
+                    /* Label inside diamond */
+                    const char *dlbl = (n.kind == NODE_SPLIT) ? "Y" : "M";
+                    ImVec2 dlbl_sz = ImGui::CalcTextSize(dlbl);
+                    dl->AddText(ImVec2(dcx - dlbl_sz.x * 0.5f, dcy - dlbl_sz.y * 0.5f),
+                                IM_COL32(220, 200, 100, 255), dlbl);
+
+                    /* Below label */
+                    const char *blbl = (n.kind == NODE_SPLIT) ? "SPLIT" : "MIX";
+                    ImVec2 blbl_sz = ImGui::CalcTextSize(blbl);
+                    dl->AddText(ImVec2(dcx - blbl_sz.x * 0.5f, dcy + dm + 4.0f),
+                                IM_COL32(180, 165, 120, 200), blbl);
+
+                    /* Selection glow ring */
+                    if (is_selected) {
+                        dl->AddQuad(ImVec2(top.x, top.y - 3), ImVec2(rgt.x + 3, rgt.y),
+                                    ImVec2(bot.x, bot.y + 3), ImVec2(lft.x - 3, lft.y),
+                                    IM_COL32(255, 220, 60, 200), 2.5f);
+                    }
+
+                    /* Invisible button for click detection */
+                    ImGui::SetCursorScreenPos(ImVec2(dcx - dm, dcy - dm));
+                    char btn_id[32];
+                    snprintf(btn_id, sizeof(btn_id), "##node_%d", ni);
+                    if (ImGui::InvisibleButton(btn_id, ImVec2(dm * 2.0f, dm * 2.0f))) {
+                        s_selected_node = (s_selected_node == ni) ? -1 : ni;
+                        s_selected_chain_id = n.chain_id;
+                    }
+                    continue;
+                }
+
+                /* ── Regular rectangular node ───────────────────── */
                 bool drew_texture = false;
                 {
                     uintptr_t tex = 0;
@@ -1401,10 +1565,11 @@ int main(int argc, char *argv[]) {
                         }
                     } else if (n.kind == NODE_AMP) {
                         const char *aname = fx_amp_get_type_name(
-                            fx_amp_get_model(engine, FX_CHAIN_DEFAULT));
+                            fx_amp_get_model(engine, (fx_chain_id)n.chain_id));
                         tex = load_amp_body_texture(aname);
                     } else if (n.kind == NODE_CAB) {
-                        tex = load_cab_texture((int)s_cab_type);
+                        int ctype = (n.chain_id == 0) ? s_cab_type : s_cab_type_b;
+                        tex = load_cab_texture(ctype);
                     }
                     if (tex) {
                         ImVec4 tint = is_bypassed
@@ -1431,8 +1596,6 @@ int main(int argc, char *argv[]) {
 
                 /* Node label (centered below node) */
                 const char *lbl = node_label(n.kind, engine, n.pedal_id, n.chain_id);
-
-                /* Truncate label if it's too long for the node */
                 char short_lbl[16];
                 ImVec2 lbl_size = ImGui::CalcTextSize(lbl);
                 if (lbl_size.x > NODE_W - 4.0f) {
@@ -1443,7 +1606,6 @@ int main(int argc, char *argv[]) {
                     lbl = short_lbl;
                     lbl_size = ImGui::CalcTextSize(lbl);
                 }
-
                 float lbl_x = nx + (NODE_W - lbl_size.x) * 0.5f;
                 float lbl_y = ny + NODE_H + 4.0f;
                 dl->AddText(ImVec2(lbl_x, lbl_y),
@@ -1451,7 +1613,7 @@ int main(int argc, char *argv[]) {
                                         : IM_COL32(210, 200, 180, 255),
                             lbl);
 
-                /* Bypass LED — green when active, red-off when bypassed */
+                /* Bypass LED */
                 if (n.kind == NODE_PEDAL_PRE || n.kind == NODE_PEDAL_POST) {
                     const char *led_path = is_bypassed
                         ? "resources/leds/led_red_off_nobg.png"
@@ -1462,15 +1624,13 @@ int main(int argc, char *argv[]) {
                     float led_y = ny + 3.0f;
                     if (led_tex) {
                         ImGui::SetCursorScreenPos(ImVec2(led_x, led_y));
-                        ImGui::Image((ImTextureID)(uintptr_t)led_tex,
-                                     ImVec2(LED_SZ, LED_SZ));
+                        ImGui::Image((ImTextureID)(uintptr_t)led_tex, ImVec2(LED_SZ, LED_SZ));
                     } else {
-                        /* Fallback: colored dot */
                         ImU32 dot_col = is_bypassed
                             ? IM_COL32(200, 60, 50, 200)
                             : IM_COL32(60, 200, 60, 220);
                         dl->AddCircleFilled(
-                            ImVec2(led_x + LED_SZ * 0.5f, led_y + LED_SZ * 0.5f),
+                            ImVec2(led_x + LED_SZ*0.5f, led_y + LED_SZ*0.5f),
                             LED_SZ * 0.5f, dot_col, 12);
                     }
                 }
@@ -1481,129 +1641,112 @@ int main(int argc, char *argv[]) {
                     snprintf(btn_id, sizeof(btn_id), "##node_%d", ni);
                     ImGui::SetCursorScreenPos(ImVec2(nx, ny));
                     if (ImGui::InvisibleButton(btn_id, ImVec2(NODE_W, NODE_H))) {
-                        /* Don't select INPUT or OUTPUT */
                         if (n.kind != NODE_INPUT && n.kind != NODE_OUTPUT) {
                             s_selected_node = (s_selected_node == ni) ? -1 : ni;
+                            s_selected_chain_id = n.chain_id;
                         }
                     }
                 }
 
-                x_cursor += NODE_W;
-
-                /* Draw connecting line + [+] button to next node */
+                /* ── Draw connecting cable to next node (single-lane sections) ── */
                 if (ni < chain_len - 1) {
-                    /* Determine if we should show [+] add button */
-                    bool show_add = false;
-                    fx_chain_pos_t add_pos = FX_CHAIN_POS_PRE;
-                    int add_insert_slot = 0;
-
                     NodeKind cur_kind = chain[ni].kind;
                     NodeKind nxt_kind = chain[ni + 1].kind;
 
-                    /* Pre-amp zone: INPUT..AMP */
-                    if ((cur_kind == NODE_INPUT || cur_kind == NODE_PEDAL_PRE) &&
-                        (nxt_kind == NODE_PEDAL_PRE || nxt_kind == NODE_AMP)) {
-                        show_add = true;
-                        add_pos = FX_CHAIN_POS_PRE;
-                        add_insert_slot = 0;
-                        for (int j = 0; j <= ni; j++) {
-                            if (chain[j].kind == NODE_PEDAL_PRE) add_insert_slot++;
+                    /* Only draw cables for sequential single-lane sections.
+                       Split-section cables are drawn in the bezier pass above. */
+                    bool is_linear = false;
+                    bool show_add  = false;
+                    fx_chain_pos_t add_pos = FX_CHAIN_POS_PRE;
+                    int  add_insert_slot   = 0;
+
+                    if (!is_dual) {
+                        /* Pre-amp zone */
+                        if ((cur_kind == NODE_INPUT || cur_kind == NODE_PEDAL_PRE) &&
+                            (nxt_kind == NODE_PEDAL_PRE || nxt_kind == NODE_AMP)) {
+                            is_linear = true; show_add = true; add_pos = FX_CHAIN_POS_PRE;
+                            for (int j = 0; j <= ni; j++)
+                                if (chain[j].kind == NODE_PEDAL_PRE) add_insert_slot++;
                         }
-                    }
-                    /* Post-amp zone: CAB..OUTPUT */
-                    else if ((cur_kind == NODE_CAB || cur_kind == NODE_PEDAL_POST) &&
-                             (nxt_kind == NODE_PEDAL_POST || nxt_kind == NODE_OUTPUT)) {
-                        show_add = true;
-                        add_pos = FX_CHAIN_POS_POST;
-                        add_insert_slot = 0;
-                        for (int j = 0; j <= ni; j++) {
-                            if (chain[j].kind == NODE_PEDAL_POST) add_insert_slot++;
+                        /* Post-amp zone */
+                        else if ((cur_kind == NODE_CAB || cur_kind == NODE_PEDAL_POST) &&
+                                 (nxt_kind == NODE_PEDAL_POST || nxt_kind == NODE_OUTPUT)) {
+                            is_linear = true; show_add = true; add_pos = FX_CHAIN_POS_POST;
+                            for (int j = 0; j <= ni; j++)
+                                if (chain[j].kind == NODE_PEDAL_POST) add_insert_slot++;
                         }
-                    }
-
-                    if (show_add) {
-                        float add_x = x_cursor + (NODE_SPACING - ADD_BTN_W) * 0.5f;
-                        float add_y = cy - ADD_BTN_W * 0.5f;
-
-                        /* Invisible button for click detection */
-                        char inv_id[32];
-                        snprintf(inv_id, sizeof(inv_id), "##addinv_%d", ni);
-                        ImGui::SetCursorScreenPos(ImVec2(add_x, add_y));
-                        bool add_clicked = ImGui::InvisibleButton(inv_id, ImVec2(ADD_BTN_W, ADD_BTN_W));
-                        bool add_hovered = ImGui::IsItemHovered();
-
-                        /* Draw prominent [+] button with glowing amber border */
-                        float t_pulse = (float)ImGui::GetTime();
-                        float glow_a = add_hovered
-                            ? 1.0f
-                            : 0.55f + 0.25f * sinf(t_pulse * 2.5f);
-                        ImU32 border_col = IM_COL32(
-                            (int)(200 * glow_a),
-                            (int)(140 * glow_a),
-                            (int)(20  * glow_a),
-                            (int)(220 * glow_a));
-                        ImU32 bg_col = add_hovered
-                            ? IM_COL32(80, 55, 12, 220)
-                            : IM_COL32(35, 28, 8, 180);
-                        float r = 6.0f;  /* corner radius */
-                        dl->AddRectFilled(
-                            ImVec2(add_x, add_y),
-                            ImVec2(add_x + ADD_BTN_W, add_y + ADD_BTN_W),
-                            bg_col, r);
-                        dl->AddRect(
-                            ImVec2(add_x, add_y),
-                            ImVec2(add_x + ADD_BTN_W, add_y + ADD_BTN_W),
-                            border_col, r, 0, 2.0f);
-                        /* Draw + sign */
-                        float cx2 = add_x + ADD_BTN_W * 0.5f;
-                        float cy2 = add_y + ADD_BTN_W * 0.5f;
-                        float arm = ADD_BTN_W * 0.28f;
-                        ImU32 plus_col = IM_COL32(
-                            (int)(230 * glow_a),
-                            (int)(175 * glow_a),
-                            (int)(40  * glow_a),
-                            255);
-                        dl->AddLine(ImVec2(cx2 - arm, cy2), ImVec2(cx2 + arm, cy2), plus_col, 2.5f);
-                        dl->AddLine(ImVec2(cx2, cy2 - arm), ImVec2(cx2, cy2 + arm), plus_col, 2.5f);
-                        /* Outer glow ring when hovered */
-                        if (add_hovered) {
-                            dl->AddRect(
-                                ImVec2(add_x - 2, add_y - 2),
-                                ImVec2(add_x + ADD_BTN_W + 2, add_y + ADD_BTN_W + 2),
-                                IM_COL32(220, 160, 30, 100), r + 2, 0, 3.0f);
+                        /* AMP -> CAB */
+                        else if (cur_kind == NODE_AMP && nxt_kind == NODE_CAB) {
+                            is_linear = true;
                         }
-
-                        if (add_clicked) {
-                            s_add_popup_pos = add_pos;
-                            s_add_popup_insert_slot = add_insert_slot;
-                            ImGui::OpenPopup("add_pedal_popup");
+                    } else {
+                        /* Dual mode: only linear pre/post sections */
+                        if ((cur_kind == NODE_INPUT || cur_kind == NODE_PEDAL_PRE) &&
+                            (nxt_kind == NODE_PEDAL_PRE || nxt_kind == NODE_SPLIT)) {
+                            is_linear = true;
+                            if (nxt_kind == NODE_PEDAL_PRE || nxt_kind == NODE_SPLIT) {
+                                show_add = true; add_pos = FX_CHAIN_POS_PRE;
+                                for (int j = 0; j <= ni; j++)
+                                    if (chain[j].kind == NODE_PEDAL_PRE) add_insert_slot++;
+                            }
+                        } else if ((cur_kind == NODE_MERGE || cur_kind == NODE_PEDAL_POST) &&
+                                   (nxt_kind == NODE_PEDAL_POST || nxt_kind == NODE_OUTPUT)) {
+                            is_linear = true;
+                            show_add = true; add_pos = FX_CHAIN_POS_POST;
+                            for (int j = 0; j <= ni; j++)
+                                if (chain[j].kind == NODE_PEDAL_POST) add_insert_slot++;
                         }
                     }
 
-                    /* Draw connecting cable (bezier curve) */
-                    {
-                        float line_x0 = x_cursor;
-                        float line_x1 = x_cursor + NODE_SPACING;
-                        ImVec2 p0(line_x0, cy);
-                        ImVec2 p3(line_x1, cy);
-                        float cp_off = 30.0f;
-                        ImVec2 p1(line_x0 + cp_off, cy);
-                        ImVec2 p2(line_x1 - cp_off, cy);
-                        /* Shadow pass */
+                    if (is_linear) {
+                        float x_right = col_to_x(node_col[ni]) + NODE_W;
+                        float x_next  = col_to_x(node_col[ni + 1]);
+                        float lcy     = node_cy;  /* use current node's lane */
+
+                        if (show_add) {
+                            float add_x = x_right + (x_next - x_right - ADD_BTN_W) * 0.5f;
+                            float add_y = lcy - ADD_BTN_W * 0.5f;
+                            char inv_id[32];
+                            snprintf(inv_id, sizeof(inv_id), "##addinv_%d", ni);
+                            ImGui::SetCursorScreenPos(ImVec2(add_x, add_y));
+                            bool add_clicked = ImGui::InvisibleButton(inv_id, ImVec2(ADD_BTN_W, ADD_BTN_W));
+                            bool add_hovered = ImGui::IsItemHovered();
+
+                            float t_pulse = (float)ImGui::GetTime();
+                            float glow_a  = add_hovered ? 1.0f : 0.55f + 0.25f * sinf(t_pulse * 2.5f);
+                            ImU32 bcol = IM_COL32((int)(200*glow_a),(int)(140*glow_a),(int)(20*glow_a),(int)(220*glow_a));
+                            ImU32 bgcol = add_hovered ? IM_COL32(80,55,12,220) : IM_COL32(35,28,8,180);
+                            float r = 6.0f;
+                            dl->AddRectFilled(ImVec2(add_x,add_y), ImVec2(add_x+ADD_BTN_W,add_y+ADD_BTN_W), bgcol, r);
+                            dl->AddRect(ImVec2(add_x,add_y), ImVec2(add_x+ADD_BTN_W,add_y+ADD_BTN_W), bcol, r, 0, 2.0f);
+                            float cx2 = add_x + ADD_BTN_W * 0.5f;
+                            float cy2 = add_y + ADD_BTN_W * 0.5f;
+                            float arm = ADD_BTN_W * 0.28f;
+                            ImU32 pcol = IM_COL32((int)(230*glow_a),(int)(175*glow_a),(int)(40*glow_a),255);
+                            dl->AddLine(ImVec2(cx2-arm,cy2), ImVec2(cx2+arm,cy2), pcol, 2.5f);
+                            dl->AddLine(ImVec2(cx2,cy2-arm), ImVec2(cx2,cy2+arm), pcol, 2.5f);
+                            if (add_hovered)
+                                dl->AddRect(ImVec2(add_x-2,add_y-2),ImVec2(add_x+ADD_BTN_W+2,add_y+ADD_BTN_W+2),
+                                            IM_COL32(220,160,30,100), r+2, 0, 3.0f);
+                            if (add_clicked) {
+                                s_add_popup_pos = add_pos;
+                                s_add_popup_insert_slot = add_insert_slot;
+                                ImGui::OpenPopup("add_pedal_popup");
+                            }
+                        }
+
+                        /* Cable */
+                        ImVec2 p0(x_right, lcy), p3(x_next, lcy);
+                        ImVec2 p1(x_right + 30.0f, lcy), p2(x_next - 30.0f, lcy);
                         dl->AddBezierCubic(
-                            ImVec2(p0.x + 1, p0.y + 2),
-                            ImVec2(p1.x + 1, p1.y + 2),
-                            ImVec2(p2.x + 1, p2.y + 2),
-                            ImVec2(p3.x + 1, p3.y + 2),
-                            IM_COL32(20, 15, 5, 140), 3.0f, 16);
-                        /* Cable pass */
+                            ImVec2(p0.x+1,p0.y+2), ImVec2(p1.x+1,p1.y+2),
+                            ImVec2(p2.x+1,p2.y+2), ImVec2(p3.x+1,p3.y+2),
+                            IM_COL32(20,15,5,140), 3.0f, 16);
                         ImU32 cable_col = s_audio_active
                             ? IM_COL32(210, 150, 30, 230)
                             : IM_COL32(110, 85, 30, 180);
                         dl->AddBezierCubic(p0, p1, p2, p3, cable_col, 3.0f, 16);
                     }
-
-                    x_cursor += NODE_SPACING;
                 }
             }
 
@@ -1694,6 +1837,10 @@ int main(int argc, char *argv[]) {
                                     gallery_add_pedal(pe.type);
                                     ImGui::CloseCurrentPopup();
                                 }
+                                if (ImGui::IsItemHovered()) {
+                                    const char *tip = get_pedal_tooltip(pe.type);
+                                    if (tip) ImGui::SetTooltip("%s", tip);
+                                }
                                 ImGui::PopStyleColor(3);
                             }
                             ImGui::Spacing();
@@ -1778,9 +1925,84 @@ int main(int argc, char *argv[]) {
             else {
                 ChainNode &sel = chain[s_selected_node];
 
+                /* ── SPLIT / MERGE (mixer) detail view ───────── */
+                if (sel.kind == NODE_SPLIT) {
+                    float avail_w = ImGui::GetContentRegionAvail().x;
+                    ImGui::SetWindowFontScale(1.35f);
+                    const char *title = "Y-Split";
+                    ImVec2 ts = ImGui::CalcTextSize(title);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                    ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
+                    ImGui::SetWindowFontScale(1.0f);
+                    const char *sub = "Signal splits into two parallel amp chains";
+                    ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                    ImGui::TextDisabled("%s", sub);
+                    ImGui::Dummy(ImVec2(0.0f, 12.0f));
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - 300.0f) * 0.5f);
+                    ImGui::TextDisabled("Click the AMP A / AMP B or CAB A / CAB B nodes to edit each path.");
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - 300.0f) * 0.5f);
+                    ImGui::TextDisabled("Click MIX to set per-path blend levels.");
+                }
+
+                /* ── MERGE (mixer) detail view ────────────────── */
+                else if (sel.kind == NODE_MERGE) {
+                    float avail_w = ImGui::GetContentRegionAvail().x;
+                    ImGui::SetWindowFontScale(1.35f);
+                    const char *title = "Mix / Blend";
+                    ImVec2 ts = ImGui::CalcTextSize(title);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                    ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
+                    ImGui::SetWindowFontScale(1.0f);
+                    const char *sub = "Per-chain blend levels";
+                    ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                    ImGui::TextDisabled("%s", sub);
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    {
+                        ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                        ImGui::GetWindowDrawList()->AddLine(
+                            sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                            IM_COL32(180, 130, 40, 100), 1.0f);
+                        ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                    }
+
+                    float slider_w = 280.0f;
+                    float slider_x = (avail_w - slider_w) * 0.5f;
+                    if (slider_x < 0.0f) slider_x = 0.0f;
+
+                    /* Chain A mix slider */
+                    {
+                        float mix_a = fx_chain_get_mix(engine, FX_CHAIN_DEFAULT);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + slider_x);
+                        ImGui::SetNextItemWidth(slider_w);
+                        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.80f, 0.55f, 0.15f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1.0f, 0.70f, 0.20f, 1.0f));
+                        if (ImGui::SliderFloat("Chain A Level", &mix_a, 0.0f, 1.0f, "%.2f")) {
+                            fx_chain_set_mix(engine, FX_CHAIN_DEFAULT, mix_a);
+                        }
+                        ImGui::PopStyleColor(2);
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                    /* Chain B mix slider */
+                    if (s_chain_b >= 0) {
+                        float mix_b = fx_chain_get_mix(engine, s_chain_b);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + slider_x);
+                        ImGui::SetNextItemWidth(slider_w);
+                        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.30f, 0.60f, 0.80f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.40f, 0.75f, 1.0f, 1.0f));
+                        if (ImGui::SliderFloat("Chain B Level", &mix_b, 0.0f, 1.0f, "%.2f")) {
+                            fx_chain_set_mix(engine, s_chain_b, mix_b);
+                        }
+                        ImGui::PopStyleColor(2);
+                    }
+                }
+
                 /* ── AMP detail view ──────────────────────────── */
-                if (sel.kind == NODE_AMP) {
-                    fx_amp_type_t amp_type = fx_amp_get_model(engine, FX_CHAIN_DEFAULT);
+                else if (sel.kind == NODE_AMP) {
+                    fx_chain_id amp_chain = (fx_chain_id)sel.chain_id;
+                    fx_amp_type_t amp_type = fx_amp_get_model(engine, amp_chain);
 
                     static const char *amp_names[] = {
                         "Fullerton Clean", "British Crunch", "Southwest Lead",
@@ -1797,7 +2019,9 @@ int main(int argc, char *argv[]) {
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - text_size.x) * 0.5f);
                         ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", amp_name);
                         ImGui::SetWindowFontScale(1.0f);
-                        const char *sub = "Amp Model";
+                        char sub[64];
+                        snprintf(sub, sizeof(sub), "Amp Model %s",
+                                 is_dual ? (amp_chain == 0 ? "— Chain A" : "— Chain B") : "");
                         ImVec2 sub_sz = ImGui::CalcTextSize(sub);
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
                         ImGui::TextDisabled("%s", sub);
@@ -1814,8 +2038,10 @@ int main(int argc, char *argv[]) {
 
                     /* Model selector */
                     ImGui::SetNextItemWidth(200);
-                    if (ImGui::Combo("Model", &current_amp, amp_names, FX_AMP_COUNT)) {
-                        fx_amp_set_model(engine, FX_CHAIN_DEFAULT, (fx_amp_type_t)current_amp);
+                    char model_label[32];
+                    snprintf(model_label, sizeof(model_label), "Model##amp_%d", (int)amp_chain);
+                    if (ImGui::Combo(model_label, &current_amp, amp_names, FX_AMP_COUNT)) {
+                        fx_amp_set_model(engine, amp_chain, (fx_amp_type_t)current_amp);
                     }
 
                     ImGui::Dummy(ImVec2(0.0f, 8.0f));
@@ -1872,6 +2098,12 @@ int main(int argc, char *argv[]) {
                         ImGui::SameLine();
                         if (knob_float(name, &val, 0.0f, 1.0f, 0.5f, 0.01f)) {
                             fx_amp_set_param(engine, FX_CHAIN_DEFAULT, p, val);
+                        }
+                        /* Tooltip on amp knob */
+                        if (ImGui::IsItemHovered()) {
+                            int pi = (int)p;
+                            if (pi >= 0 && pi < s_amp_param_tooltip_count)
+                                ImGui::SetTooltip("%s", s_amp_param_tooltips[pi]);
                         }
                         ImGui::SameLine();
                     };
@@ -2334,6 +2566,26 @@ int main(int argc, char *argv[]) {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
+    }
+
+    /* Auto-save last session preset and config */
+    {
+        bool ok = fx_preset_save(engine, "presets/last_session.0xfx");
+        if (!ok) fx_preset_save(engine, "../presets/last_session.0xfx");
+        FX_INFO(ok ? "Session saved to last_session.0xfx" : "Could not auto-save session");
+    }
+    {
+        /* Snapshot window size before destruction */
+        int ww, wh;
+        SDL_GetWindowSize(window, &ww, &wh);
+        s_session_cfg.window_w          = ww;
+        s_session_cfg.window_h          = wh;
+        s_session_cfg.input_device_idx  = s_selected_input;
+        s_session_cfg.output_device_idx = s_selected_output;
+        s_session_cfg.buf_size_idx      = s_selected_buf_idx;
+        s_session_cfg.sr_idx            = s_selected_sr_idx;
+        session_config_save(&s_session_cfg);
+        FX_INFO("Config saved to %s", get_config_path());
     }
 
     /* Cleanup */
