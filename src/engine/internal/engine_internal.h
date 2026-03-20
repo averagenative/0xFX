@@ -134,6 +134,10 @@ struct fx_engine {
     /* Tuner */
     fx_tuner_state_t    tuner;
 
+    /* Level tracking — updated each process() call */
+    float input_peak;   /* peak of last input block */
+    float output_peak;  /* peak of last output block */
+
     /* Scratch buffers for processing (pre-allocated) */
     float scratch_a[FX_MAX_BLOCK_SIZE];
     float scratch_b[FX_MAX_BLOCK_SIZE];

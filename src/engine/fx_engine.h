@@ -210,6 +210,11 @@ bool         fx_cab_get_bypass(fx_engine_t *engine, fx_chain_id chain);
 bool         fx_preset_save(fx_engine_t *engine, const char *path);
 bool         fx_preset_load(fx_engine_t *engine, const char *path);
 
+/* ── Level metering ───────────────────────────────────────────── */
+
+float        fx_engine_get_input_level(fx_engine_t *engine);   /* peak level of last processed block */
+float        fx_engine_get_output_level(fx_engine_t *engine);  /* peak level of last processed output */
+
 /* ── Tuner ────────────────────────────────────────────────────── */
 
 float        fx_tuner_get_frequency(fx_engine_t *engine);

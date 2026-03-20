@@ -67,6 +67,14 @@ void fx_engine_process(fx_engine_t *engine,
     if (!engine || !input || !output || num_frames <= 0) return;
     if (num_frames > FX_MAX_BLOCK_SIZE) num_frames = FX_MAX_BLOCK_SIZE;
 
+    /* Track input peak */
+    float in_peak = 0.0f;
+    for (int i = 0; i < num_frames; i++) {
+        float a = fabsf(input[i]);
+        if (a > in_peak) in_peak = a;
+    }
+    engine->input_peak = in_peak;
+
     /* Copy input to scratch buffer for in-place processing */
     float *buf = engine->scratch_a;
     memcpy(buf, input, (size_t)num_frames * sizeof(float));
@@ -135,6 +143,24 @@ void fx_engine_process(fx_engine_t *engine,
 
     /* ── Output ──────────────────────────────────────────────── */
     memcpy(output, buf, (size_t)num_frames * sizeof(float));
+
+    /* Track output peak */
+    float out_peak = 0.0f;
+    for (int i = 0; i < num_frames; i++) {
+        float a = fabsf(buf[i]);
+        if (a > out_peak) out_peak = a;
+    }
+    engine->output_peak = out_peak;
+}
+
+/* ── Level metering ───────────────────────────────────────────── */
+
+float fx_engine_get_input_level(fx_engine_t *engine) {
+    return engine ? engine->input_peak : 0.0f;
+}
+
+float fx_engine_get_output_level(fx_engine_t *engine) {
+    return engine ? engine->output_peak : 0.0f;
 }
 
 /* ── Signal chain — pedal management ──────────────────────────── */

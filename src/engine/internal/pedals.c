@@ -255,6 +255,34 @@ typedef struct {
     int    prev_mode;   /* detect mode changes */
 } loop_station_state_t;
 
+/* Infinite Hold — freeze / drone pedal */
+#define HOLD_BUF_LEN 2048
+
+typedef struct {
+    float buffer[HOLD_BUF_LEN];
+    int   position;      /* looping playback position */
+    int   capture_pos;   /* samples captured so far during fill */
+    int   frozen;        /* 0 = passthrough / capturing, 1 = looping */
+    float amplitude;     /* current amplitude of frozen signal (decay) */
+} infinite_hold_state_t;
+
+/* Grain Cloud — granular delay */
+#define GRAIN_REC_LEN  44100  /* 1 second record buffer */
+#define GRAIN_VOICES   4
+
+typedef struct {
+    float read_pos;   /* fractional playback position in record buffer */
+    int   remaining;  /* samples left in this grain */
+    float pitch_rate; /* playback rate (0.5-2.0) */
+} grain_voice_t;
+
+typedef struct {
+    float       rec_buf[GRAIN_REC_LEN];
+    int         write_pos;          /* circular write head */
+    grain_voice_t voices[GRAIN_VOICES];
+    float       trigger_accum;      /* fractional trigger accumulator */
+} grain_cloud_state_t;
+
 /* Cloud Verb — long ambient reverb with freeze/near-infinite feedback */
 #define CLOUD_NUM_COMBS   4
 #define CLOUD_NUM_ALLPASS 2
@@ -2109,6 +2137,188 @@ static void loop_station_free(fx_pedal_instance_t *p) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
+ * INFINITE HOLD — freeze / drone pedal
+ * Captures HOLD_BUF_LEN samples then loops them continuously.
+ * Params: [0] hold  (0-0.5=passthrough, 0.5-1.0=frozen)
+ *         [1] decay (frozen signal amplitude decay per sample, 0-1 → 0.999-1.0)
+ *         [2] mix   (dry/wet)
+ * ══════════════════════════════════════════════════════════════════ */
+
+static void infinite_hold_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    infinite_hold_state_t *s =
+        (infinite_hold_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->position    = 0;
+    s->capture_pos = 0;
+    s->frozen      = 0;
+    s->amplitude   = 1.0f;
+
+    p->state      = s;
+    p->params[0]  = 0.0f;   /* hold: off */
+    p->params[1]  = 1.0f;   /* decay: sustain indefinitely */
+    p->params[2]  = 0.5f;   /* mix */
+}
+
+static void infinite_hold_process(fx_pedal_instance_t *p, float *buf, int n,
+                                  float sr) {
+    (void)sr;
+    infinite_hold_state_t *s = (infinite_hold_state_t *)p->state;
+    if (!s) return;
+
+    /* Decode hold param: below 0.5 = off, 0.5+ = frozen */
+    int want_frozen = (p->params[0] >= 0.5f);
+
+    /* Transition: entering frozen mode — reset capture */
+    if (want_frozen && !s->frozen) {
+        s->capture_pos = 0;
+        s->frozen      = 0;  /* not yet fully frozen — still filling */
+        s->amplitude   = 1.0f;
+    }
+
+    /* Decay: map 0-1 → 0.999-1.0 */
+    float decay = 0.999f + p->params[1] * 0.001f;
+    float mix   = p->params[2];
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+        float wet = 0.0f;
+
+        if (!want_frozen) {
+            /* Passthrough mode — also continuously record into buffer */
+            s->buffer[s->capture_pos % HOLD_BUF_LEN] = dry;
+            s->capture_pos = (s->capture_pos + 1) % HOLD_BUF_LEN;
+            s->frozen = 0;
+            wet = dry;
+        } else if (!s->frozen) {
+            /* Filling the capture buffer */
+            s->buffer[s->capture_pos] = dry;
+            s->capture_pos++;
+            if (s->capture_pos >= HOLD_BUF_LEN) {
+                /* Buffer full: start looping */
+                s->frozen   = 1;
+                s->position = 0;
+            }
+            wet = dry;  /* pass through while capturing */
+        } else {
+            /* Looping frozen buffer */
+            wet = s->buffer[s->position] * s->amplitude;
+            s->position = (s->position + 1) % HOLD_BUF_LEN;
+            s->amplitude *= decay;
+        }
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * GRAIN CLOUD — granular delay
+ * Records into a 1-second circular buffer, then fires grains
+ * (short slices) at random positions with configurable pitch rate.
+ * Params: [0] density (0-1 → 1-20 grains/sec)
+ *         [1] size    (0-1 → grain length 10ms-200ms)
+ *         [2] pitch   (0-1 → playback rate 0.5x-2.0x)
+ *         [3] mix     (dry/wet blend)
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* LCG random in [0, GRAIN_REC_LEN) */
+static unsigned int g_grain_rng = 12345u;
+static inline int grain_rand_pos(void) {
+    g_grain_rng = g_grain_rng * 1664525u + 1013904223u;
+    return (int)(g_grain_rng % (unsigned int)GRAIN_REC_LEN);
+}
+
+static void grain_cloud_init(fx_pedal_instance_t *p, float sr) {
+    (void)sr;
+    grain_cloud_state_t *s =
+        (grain_cloud_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->write_pos     = 0;
+    s->trigger_accum = 0.0f;
+    for (int v = 0; v < GRAIN_VOICES; v++) {
+        s->voices[v].remaining  = 0;
+        s->voices[v].read_pos   = 0.0f;
+        s->voices[v].pitch_rate = 1.0f;
+    }
+
+    p->state     = s;
+    p->params[0] = 0.3f;  /* density */
+    p->params[1] = 0.3f;  /* size (~60ms) */
+    p->params[2] = 0.5f;  /* pitch (1.0x) */
+    p->params[3] = 0.5f;  /* mix */
+}
+
+static void grain_cloud_process(fx_pedal_instance_t *p, float *buf, int n,
+                                float sr) {
+    grain_cloud_state_t *s = (grain_cloud_state_t *)p->state;
+    if (!s) return;
+
+    /* Map params */
+    float density_hz   = 1.0f + p->params[0] * 19.0f;       /* 1-20 grains/sec */
+    float size_ms      = 10.0f + p->params[1] * 190.0f;      /* 10ms-200ms */
+    int   grain_len    = (int)(size_ms * sr / 1000.0f);
+    if (grain_len < 1) grain_len = 1;
+    if (grain_len > GRAIN_REC_LEN) grain_len = GRAIN_REC_LEN;
+    float pitch_rate   = 0.5f + p->params[2] * 1.5f;         /* 0.5-2.0 */
+    float mix          = p->params[3];
+
+    /* Samples per trigger interval */
+    float trigger_interval = sr / density_hz;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Write input into circular record buffer */
+        s->rec_buf[s->write_pos] = dry;
+        s->write_pos = (s->write_pos + 1) % GRAIN_REC_LEN;
+
+        /* Check if a new grain should fire */
+        s->trigger_accum += 1.0f;
+        if (s->trigger_accum >= trigger_interval) {
+            s->trigger_accum -= trigger_interval;
+
+            /* Find a free voice (one with remaining==0) */
+            for (int v = 0; v < GRAIN_VOICES; v++) {
+                if (s->voices[v].remaining == 0) {
+                    /* Pick a random read position in the record buffer */
+                    int start = grain_rand_pos();
+                    s->voices[v].read_pos   = (float)start;
+                    s->voices[v].remaining  = grain_len;
+                    s->voices[v].pitch_rate = pitch_rate;
+                    break;
+                }
+            }
+        }
+
+        /* Sum all active grain voices */
+        float wet = 0.0f;
+        for (int v = 0; v < GRAIN_VOICES; v++) {
+            if (s->voices[v].remaining > 0) {
+                /* Linear interpolation read from record buffer */
+                int   ri0 = (int)s->voices[v].read_pos % GRAIN_REC_LEN;
+                int   ri1 = (ri0 + 1) % GRAIN_REC_LEN;
+                float frac = s->voices[v].read_pos - (float)(int)s->voices[v].read_pos;
+                wet += s->rec_buf[ri0] * (1.0f - frac) + s->rec_buf[ri1] * frac;
+
+                /* Advance read position by pitch rate */
+                s->voices[v].read_pos += s->voices[v].pitch_rate;
+                if ((int)s->voices[v].read_pos >= GRAIN_REC_LEN)
+                    s->voices[v].read_pos -= (float)GRAIN_REC_LEN;
+
+                s->voices[v].remaining--;
+            }
+        }
+
+        /* Normalise by voice count to avoid clipping */
+        wet *= (1.0f / (float)GRAIN_VOICES);
+
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
  * Pedal metadata
  * ══════════════════════════════════════════════════════════════════ */
 
@@ -2173,6 +2383,8 @@ static const char *shimmer_verb_params[]   = { "Decay", "Shimmer", "Mix" };
 static const char *cloud_verb_params[]     = { "Decay", "Filter", "Mix" };
 static const char *octave_engine_params[]  = { "Sub", "Dry", "Up" };
 static const char *loop_station_params[]   = { "Mode", "Level", "Feedback" };
+static const char *infinite_hold_params[]  = { "Hold", "Decay", "Mix" };
+static const char *grain_cloud_params[]    = { "Density", "Size", "Pitch", "Mix" };
 
 const char *fx_pedal_get_type_name(fx_pedal_type_t type) {
     if (type < 0 || type >= FX_PEDAL_TYPE_COUNT) return "?";
@@ -2210,6 +2422,8 @@ int fx_pedal_get_param_count(fx_pedal_type_t type) {
         case FX_PEDAL_CLOUD_VERB:      return 3;
         case FX_PEDAL_OCTAVE_ENGINE:   return 3;
         case FX_PEDAL_LOOP_STATION:    return 3;
+        case FX_PEDAL_INFINITE_HOLD:   return 3;
+        case FX_PEDAL_GRAIN_CLOUD:     return 4;
         default: return 3;
     }
 }
@@ -2302,6 +2516,12 @@ const char *fx_pedal_get_param_name(fx_pedal_type_t type, int param) {
         case FX_PEDAL_LOOP_STATION:
             if (param < 3) return loop_station_params[param];
             break;
+        case FX_PEDAL_INFINITE_HOLD:
+            if (param < 3) return infinite_hold_params[param];
+            break;
+        case FX_PEDAL_GRAIN_CLOUD:
+            if (param < 4) return grain_cloud_params[param];
+            break;
         default:
             break;
     }
@@ -2355,6 +2575,8 @@ void fx_pedal_init_state(fx_pedal_instance_t *p, float sr) {
         case FX_PEDAL_CLOUD_VERB:      cloud_verb_init(p, sr);      break;
         case FX_PEDAL_OCTAVE_ENGINE:   octave_engine_init(p, sr);   break;
         case FX_PEDAL_LOOP_STATION:    loop_station_init(p, sr);    break;
+        case FX_PEDAL_INFINITE_HOLD:   infinite_hold_init(p, sr);   break;
+        case FX_PEDAL_GRAIN_CLOUD:     grain_cloud_init(p, sr);     break;
         default:
             /* Unimplemented pedals: passthrough */
             break;
@@ -2415,6 +2637,8 @@ void fx_pedal_process(fx_pedal_instance_t *p, float *buf, int n, float sr) {
         case FX_PEDAL_CLOUD_VERB:      cloud_verb_process(p, buf, n, sr);      break;
         case FX_PEDAL_OCTAVE_ENGINE:   octave_engine_process(p, buf, n, sr);   break;
         case FX_PEDAL_LOOP_STATION:    loop_station_process(p, buf, n, sr);    break;
+        case FX_PEDAL_INFINITE_HOLD:   infinite_hold_process(p, buf, n, sr);   break;
+        case FX_PEDAL_GRAIN_CLOUD:     grain_cloud_process(p, buf, n, sr);     break;
         default:
             /* Unimplemented pedals: passthrough (no state, caught above) */
             break;

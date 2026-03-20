@@ -1294,7 +1294,7 @@
     "title": "Implement Infinite Hold (freeze pedal)",
     "domain": "engine",
     "phase": 8,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1315,7 +1315,7 @@
     "title": "Implement Grain Cloud (granular delay)",
     "domain": "engine",
     "phase": 8,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-017"
@@ -1636,7 +1636,7 @@
     "title": "Input/output level meters + signal detection",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 15000,

@@ -755,8 +755,10 @@ int main(int argc, char *argv[]) {
                 { FX_PEDAL_CLOUD_VERB,     "Cloud Verb (Ambient/Freeze)" },
                 { FX_PEDAL_OCTAVE_ENGINE,  "Octave Engine (Polyphonic Octave)" },
                 { FX_PEDAL_LOOP_STATION,   "Loop Station (Looper)" },
+                { FX_PEDAL_INFINITE_HOLD,  "Infinite Hold (Freeze/Drone)" },
+                { FX_PEDAL_GRAIN_CLOUD,    "Grain Cloud (Granular Delay)" },
             };
-            static const int pedal_menu_count = 22;
+            static const int pedal_menu_count = 24;
 
             /* Draw a pedal section (pre or post amp) */
             auto draw_pedal_section = [&](const char *label, fx_chain_pos_t pos,
@@ -919,15 +921,133 @@ int main(int argc, char *argv[]) {
             ImGui::End();
         }
 
-        /* ── Status bar ───────────────────────────────────────── */
+        /* ── Status bar — level meters ────────────────────────── */
         {
             ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - 30));
             ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 30));
             ImGui::Begin("##status", NULL,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
-            ImGui::TextDisabled("0xFX v0.1.0 | Phase 3B MVP | %.0f FPS",
-                               io.Framerate);
+
+            /* Fetch live levels from engine */
+            float in_level  = fx_engine_get_input_level(engine);
+            float out_level = fx_engine_get_output_level(engine);
+
+            /* "No signal" detection — count frames below threshold */
+            static int s_no_signal_frames = 0;
+            const float NO_SIGNAL_THRESHOLD = 0.001f;
+            const int   NO_SIGNAL_FRAME_COUNT = 120; /* ~2 sec at 60fps */
+            if (in_level < NO_SIGNAL_THRESHOLD) {
+                s_no_signal_frames++;
+            } else {
+                s_no_signal_frames = 0;
+            }
+            bool no_signal = (s_no_signal_frames >= NO_SIGNAL_FRAME_COUNT);
+
+            /* Clip flash timers */
+            static float s_in_clip_timer  = 0.0f;
+            static float s_out_clip_timer = 0.0f;
+            float dt = io.DeltaTime;
+            if (in_level  > 0.95f) s_in_clip_timer  = 0.5f;
+            if (out_level > 0.95f) s_out_clip_timer = 0.5f;
+            s_in_clip_timer  = s_in_clip_timer  > 0.0f ? s_in_clip_timer  - dt : 0.0f;
+            s_out_clip_timer = s_out_clip_timer > 0.0f ? s_out_clip_timer - dt : 0.0f;
+
+            ImDrawList *dl  = ImGui::GetWindowDrawList();
+            ImVec2      win = ImGui::GetWindowPos();
+            float bar_h     = 10.0f;
+            float bar_w     = 180.0f;
+            float bar_y     = win.y + (30.0f - bar_h) * 0.5f;
+
+            /* Helper — draw a single LED-style VU bar */
+            auto draw_meter = [&](float x0, float level, bool clip_flash) {
+                /* Background trough */
+                dl->AddRectFilled(ImVec2(x0, bar_y), ImVec2(x0 + bar_w, bar_y + bar_h),
+                                  IM_COL32(30, 28, 24, 255), 2.0f);
+
+                /* Clamp for drawing */
+                float t = level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level);
+
+                /* Segmented LED look: 20 segments */
+                int num_segs    = 20;
+                float seg_w     = (bar_w - (num_segs - 1) * 1.0f) / (float)num_segs;
+                int   lit_segs  = (int)(t * num_segs + 0.5f);
+                for (int s = 0; s < num_segs; s++) {
+                    float sx0 = x0 + s * (seg_w + 1.0f);
+                    float sx1 = sx0 + seg_w;
+                    if (s < lit_segs) {
+                        /* Color: green → yellow → red */
+                        ImU32 col;
+                        if (s < 14) {
+                            /* Green */
+                            col = IM_COL32(40, 200, 60, 255);
+                        } else if (s < 18) {
+                            /* Yellow */
+                            int r = 180 + (s - 14) * 15;
+                            col = IM_COL32(r, 200, 20, 255);
+                        } else {
+                            /* Red */
+                            col = IM_COL32(230, 40, 30, 255);
+                        }
+                        dl->AddRectFilled(ImVec2(sx0, bar_y), ImVec2(sx1, bar_y + bar_h),
+                                          col, 1.5f);
+                    } else {
+                        /* Dim unlit segment */
+                        dl->AddRectFilled(ImVec2(sx0, bar_y), ImVec2(sx1, bar_y + bar_h),
+                                          IM_COL32(40, 40, 36, 255), 1.5f);
+                    }
+                }
+
+                /* Clip indicator — extra segment to the right */
+                float cx0 = x0 + bar_w + 3.0f;
+                float cx1 = cx0 + 8.0f;
+                ImU32 clip_col = clip_flash
+                    ? IM_COL32(255, 30, 20, 255)
+                    : IM_COL32(60, 20, 18, 255);
+                dl->AddRectFilled(ImVec2(cx0, bar_y), ImVec2(cx1, bar_y + bar_h),
+                                  clip_col, 2.0f);
+            };
+
+            /* Left: input meter */
+            float left_x = 10.0f;
+            ImGui::SetCursorPosX(left_x);
+            ImGui::SetCursorPosY((30.0f - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::TextDisabled("IN");
+            ImGui::SameLine(0, 4);
+
+            /* Reserve space for the drawn meter (ImGui layout tracks cursor) */
+            ImVec2 in_meter_pos = ImGui::GetCursorScreenPos();
+            in_meter_pos.y = bar_y;
+            draw_meter(in_meter_pos.x, in_level, s_in_clip_timer > 0.0f);
+            ImGui::Dummy(ImVec2(bar_w + 12.0f, bar_h));
+
+            /* Center: NO SIGNAL text */
+            if (no_signal) {
+                const char *ns_text = "NO SIGNAL";
+                float text_w = ImGui::CalcTextSize(ns_text).x;
+                float cx = (io.DisplaySize.x - text_w) * 0.5f;
+                float cy = (30.0f - ImGui::GetTextLineHeight()) * 0.5f;
+                ImGui::SetCursorPos(ImVec2(cx, cy));
+                ImGui::TextColored(ImVec4(0.55f, 0.50f, 0.40f, 0.7f), "%s", ns_text);
+            }
+
+            /* Right: output meter — positioned from right edge */
+            {
+                float right_margin  = 10.0f;
+                float clip_w        = 8.0f + 3.0f;   /* clip indicator width + gap */
+                float label_w       = ImGui::CalcTextSize("OUT").x + 4.0f;
+                float out_x         = io.DisplaySize.x - right_margin - clip_w - bar_w - label_w;
+
+                ImGui::SetCursorPos(ImVec2(out_x, (30.0f - ImGui::GetTextLineHeight()) * 0.5f));
+                ImGui::TextDisabled("OUT");
+                ImGui::SameLine(0, 4);
+
+                ImVec2 out_meter_pos = ImGui::GetCursorScreenPos();
+                out_meter_pos.y = bar_y;
+                draw_meter(out_meter_pos.x, out_level, s_out_clip_timer > 0.0f);
+                ImGui::Dummy(ImVec2(bar_w + clip_w, bar_h));
+            }
+
             ImGui::End();
         }
 
