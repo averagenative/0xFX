@@ -2452,7 +2452,7 @@
     "title": "Plugin GUI: embed ImGui in CLAP/VST3 host window",
     "domain": "frontend",
     "phase": 6,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 60000,
@@ -2517,8 +2517,8 @@
     "title": "Plugin: factory preset enumeration",
     "domain": "engine",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
@@ -2537,8 +2537,8 @@
     "title": "Plugin: tuner data + MIDI CC passthrough",
     "domain": "engine",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-337"
     ],

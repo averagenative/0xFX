@@ -30,8 +30,8 @@
 #define CPLUG_WANT_GUI         1
 #define CPLUG_GUI_RESIZABLE    0
 
-/* No MIDI I/O required for an amp simulator */
-#define CPLUG_WANT_MIDI_INPUT  0
+/* MIDI CC input for parameter control via hardware controllers */
+#define CPLUG_WANT_MIDI_INPUT  1
 #define CPLUG_WANT_MIDI_OUTPUT 0
 
 /* ── VST3 identifiers ──────────────────────────────────────────── */

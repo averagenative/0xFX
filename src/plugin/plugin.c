@@ -210,6 +210,30 @@ static fx_chain_pos_t slot_pos(int slot)
     return (slot < NUM_PRE_PEDAL_SLOTS) ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
 }
 
+/* ── Factory preset table ────────────────────────────────────────── */
+
+typedef struct {
+    const char *name;       /* display name in host */
+    const char *path;       /* file path, or NULL for "init/reset" */
+} FactoryPreset;
+
+static const FactoryPreset FACTORY_PRESETS[] = {
+    { "Clean Sparkle",     "presets/clean_sparkle.0xfx"     },
+    { "Classic Crunch",    "presets/classic_crunch.0xfx"    },
+    { "Modern High Gain",  "presets/modern_high_gain.0xfx"  },
+    { "Chimey British",    "presets/chimey_british.0xfx"    },
+    { "Bluesy Tweed",      "presets/bluesy_tweed.0xfx"      },
+    { "Init (Clean)",      NULL                             },
+};
+
+#define NUM_FACTORY_PRESETS (sizeof(FACTORY_PRESETS) / sizeof(FACTORY_PRESETS[0]))
+
+/* ── MIDI CC constants ──────────────────────────────────────────── */
+
+#define MIDI_CC_COUNT     128
+#define MIDI_STATUS_CC    0xB0
+#define MIDI_CC_UNMAPPED  (-1)
+
 /* ── Plugin state struct ─────────────────────────────────────────── */
 
 typedef struct {
@@ -238,6 +262,13 @@ typedef struct {
      * Chain B ID — -1 when in single chain mode.
      */
     fx_chain_id chain_b_id;
+
+    /*
+     * MIDI CC mapping: cc_map[cc_number] = param index, or MIDI_CC_UNMAPPED.
+     * Hosts send MIDI CC events through CPLUG_EVENT_MIDI; we map them to
+     * plugin parameters using this table.
+     */
+    int cc_map[MIDI_CC_COUNT];
 } OxFXPlugin;
 
 /* ── Type-from-param helpers ────────────────────────────────────── */
@@ -806,6 +837,142 @@ static void apply_param(OxFXPlugin *p, int index, float value)
     }
 }
 
+/* ── Sync parameter cache from engine state ──────────────────────── */
+
+/*
+ * After loading a preset via fx_preset_load(), the engine's internal state
+ * has changed. We need to read it back and update our param_values[] cache
+ * so the host sees correct values.  We also rebuild pedal/studio slot IDs.
+ */
+static void sync_params_from_engine(OxFXPlugin *p)
+{
+    if (!p->engine) return;
+
+    /* ── Chain A amp knobs ─────────────────────────────────────── */
+    for (int i = 0; i < NUM_AMP_KNOBS; i++)
+        p->param_values[i] = fx_amp_get_param(p->engine, FX_CHAIN_DEFAULT,
+                                               AMP_KNOBS[i].amp_param);
+
+    /* Chain A amp model */
+    p->param_values[IDX_A_AMP_MODEL] = (float)fx_amp_get_model(p->engine,
+                                                                 FX_CHAIN_DEFAULT);
+
+    /* Chain A cab — cab type is synthetic so we leave cached value;
+     * cab bypass we can read back */
+    p->param_values[IDX_A_CAB_BYPASS] = fx_cab_get_bypass(p->engine,
+                                                            FX_CHAIN_DEFAULT) ? 1.0f : 0.0f;
+
+    /* Chain A mic */
+    p->param_values[IDX_A_MIC_TYPE] = (float)fx_mic_get_type(p->engine,
+                                                               FX_CHAIN_DEFAULT);
+    p->param_values[IDX_A_MIC_DISTANCE] = fx_mic_get_param(p->engine,
+                                                             FX_CHAIN_DEFAULT,
+                                                             FX_MIC_PARAM_DISTANCE);
+    p->param_values[IDX_A_MIC_ANGLE] = fx_mic_get_param(p->engine,
+                                                          FX_CHAIN_DEFAULT,
+                                                          FX_MIC_PARAM_ANGLE);
+    p->param_values[IDX_A_MIC_POSITION] = fx_mic_get_param(p->engine,
+                                                             FX_CHAIN_DEFAULT,
+                                                             FX_MIC_PARAM_POSITION);
+
+    /* ── Noise gate ───────────────────────────────────────────── */
+    p->param_values[IDX_GATE_THRESHOLD] = fx_gate_get_threshold(p->engine);
+    p->param_values[IDX_GATE_ATTACK]    = fx_gate_get_attack(p->engine);
+    p->param_values[IDX_GATE_RELEASE]   = fx_gate_get_release(p->engine);
+    p->param_values[IDX_GATE_HOLD]      = fx_gate_get_hold(p->engine);
+
+    /* ── Chain mode ───────────────────────────────────────────── */
+    int chain_count = fx_chain_get_count(p->engine);
+    bool is_dual = (chain_count > 1);
+    p->param_values[IDX_CHAIN_MODE] = is_dual ? 1.0f : 0.0f;
+
+    /* ── Chain A/B mix ────────────────────────────────────────── */
+    p->param_values[IDX_MIX_A] = fx_chain_get_mix(p->engine, FX_CHAIN_DEFAULT);
+
+    if (is_dual) {
+        /* Find chain B ID — it's the first chain that isn't FX_CHAIN_DEFAULT.
+         * After preset load the engine may have created chain B internally.
+         * We assume chain ID 1 if dual mode. */
+        p->chain_b_id = 1;  /* engine creates chains sequentially */
+        p->param_values[IDX_MIX_B] = fx_chain_get_mix(p->engine, p->chain_b_id);
+
+        /* Chain B amp knobs */
+        for (int i = 0; i < NUM_AMP_KNOBS; i++)
+            p->param_values[IDX_B_AMP_START + i] =
+                fx_amp_get_param(p->engine, p->chain_b_id,
+                                 AMP_KNOBS[i].amp_param);
+
+        p->param_values[IDX_B_AMP_MODEL] = (float)fx_amp_get_model(p->engine,
+                                                                     p->chain_b_id);
+        p->param_values[IDX_B_CAB_BYPASS] = fx_cab_get_bypass(p->engine,
+                                                                p->chain_b_id) ? 1.0f : 0.0f;
+        p->param_values[IDX_B_MIC_TYPE] = (float)fx_mic_get_type(p->engine,
+                                                                   p->chain_b_id);
+        p->param_values[IDX_B_MIC_DISTANCE] = fx_mic_get_param(p->engine,
+                                                                 p->chain_b_id,
+                                                                 FX_MIC_PARAM_DISTANCE);
+        p->param_values[IDX_B_MIC_ANGLE] = fx_mic_get_param(p->engine,
+                                                              p->chain_b_id,
+                                                              FX_MIC_PARAM_ANGLE);
+        p->param_values[IDX_B_MIC_POSITION] = fx_mic_get_param(p->engine,
+                                                                 p->chain_b_id,
+                                                                 FX_MIC_PARAM_POSITION);
+    } else {
+        p->chain_b_id = -1;
+    }
+
+    /* ── Pedal slots — read back from engine ──────────────────── */
+    /* Pre-pedals */
+    int pre_count = fx_chain_get_pedal_count(p->engine, FX_CHAIN_POS_PRE);
+    for (int slot = 0; slot < NUM_PRE_PEDAL_SLOTS; slot++) {
+        int base = PEDAL_BLOCK_START(slot);
+        if (slot < pre_count) {
+            fx_pedal_id pid = fx_chain_get_pedal_at(p->engine,
+                                                     FX_CHAIN_POS_PRE, slot);
+            p->pedal_ids[slot] = pid;
+            fx_pedal_type_t ptype = fx_pedal_get_type(p->engine, pid);
+            p->param_values[base] = (float)(ptype + 1); /* +1: 0 = none */
+            p->param_values[base + 1] = fx_pedal_get_bypass(p->engine, pid) ? 1.0f : 0.0f;
+            for (int sub = 2; sub < PARAMS_PER_PEDAL; sub++)
+                p->param_values[base + sub] = fx_pedal_get_param(p->engine,
+                                                                   pid, sub - 2);
+        } else {
+            p->pedal_ids[slot] = -1;
+            p->param_values[base] = 0.0f; /* none */
+            p->param_values[base + 1] = 0.0f;
+            for (int sub = 2; sub < PARAMS_PER_PEDAL; sub++)
+                p->param_values[base + sub] = 0.0f;
+        }
+    }
+
+    /* Post-pedals */
+    int post_count = fx_chain_get_pedal_count(p->engine, FX_CHAIN_POS_POST);
+    for (int i = 0; i < NUM_POST_PEDAL_SLOTS; i++) {
+        int slot = NUM_PRE_PEDAL_SLOTS + i;
+        int base = PEDAL_BLOCK_START(slot);
+        if (i < post_count) {
+            fx_pedal_id pid = fx_chain_get_pedal_at(p->engine,
+                                                     FX_CHAIN_POS_POST, i);
+            p->pedal_ids[slot] = pid;
+            fx_pedal_type_t ptype = fx_pedal_get_type(p->engine, pid);
+            p->param_values[base] = (float)(ptype + 1);
+            p->param_values[base + 1] = fx_pedal_get_bypass(p->engine, pid) ? 1.0f : 0.0f;
+            for (int sub = 2; sub < PARAMS_PER_PEDAL; sub++)
+                p->param_values[base + sub] = fx_pedal_get_param(p->engine,
+                                                                   pid, sub - 2);
+        } else {
+            p->pedal_ids[slot] = -1;
+            p->param_values[base] = 0.0f;
+            p->param_values[base + 1] = 0.0f;
+            for (int sub = 2; sub < PARAMS_PER_PEDAL; sub++)
+                p->param_values[base + sub] = 0.0f;
+        }
+    }
+
+    /* Studio slots — engine doesn't expose iteration, so leave cached values.
+     * Presets typically restore studio state through the engine internally. */
+}
+
 /* ── Library load/unload ────────────────────────────────────────── */
 
 void cplug_libraryLoad(void)   {}
@@ -829,6 +996,10 @@ void *cplug_createPlugin(CplugHostContext *ctx)
     /* Initialise studio IDs to "empty" */
     for (int i = 0; i < NUM_STUDIO_SLOTS; i++)
         p->studio_ids[i] = -1;
+
+    /* Initialise MIDI CC map to unmapped */
+    for (int i = 0; i < MIDI_CC_COUNT; i++)
+        p->cc_map[i] = MIDI_CC_UNMAPPED;
 
     p->engine = fx_engine_create(p->sample_rate);
     if (!p->engine) {
@@ -1462,6 +1633,29 @@ void cplug_process(void *ptr, CplugProcessContext *ctx)
             cplug_setParameterValue(p, event.parameter.id, event.parameter.value);
             break;
 
+        case CPLUG_EVENT_MIDI: {
+            /*
+             * Parse MIDI CC messages and map to plugin parameters.
+             * Status byte 0xBn = CC on channel n.
+             */
+            uint8_t status = event.midi.status;
+            if ((status & 0xF0) == MIDI_STATUS_CC) {
+                int cc    = event.midi.data1 & 0x7F;
+                int value = event.midi.data2 & 0x7F;
+                int param_index = p->cc_map[cc];
+
+                if (param_index >= 0 && param_index < NUM_PARAMS) {
+                    /* Map 0-127 MIDI value to parameter range */
+                    float lo  = param_min(param_index);
+                    float hi  = param_max(param_index);
+                    float val = lo + ((float)value / 127.0f) * (hi - lo);
+                    uint32_t pid = cplug_getParameterID(p, (uint32_t)param_index);
+                    cplug_setParameterValue(p, pid, (double)val);
+                }
+            }
+            break;
+        }
+
         case CPLUG_EVENT_PROCESS_AUDIO: {
             uint32_t end_frame = event.processAudio.endFrame;
             uint32_t n         = end_frame - frame;
@@ -1523,6 +1717,104 @@ void cplug_loadState(void *user_plugin, const void *state_ctx, cplug_readProc re
             apply_param(p, index, state[i].value);
         }
     }
+}
+
+/* ── Factory preset enumeration ─────────────────────────────────── */
+
+/*
+ * CPLUG does not have built-in preset enumeration callbacks.
+ * These functions provide the preset API that the embedded GUI and
+ * host-specific extensions can call.  The CLAP preset-load extension
+ * or VST3 program list can be wired up to these in the future.
+ */
+
+uint32_t cplug_getNumPresets(void *user_plugin)
+{
+    (void)user_plugin;
+    return (uint32_t)NUM_FACTORY_PRESETS;
+}
+
+const char *cplug_getPresetName(void *user_plugin, uint32_t index)
+{
+    (void)user_plugin;
+    if (index >= NUM_FACTORY_PRESETS) return NULL;
+    return FACTORY_PRESETS[index].name;
+}
+
+void cplug_setPreset(void *user_plugin, uint32_t index)
+{
+    OxFXPlugin *p = (OxFXPlugin *)user_plugin;
+    if (!p || !p->engine) return;
+    if (index >= NUM_FACTORY_PRESETS) return;
+
+    const FactoryPreset *preset = &FACTORY_PRESETS[index];
+
+    if (preset->path) {
+        /* Load preset file — try direct path first, then parent dir */
+        bool loaded = fx_preset_load(p->engine, preset->path);
+        if (!loaded) {
+            /* Try with ../ prefix (common when running from build dir) */
+            char alt_path[256];
+            snprintf(alt_path, sizeof(alt_path), "../%s", preset->path);
+            loaded = fx_preset_load(p->engine, alt_path);
+        }
+
+        if (loaded) {
+            /* Sync parameter cache from engine state */
+            sync_params_from_engine(p);
+        }
+    } else {
+        /* "Init (Clean)" — reset engine to defaults */
+        fx_engine_destroy(p->engine);
+
+        /* Clear cached IDs */
+        for (int i = 0; i < NUM_PEDAL_SLOTS; i++)
+            p->pedal_ids[i] = -1;
+        for (int i = 0; i < NUM_STUDIO_SLOTS; i++)
+            p->studio_ids[i] = -1;
+        p->chain_b_id = -1;
+
+        p->engine = fx_engine_create(p->sample_rate);
+
+        /* Reset all params to defaults and apply */
+        if (p->engine) {
+            for (int i = 0; i < NUM_PARAMS; i++) {
+                p->param_values[i] = param_default(i);
+                apply_param(p, i, p->param_values[i]);
+            }
+        }
+    }
+}
+
+/* ── MIDI CC mapping — plugin-level API ──────────────────────────── */
+
+/*
+ * Map a MIDI CC number (0-127) to a plugin parameter index.
+ * The GUI or host extension can call these to configure CC mappings.
+ */
+
+void oxfx_plugin_map_cc(void *user_plugin, int cc_number, int param_index)
+{
+    OxFXPlugin *p = (OxFXPlugin *)user_plugin;
+    if (!p) return;
+    if (cc_number >= 0 && cc_number < MIDI_CC_COUNT)
+        p->cc_map[cc_number] = param_index;
+}
+
+void oxfx_plugin_unmap_cc(void *user_plugin, int cc_number)
+{
+    OxFXPlugin *p = (OxFXPlugin *)user_plugin;
+    if (!p) return;
+    if (cc_number >= 0 && cc_number < MIDI_CC_COUNT)
+        p->cc_map[cc_number] = MIDI_CC_UNMAPPED;
+}
+
+int oxfx_plugin_get_cc_mapping(void *user_plugin, int cc_number)
+{
+    OxFXPlugin *p = (OxFXPlugin *)user_plugin;
+    if (!p) return MIDI_CC_UNMAPPED;
+    if (cc_number < 0 || cc_number >= MIDI_CC_COUNT) return MIDI_CC_UNMAPPED;
+    return p->cc_map[cc_number];
 }
 
 /* ── GUI (CPLUG — embedded ImGui+SDL2+OpenGL) ──────────────────── */
