@@ -5,25 +5,50 @@
   "author": "0xFX Factory",
   "description": "Warm tweed breakup with subtle grit. SRV, Albert King, Freddie King.",
   "category": "Classic",
-  "tags": ["blues", "texas", "tweed", "warm", "overdrive"],
+  "tags": [
+    "blues",
+    "texas",
+    "tweed",
+    "warm",
+    "overdrive"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -52, "attack_ms": 1, "release_ms": 55, "hold_ms": 15 }
+      "noise_gate": {
+        "threshold_db": -52,
+        "attack_ms": 1,
+        "release_ms": 55,
+        "hold_ms": 15
+      }
     },
     "pre_pedals": [
       {
         "type": "blues_grit",
         "bypass": false,
-        "params": { "drive": 0.3, "tone": 0.5, "level": 0.6 }
+        "params": {
+          "drive": 0.3,
+          "tone": 0.5,
+          "level": 0.6
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "tweed_blues",
-          "params": { "gain": 0.5, "volume": 0.6, "bass": 0.5, "mid": 0.55, "treble": 0.5, "presence": 0.45 }
+          "params": {
+            "gain": 0.5,
+            "volume": 0.7,
+            "bass": 0.5,
+            "mid": 0.55,
+            "treble": 0.5,
+            "presence": 0.45
+          }
         },
-        "cab": { "type": "1x12_open", "bypass": false },
+        "cab": {
+          "type": "1x12_open",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -31,7 +56,11 @@
       {
         "type": "drip_verb",
         "bypass": false,
-        "params": { "decay": 0.3, "tone": 0.5, "mix": 0.2 }
+        "params": {
+          "decay": 0.3,
+          "tone": 0.5,
+          "mix": 0.2
+        }
       }
     ]
   }

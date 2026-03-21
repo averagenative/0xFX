@@ -5,19 +5,41 @@
   "author": "0xFX Factory",
   "description": "Shimmery clean with chorus, delay, and phaser. The Cure, Depeche Mode, New Order.",
   "category": "80s",
-  "tags": ["80s", "new-wave", "chorus", "delay", "clean"],
+  "tags": [
+    "80s",
+    "new-wave",
+    "chorus",
+    "delay",
+    "clean"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+      "noise_gate": {
+        "threshold_db": -55,
+        "attack_ms": 1,
+        "release_ms": 50,
+        "hold_ms": 10
+      }
     },
     "pre_pedals": [],
     "chains": [
       {
         "amp": {
           "model": "essex_chime",
-          "params": { "gain": 0.35, "volume": 0.6, "bass": 0.4, "mid": 0.5, "treble": 0.65, "presence": 0.55, "cut": 0.3 }
+          "params": {
+            "gain": 0.35,
+            "volume": 0.7,
+            "bass": 0.4,
+            "mid": 0.5,
+            "treble": 0.65,
+            "presence": 0.55,
+            "cut": 0.3
+          }
         },
-        "cab": { "type": "2x12_closed", "bypass": false },
+        "cab": {
+          "type": "2x12_closed",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -25,17 +47,30 @@
       {
         "type": "liquid_chorus",
         "bypass": false,
-        "params": { "rate": 0.35, "depth": 0.45, "mix": 0.35 }
+        "params": {
+          "rate": 0.35,
+          "depth": 0.45,
+          "mix": 0.35
+        }
       },
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.4, "feedback": 0.35, "mix": 0.3 }
+        "params": {
+          "time": 0.4,
+          "feedback": 0.35,
+          "mix": 0.3
+        }
       },
       {
         "type": "phase_sweep",
         "bypass": false,
-        "params": { "rate": 0.25, "depth": 0.4, "feedback": 0.3, "mix": 0.25 }
+        "params": {
+          "rate": 0.25,
+          "depth": 0.4,
+          "feedback": 0.3,
+          "mix": 0.25
+        }
       }
     ]
   }

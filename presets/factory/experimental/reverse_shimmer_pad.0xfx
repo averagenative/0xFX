@@ -3,21 +3,42 @@
   "version": "1.0",
   "name": "Reverse Shimmer Pad",
   "author": "0xFX Factory",
-  "description": "Guitar becomes a synth pad — maxed shimmer with cloud verb, long delay, and vibrato.",
+  "description": "Guitar becomes a synth pad \u2014 maxed shimmer with cloud verb, long delay, and vibrato.",
   "category": "Experimental",
-  "tags": ["ambient", "pad", "shimmer", "experimental", "synth-like"],
+  "tags": [
+    "ambient",
+    "pad",
+    "shimmer",
+    "experimental",
+    "synth-like"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -55, "attack_ms": 2, "release_ms": 80, "hold_ms": 20 }
+      "noise_gate": {
+        "threshold_db": -55,
+        "attack_ms": 2,
+        "release_ms": 80,
+        "hold_ms": 20
+      }
     },
     "pre_pedals": [],
     "chains": [
       {
         "amp": {
           "model": "fullerton_clean",
-          "params": { "gain": 0.15, "volume": 0.55, "bass": 0.45, "mid": 0.5, "treble": 0.55, "presence": 0.5 }
+          "params": {
+            "gain": 0.15,
+            "volume": 0.75,
+            "bass": 0.45,
+            "mid": 0.5,
+            "treble": 0.55,
+            "presence": 0.5
+          }
         },
-        "cab": { "type": "1x12_open", "bypass": false },
+        "cab": {
+          "type": "1x12_open",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -25,22 +46,38 @@
       {
         "type": "drift_vibrato",
         "bypass": false,
-        "params": { "rate": 0.15, "depth": 0.3, "mix": 0.35 }
+        "params": {
+          "rate": 0.15,
+          "depth": 0.3,
+          "mix": 0.35
+        }
       },
       {
         "type": "shimmer_verb",
         "bypass": false,
-        "params": { "decay": 0.9, "shimmer": 0.85, "mix": 0.6 }
+        "params": {
+          "decay": 0.9,
+          "shimmer": 0.85,
+          "mix": 0.6
+        }
       },
       {
         "type": "cloud_verb",
         "bypass": false,
-        "params": { "decay": 0.85, "damping": 0.35, "mix": 0.45 }
+        "params": {
+          "decay": 0.85,
+          "damping": 0.35,
+          "mix": 0.45
+        }
       },
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.6, "feedback": 0.4, "mix": 0.3 }
+        "params": {
+          "time": 0.6,
+          "feedback": 0.4,
+          "mix": 0.3
+        }
       }
     ]
   }

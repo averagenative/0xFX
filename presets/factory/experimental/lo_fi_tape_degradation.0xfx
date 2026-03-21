@@ -3,32 +3,61 @@
   "version": "1.0",
   "name": "Lo-Fi Tape Degradation",
   "author": "0xFX Factory",
-  "description": "Deliberately degraded vintage tone — warm tape saturation with subtle crush and analog delay.",
+  "description": "Deliberately degraded vintage tone \u2014 warm tape saturation with subtle crush and analog delay.",
   "category": "Experimental",
-  "tags": ["lo-fi", "tape", "vintage", "degraded", "warm"],
+  "tags": [
+    "lo-fi",
+    "tape",
+    "vintage",
+    "degraded",
+    "warm"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 60, "hold_ms": 15 }
+      "noise_gate": {
+        "threshold_db": -55,
+        "attack_ms": 1,
+        "release_ms": 60,
+        "hold_ms": 15
+      }
     },
     "pre_pedals": [
       {
         "type": "warm_tape",
         "bypass": false,
-        "params": { "drive": 0.45, "tone": 0.4, "mix": 0.5 }
+        "params": {
+          "drive": 0.45,
+          "tone": 0.4,
+          "mix": 0.5
+        }
       },
       {
         "type": "grit_crush",
         "bypass": false,
-        "params": { "bits": 0.7, "rate": 0.75, "mix": 0.2 }
+        "params": {
+          "bits": 0.7,
+          "rate": 0.75,
+          "mix": 0.2
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "tweed_blues",
-          "params": { "gain": 0.4, "volume": 0.55, "bass": 0.5, "mid": 0.5, "treble": 0.45, "presence": 0.4 }
+          "params": {
+            "gain": 0.4,
+            "volume": 0.7,
+            "bass": 0.5,
+            "mid": 0.5,
+            "treble": 0.45,
+            "presence": 0.4
+          }
         },
-        "cab": { "type": "1x12_open", "bypass": false },
+        "cab": {
+          "type": "1x12_open",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -36,14 +65,23 @@
       {
         "type": "carbon_delay",
         "bypass": false,
-        "params": { "time": 0.35, "feedback": 0.25, "tone": 0.35, "mix": 0.2 }
+        "params": {
+          "time": 0.35,
+          "feedback": 0.25,
+          "tone": 0.35,
+          "mix": 0.2
+        }
       }
     ],
     "studio": [
       {
         "type": "reel_warmth",
         "bypass": false,
-        "params": { "drive": 0.35, "tone": 0.4, "mix": 0.35 }
+        "params": {
+          "drive": 0.35,
+          "tone": 0.4,
+          "mix": 0.35
+        }
       }
     ]
   }

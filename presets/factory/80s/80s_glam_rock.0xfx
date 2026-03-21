@@ -5,25 +5,52 @@
   "author": "0xFX Factory",
   "description": "Hot-rodded Marshall lead with delay and plate verb. Hair metal solos and power chords.",
   "category": "80s",
-  "tags": ["80s", "glam", "hair-metal", "lead", "shred"],
+  "tags": [
+    "80s",
+    "glam",
+    "hair-metal",
+    "lead",
+    "shred"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -45, "attack_ms": 0.8, "release_ms": 35, "hold_ms": 12 }
+      "noise_gate": {
+        "threshold_db": -45,
+        "attack_ms": 0.8,
+        "release_ms": 35,
+        "hold_ms": 12
+      }
     },
     "pre_pedals": [
       {
         "type": "jade_drive",
         "bypass": false,
-        "params": { "drive": 0.5, "tone": 0.6, "level": 0.7 }
+        "params": {
+          "drive": 0.5,
+          "tone": 0.6,
+          "level": 0.7
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "regent_800",
-          "params": { "gain": 0.7, "volume": 0.5, "bass": 0.5, "mid": 0.65, "treble": 0.6, "presence": 0.55, "sag": 0.25, "master": 0.6 }
+          "params": {
+            "gain": 0.7,
+            "volume": 0.7,
+            "bass": 0.5,
+            "mid": 0.65,
+            "treble": 0.6,
+            "presence": 0.55,
+            "sag": 0.25,
+            "master": 0.7
+          }
         },
-        "cab": { "type": "4x12_slant", "bypass": false },
+        "cab": {
+          "type": "4x12_slant",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -31,12 +58,20 @@
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.35, "feedback": 0.25, "mix": 0.2 }
+        "params": {
+          "time": 0.35,
+          "feedback": 0.25,
+          "mix": 0.2
+        }
       },
       {
         "type": "plate_verb",
         "bypass": false,
-        "params": { "decay": 0.45, "damping": 0.35, "mix": 0.2 }
+        "params": {
+          "decay": 0.45,
+          "damping": 0.35,
+          "mix": 0.2
+        }
       }
     ]
   }

@@ -39,7 +39,7 @@
           "model": "essex_chime",
           "params": {
             "gain": 0.45,
-            "volume": 0.6,
+            "volume": 0.7,
             "bass": 0.35,
             "mid": 0.55,
             "treble": 0.7,

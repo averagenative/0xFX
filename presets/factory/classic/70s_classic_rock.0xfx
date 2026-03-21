@@ -5,25 +5,52 @@
   "author": "0xFX Factory",
   "description": "British crunch with light overdrive and slapback echo. Zeppelin, Sabbath, Purple.",
   "category": "Classic",
-  "tags": ["70s", "rock", "crunch", "british", "overdrive"],
+  "tags": [
+    "70s",
+    "rock",
+    "crunch",
+    "british",
+    "overdrive"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -50, "attack_ms": 1, "release_ms": 45, "hold_ms": 12 }
+      "noise_gate": {
+        "threshold_db": -50,
+        "attack_ms": 1,
+        "release_ms": 45,
+        "hold_ms": 12
+      }
     },
     "pre_pedals": [
       {
         "type": "jade_drive",
         "bypass": false,
-        "params": { "drive": 0.35, "tone": 0.5, "level": 0.65 }
+        "params": {
+          "drive": 0.35,
+          "tone": 0.5,
+          "level": 0.65
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "brit_crunch",
-          "params": { "gain": 0.55, "volume": 0.55, "bass": 0.55, "mid": 0.6, "treble": 0.55, "presence": 0.5, "sag": 0.35, "master": 0.6 }
+          "params": {
+            "gain": 0.55,
+            "volume": 0.7,
+            "bass": 0.55,
+            "mid": 0.6,
+            "treble": 0.55,
+            "presence": 0.5,
+            "sag": 0.35,
+            "master": 0.7
+          }
         },
-        "cab": { "type": "4x12_straight", "bypass": false },
+        "cab": {
+          "type": "4x12_straight",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -31,7 +58,11 @@
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.3, "feedback": 0.2, "mix": 0.15 }
+        "params": {
+          "time": 0.3,
+          "feedback": 0.2,
+          "mix": 0.15
+        }
       }
     ]
   }

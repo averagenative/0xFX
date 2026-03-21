@@ -28,7 +28,7 @@
           "model": "fullerton_clean",
           "params": {
             "gain": 0.2,
-            "volume": 0.6,
+            "volume": 0.75,
             "bass": 0.45,
             "mid": 0.5,
             "treble": 0.6,

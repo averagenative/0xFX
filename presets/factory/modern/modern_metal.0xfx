@@ -5,30 +5,62 @@
   "author": "0xFX Factory",
   "description": "Tight high-gain with fast compression and noise gate. Modern djent and progressive metal.",
   "category": "Modern",
-  "tags": ["modern", "metal", "high-gain", "tight", "djent"],
+  "tags": [
+    "modern",
+    "metal",
+    "high-gain",
+    "tight",
+    "djent"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -40, "attack_ms": 0.5, "release_ms": 25, "hold_ms": 15 }
+      "noise_gate": {
+        "threshold_db": -40,
+        "attack_ms": 0.5,
+        "release_ms": 25,
+        "hold_ms": 15
+      }
     },
     "pre_pedals": [
       {
         "type": "punch_comp",
         "bypass": false,
-        "params": { "input": 0.5, "output": 0.6, "attack": 0.15, "release": 0.4 }
+        "params": {
+          "input": 0.5,
+          "output": 0.6,
+          "attack": 0.15,
+          "release": 0.4
+        }
       },
       {
         "type": "noise_gate",
         "bypass": false,
-        "params": { "threshold": 0.6, "attack": 0.05, "release": 0.25 }
+        "params": {
+          "threshold": 0.6,
+          "attack": 0.05,
+          "release": 0.25
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "meridian_high_gain",
-          "params": { "gain": 0.8, "volume": 0.45, "bass": 0.5, "mid": 0.55, "treble": 0.6, "presence": 0.65, "sag": 0.1, "master": 0.5 }
+          "params": {
+            "gain": 0.8,
+            "volume": 0.7,
+            "bass": 0.5,
+            "mid": 0.55,
+            "treble": 0.6,
+            "presence": 0.65,
+            "sag": 0.1,
+            "master": 0.7
+          }
         },
-        "cab": { "type": "4x12_straight", "bypass": false },
+        "cab": {
+          "type": "4x12_straight",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -37,7 +69,12 @@
       {
         "type": "iron_squeeze",
         "bypass": false,
-        "params": { "input": 0.5, "output": 0.6, "attack": 0.15, "release": 0.4 }
+        "params": {
+          "input": 0.5,
+          "output": 0.6,
+          "attack": 0.15,
+          "release": 0.4
+        }
       }
     ]
   }

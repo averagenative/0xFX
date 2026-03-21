@@ -5,25 +5,52 @@
   "author": "0xFX Factory",
   "description": "High-gain American lead with tight gate. Van Halen brown sound, Satriani, Vai.",
   "category": "80s",
-  "tags": ["80s", "shred", "high-gain", "lead", "american"],
+  "tags": [
+    "80s",
+    "shred",
+    "high-gain",
+    "lead",
+    "american"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -42, "attack_ms": 0.5, "release_ms": 30, "hold_ms": 15 }
+      "noise_gate": {
+        "threshold_db": -42,
+        "attack_ms": 0.5,
+        "release_ms": 30,
+        "hold_ms": 15
+      }
     },
     "pre_pedals": [
       {
         "type": "noise_gate",
         "bypass": false,
-        "params": { "threshold": 0.55, "attack": 0.1, "release": 0.3 }
+        "params": {
+          "threshold": 0.55,
+          "attack": 0.1,
+          "release": 0.3
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "southwest_lead",
-          "params": { "gain": 0.75, "volume": 0.5, "bass": 0.45, "mid": 0.55, "treble": 0.6, "presence": 0.6, "sag": 0.2, "master": 0.55 }
+          "params": {
+            "gain": 0.75,
+            "volume": 0.7,
+            "bass": 0.45,
+            "mid": 0.55,
+            "treble": 0.6,
+            "presence": 0.6,
+            "sag": 0.2,
+            "master": 0.7
+          }
         },
-        "cab": { "type": "4x12_straight", "bypass": false },
+        "cab": {
+          "type": "4x12_straight",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -31,7 +58,11 @@
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.32, "feedback": 0.2, "mix": 0.15 }
+        "params": {
+          "time": 0.32,
+          "feedback": 0.2,
+          "mix": 0.15
+        }
       }
     ]
   }

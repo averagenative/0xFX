@@ -5,25 +5,50 @@
   "author": "0xFX Factory",
   "description": "Warm overdrive with analog delay and shimmer. Modest Mouse, Pavement, Built to Spill.",
   "category": "90s",
-  "tags": ["90s", "indie", "lo-fi", "alternative", "warm"],
+  "tags": [
+    "90s",
+    "indie",
+    "lo-fi",
+    "alternative",
+    "warm"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -52, "attack_ms": 1, "release_ms": 50, "hold_ms": 12 }
+      "noise_gate": {
+        "threshold_db": -52,
+        "attack_ms": 1,
+        "release_ms": 50,
+        "hold_ms": 12
+      }
     },
     "pre_pedals": [
       {
         "type": "gold_drive",
         "bypass": false,
-        "params": { "gain": 0.4, "treble": 0.5, "output": 0.65 }
+        "params": {
+          "gain": 0.4,
+          "treble": 0.5,
+          "output": 0.65
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "emerald_deluxe",
-          "params": { "gain": 0.45, "volume": 0.55, "bass": 0.5, "mid": 0.55, "treble": 0.55, "presence": 0.5 }
+          "params": {
+            "gain": 0.45,
+            "volume": 0.7,
+            "bass": 0.5,
+            "mid": 0.55,
+            "treble": 0.55,
+            "presence": 0.5
+          }
         },
-        "cab": { "type": "1x12_open", "bypass": false },
+        "cab": {
+          "type": "1x12_open",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -31,12 +56,21 @@
       {
         "type": "carbon_delay",
         "bypass": false,
-        "params": { "time": 0.35, "feedback": 0.3, "tone": 0.45, "mix": 0.25 }
+        "params": {
+          "time": 0.35,
+          "feedback": 0.3,
+          "tone": 0.45,
+          "mix": 0.25
+        }
       },
       {
         "type": "shimmer_verb",
         "bypass": false,
-        "params": { "decay": 0.4, "shimmer": 0.3, "mix": 0.2 }
+        "params": {
+          "decay": 0.4,
+          "shimmer": 0.3,
+          "mix": 0.2
+        }
       }
     ]
   }
