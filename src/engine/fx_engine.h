@@ -37,7 +37,7 @@ typedef enum {
     FX_AMP_REGENT_800,           /* inspired by classic British rock/metal amps */
     FX_AMP_SOLAR_MONOLITH,       /* inspired by massive clean-to-doom amps */
     FX_AMP_ECLIPSE_DRONE,        /* inspired by extreme low-end drone amps */
-    FX_AMP_EMERALD_DELUXE,       /* inspired by American 22W 6V6 combo amps */
+    FX_AMP_EMERALD_DELUXE,       /* inspired by American 40W hotrod combo amps */
     FX_AMP_COUNT
 } fx_amp_type_t;
 

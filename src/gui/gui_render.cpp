@@ -1328,7 +1328,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     "Fullerton Clean", "British Crunch", "Southwest Lead",
                     "Essex Chime", "Tweed Blues", "Meridian High Gain",
                     "Citrus Roar", "Citrus Terror", "Regent 800",
-                    "Solar Monolith", "Eclipse Drone", "Emerald Deluxe"
+                    "Solar Monolith", "Eclipse Drone", "Emerald Ratrod Deluxe"
                 };
                 int current_amp = (int)amp_type;
                 float avail_w = ImGui::GetContentRegionAvail().x;

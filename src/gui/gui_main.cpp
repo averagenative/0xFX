@@ -2484,7 +2484,7 @@ int main(int argc, char *argv[]) {
                         "Fullerton Clean", "British Crunch", "Southwest Lead",
                         "Essex Chime", "Tweed Blues", "Meridian High Gain",
                         "Citrus Roar", "Citrus Terror", "Regent 800",
-                        "Solar Monolith", "Eclipse Drone", "Emerald Deluxe"
+                        "Solar Monolith", "Eclipse Drone", "Emerald Ratrod Deluxe"
                     };
                     int current_amp = (int)amp_type;
                     float avail_w = ImGui::GetContentRegionAvail().x;
@@ -2555,6 +2555,7 @@ int main(int argc, char *argv[]) {
                                 "Classic British rock — single-channel aggression",
                                 "Massive doom — thunderous clean into crushing fuzz",
                                 "Extreme drone — subsonic doom with feedback sustain",
+                                "American hotrod combo — clean to gritty drive, 6L6 punch",
                             };
                             if (current_amp >= 0 && current_amp < FX_AMP_COUNT)
                                 ImGui::SetTooltip("%s", amp_descs[current_amp]);

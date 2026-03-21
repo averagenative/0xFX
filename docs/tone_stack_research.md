@@ -10,7 +10,7 @@ digitized version of its actual analog R/C tone stack network.
 
 ### 1. Fender TMB (Treble-Mid-Bass)
 
-**Used by:** Fullerton Clean, Emerald Deluxe, Tweed Blues, Southwest Lead, Meridian High Gain, Solar Monolith, Eclipse Drone
+**Used by:** Fullerton Clean, Emerald Ratrod Deluxe, Tweed Blues, Southwest Lead, Meridian High Gain, Solar Monolith, Eclipse Drone
 
 The classic Fender tone stack is a passive R/C ladder network placed between preamp stages.
 It was first used in the 5F6-A Bassman and became the basis for nearly all American amp

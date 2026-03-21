@@ -291,7 +291,7 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .presence_freq = 3500.0f,
         .power_threshold = 0.88f,
     },
-    /* Emerald Deluxe — inspired by Fender Hot Rod Deluxe (PR246)
+    /* Emerald Ratrod Deluxe — inspired by Fender Hot Rod Deluxe (PR246)
      * Modern Fender circuit (1990s), NOT a vintage Deluxe Reverb:
      * - 3 channels: Clean / Drive / More Drive
      * - 12AX7 preamp with gain + MOSFET/diode clipping on drive channels
@@ -790,7 +790,7 @@ static const char *amp_type_names[FX_AMP_COUNT] = {
     "Regent 800",
     "Solar Monolith",
     "Eclipse Drone",
-    "Emerald Deluxe",
+    "Emerald Ratrod Deluxe",
 };
 
 static const char *amp_param_names[FX_AMP_PARAM_COUNT] = {
