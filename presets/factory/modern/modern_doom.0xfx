@@ -38,7 +38,7 @@
           "model": "solar_monolith",
           "params": {
             "gain": 0.7,
-            "volume": 0.7,
+            "volume": 0.6,
             "bass": 0.7,
             "mid": 0.45,
             "treble": 0.4,

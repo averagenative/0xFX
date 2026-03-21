@@ -2993,6 +2993,7 @@ int main(int argc, char *argv[]) {
 
                 /* ── MERGE (mixer) detail view ────────────────── */
                 else if (sel.kind == NODE_MERGE) {
+                    ImGui::PushID("merge_detail");
                     float avail_w = ImGui::GetContentRegionAvail().x;
                     ImGui::SetWindowFontScale(1.35f);
                     const char *title = "Mix / Blend";
@@ -3042,6 +3043,7 @@ int main(int argc, char *argv[]) {
                         }
                         ImGui::PopStyleColor(2);
                     }
+                    ImGui::PopID(); /* merge_detail */
                 }
 
                 /* ── AMP detail view ──────────────────────────── */
@@ -3459,7 +3461,9 @@ int main(int argc, char *argv[]) {
                         ImGui::SameLine(0, 8);
                     }
                     ImGui::SetNextItemWidth(200);
-                    if (ImGui::Combo("##cab_type_sel", &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
+                    char cab_combo_id[32];
+                    snprintf(cab_combo_id, sizeof(cab_combo_id), "##cab_sel_%d", sel.chain_id);
+                    if (ImGui::Combo(cab_combo_id, &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
                         fx_cab_params_t params;
                         params.cab_type = (fx_cab_type_t)cab_type_ref;
                         params.mic_pos  = FX_MIC_ON_AXIS;
