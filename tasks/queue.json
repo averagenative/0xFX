@@ -2647,5 +2647,56 @@
       "src/engine/internal/amp.c",
       "docs/tone_stack_research.md"
     ]
+  },
+  {
+    "id": "TASK-346",
+    "priority": "HIGH",
+    "title": "Genre preset library + preset browser UI",
+    "domain": "frontend",
+    "phase": 3,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 60000,
+    "acceptanceCriteria": [
+      "Research popular amp+pedal+cab+rack combos from different genres/eras",
+      "Create 20+ factory presets as .0xfx JSON files covering: 60s/70s classic rock, blues, 80s glam/hair metal, 90s grunge, 90s indie/shoegaze, pop rock, modern metal/djent, doom/stoner, post-rock/ambient, country/twang, funk/R&B clean, jazz clean, hyper pop/glitch, bitcrush/lo-fi, worship/ambient, punk, neo-soul, synthwave guitar",
+      "Each preset includes: amp model + all knob settings, cab type, pedal chain (type + params + order), rack effects, mic sim if applicable",
+      "Preset browser button in toolbar (between preset name and REC)",
+      "Preset browser popup/panel: organized by genre/category with thumbnails or icons",
+      "Click to load preset, shows preview of signal chain before loading",
+      "Save/Save As functionality for user presets (separate from factory)",
+      "Import/Export .0xfx files via file dialog",
+      "Research Line 6 Helix, Neural DSP, Positive Grid BIAS preset systems for UX inspiration",
+      "Some experimental/wacky presets: hyper pop glitch chain, lo-fi tape degradation, drone/feedback ambient, reverse shimmer pad, telephone/radio EQ"
+    ],
+    "files": [
+      "presets/",
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-347",
+    "priority": "HIGH",
+    "title": "Sync all standalone features to plugin renderer",
+    "domain": "frontend",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-346"
+    ],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "gui_render.cpp has full parity with gui_main.cpp for all features",
+      "Includes: programmatic buttons, stomp areas, section labels, cab scroll, recording UI, preset browser",
+      "All knob/LED/stomp position maps synced",
+      "All amp tooltip descriptions synced",
+      "Consider migrating gui_main.cpp to call fx_gui_render_frame() to eliminate duplication"
+    ],
+    "files": [
+      "src/gui/gui_render.cpp",
+      "src/gui/gui_main.cpp"
+    ]
   }
 ]

@@ -99,19 +99,22 @@ bool         fx_pedal_load_custom(fx_engine_t *engine, const char *json_path);
 ### Signal Flow
 
 ```
-Input → [Gate] → [Pre Pedals] → SPLIT → [Amp A] → [Cab A] → [Post FX A] ─┐
-                  (drag reorder)      → [Amp B] → [Cab B] → [Post FX B] ─┤→ [Mix] → Output
+Input → [Gate] → [Pre Pedals] → AMP → CAB → [Mic Sim] → [Rack FX] → Output
+                                  ↕ (parallel chains with mix)
 ```
 
-Supports single chain (default) or multi-amp split routing with per-chain blend.
+- 12 amp models with circuit-accurate tone stacks (Fender TMB, Marshall TMB, Vox Cut, Tilt EQ)
+- 41 effect pedals, 9 rack effects, 9 microphone models
+- Dual chain support with independent amp/cab/mic per chain
+- Recording: WAV/MP3/FLAC with timestamped filenames
 
 ### Plugin Architecture — CLAP First
 
-CLAP is the first-class plugin format (open, MIT licensed, better parameter model). VST3 is secondary for DAW compatibility. Both built via CPLUG, but CLAP gets new features first.
+CLAP is the first-class plugin format (open, MIT licensed, better parameter model). VST3 is secondary for DAW compatibility. Both built via CPLUG. 137 automatable parameters.
 
 ### Open Rig Format (.0xfx)
 
-JSON-based open format for presets, amp profiles, cab IR metadata, and user-designed pedals. Human-readable, shareable, version-controllable. Importers for NAM (.nam) amp profiles.
+JSON-based open format for presets. Human-readable, shareable, version-controllable. Genre-organized factory preset library. Import/export supported.
 
 ### Shared Code from 0x808/0xSYNTH
 

@@ -2,7 +2,7 @@
 
 **Guitar amp simulator & effects pedalboard — open source, cross-platform**
 
-Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3 plugins. Pure C99 DSP engine with skeuomorphic GUI.
+Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3 plugins. Pure C99 DSP engine with skeuomorphic GUI. Circuit-accurate tone stacks modeled from real amplifier schematics.
 
 > **Status: Pre-alpha** — engine and GUI functional, not yet production-ready.
 
@@ -11,36 +11,40 @@ Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3
 ## Signal Flow
 
 ```
-Input → [Gate] → [Pre Pedals] → AMP → CAB → [Mic Sim] → [Studio Rack] → Output
+Input → [Gate] → [Pre Pedals] → AMP → CAB → [Mic Sim] → [Rack FX] → Output
                                   ↕ (parallel chains with mix)
 ```
 
 - Dual amp chains with independent amp/cab/mic per chain
 - Pre/post amp pedal placement
-- Studio rack processors after cab (compressors, EQ, tape, limiter)
-- Optional microphone simulation with placement controls
+- Rack effects after cab (compressors, EQ, tape saturation, limiters)
+- Optional microphone simulation with distance/angle/position controls
+- Chromatic tuner with MPM pitch detection
 
 ---
 
-## Amp Models (11)
+## Amp Models (12)
 
-| Model | Inspired By | Character |
-|---|---|---|
-| Fullerton Clean | Fender Twin/Deluxe | Clean, chimey American — silver panel era |
-| British Crunch | Marshall Plexi | Classic British crunch |
-| Southwest Lead | Mesa Rectifier | High-gain American lead |
-| Essex Chime | Vox AC30 | British chime, Class A |
-| Tweed Blues | Fender Bassman | Warm vintage breakup |
-| Meridian High Gain | Peavey 6505 | Scooped, brutal modern metal |
-| Citrus Roar | Orange Rockerverb | Thick British EL34 warmth |
-| Citrus Terror | Orange Tiny Terror | Class A lunchbox grit |
-| Regent 800 | Marshall JCM800 | Single-channel rock aggression |
-| Solar Monolith | Sunn Model T | Massive doom, crushing fuzz |
-| Eclipse Drone | Sunn O))) | Extreme low-end with feedback sustain |
+All tone stacks modeled from actual circuit schematics using the Yeh/Abel/Smith DAFX transfer function with bilinear transform digitization.
 
-Each model: cascaded waveshaper preamp (1–4 stages) → 3-band tone stack + presence → power amp compression + sag.
+| Model | Inspired By | Tone Stack | Character |
+|---|---|---|---|
+| Fullerton Clean | Fender Twin Reverb | Fender TMB (AB763) | Clean, chimey American — silver panel era |
+| Tweed Blues | Fender Bassman | Fender TMB (5F6-A) | Warm vintage breakup |
+| Emerald Ratrod Deluxe | Fender Hot Rod Deluxe | Fender TMB (PR246) | American hotrod — clean to gritty drive, 6L6 punch |
+| British Crunch | Marshall Plexi | Marshall TMB (1959) | Classic British crunch |
+| Regent 800 | Marshall JCM800 | Marshall TMB (2203) | Single-channel rock aggression |
+| Southwest Lead | Mesa Rectifier | Fender TMB (modified) | High-gain American lead |
+| Meridian High Gain | Peavey 5150/6505 | Fender TMB (5150 lead) | Scooped, brutal modern metal |
+| Essex Chime | Vox AC30 | Vox Cut Control | British chime, Class A jangle |
+| Citrus Roar | Orange Rockerverb | Marshall TMB (Rockerverb) | Thick British EL34 warmth |
+| Citrus Terror | Orange Tiny Terror | Tilt EQ | Class A lunchbox grit |
+| Solar Monolith | Sunn Model T | Fender TMB (Sunn) | Massive doom, crushing fuzz |
+| Eclipse Drone | Sunn O))) | Fender TMB (Sunn) | Extreme low-end with feedback sustain |
 
-## Effects Pedals (39)
+Each model: cascaded waveshaper preamp (1–4 stages) → circuit-modeled tone stack → power amp compression + sag.
+
+## Effects Pedals (41)
 
 | Category | Pedals |
 |---|---|
@@ -56,14 +60,21 @@ Each model: cascaded waveshaper preamp (1–4 stages) → 3-band tone stack + pr
 | **Utility** | Grit Crush, Ring Tone, Warm Tape |
 | **Experimental** | Loop Station, Infinite Hold, Grain Cloud |
 
-## Studio Processors (post-amp rack gear)
+## Rack Effects (9)
 
-| Processor | Type | Inspired By |
+Post-amp/cab rack-mount studio processors:
+
+| Rack Effect | Type | Inspired By |
 |---|---|---|
 | Iron Squeeze | FET compressor | 1176 |
+| Velvet Press | Optical compressor | LA-2A |
+| Glue Bus | VCA bus compressor | SSL G-bus |
 | Glass EQ | Passive EQ | Pultec EQP-1A |
+| Precision EQ | Channel EQ | Neve 1073 |
 | Reel Warmth | Tape saturation | Studer/Ampex |
+| Valve Color | Tube saturation | Culture Vulture |
 | Brick Wall | Brickwall limiter | Modern mastering |
+| Room Engine | Room simulation | Early reflections |
 
 ## Microphone Simulation (optional, per-chain)
 
@@ -85,17 +96,32 @@ Default: DI (direct inject, no mic coloration).
 
 ## Cabinet IR
 
-- Load any `.wav` impulse response
 - 5 built-in synthetic IRs: 1x12 open, 2x12 closed, 4x12 straight, 4x12 slant, direct
+- Load any `.wav` impulse response
 - FFT overlap-add convolution (KissFFT)
+- Unity-gain normalization — shapes tone without changing volume
+
+## GUI Features
+
+- **Skeuomorphic design** — photorealistic amp faceplates, pedal body images, rack-mount units
+- **Interactive overlay knobs** with position indicator dots, parameter labels
+- **Stomp switch** — click the footswitch on pedal images to bypass/activate
+- **LED indicators** — green glow active, dim red bypassed
+- **Section labels** — PEDALS, AMP, CABINET, RACK FX above signal chain
+- **Signal chain visualization** — TRS input plug, XLR output connector, realistic cable rendering
+- **Preset browser** — genre-organized factory presets, save/load user presets
+- **Recording** — WAV (16/24-bit), MP3 (192/320kbps), FLAC (16/24-bit) with timestamped filenames
+- **Chromatic tuner** — MPM algorithm for accurate fundamental detection
+- **Input monitoring** — VU meters and tuner work without audio output (LIVE off)
+- **MIDI CC control** with MIDI learn mode
+- **Scroll-wheel** amp model and cab type cycling
 
 ## Additional Features
 
-- **MIDI CC control** with MIDI learn mode
-- **Chromatic tuner** (autocorrelation pitch detection)
+- **CLAP + VST3 plugins** (137 automatable parameters, factory presets, MIDI CC)
+- **Debug audio recorder** — captures input+output to WAV for troubleshooting
+- **Dual amp chains** with independent routing and mix
 - **Preset system** — `.0xfx` JSON format, session auto-save/restore
-- **CLAP + VST3 plugins** (59 automatable parameters)
-- **Debug audio recorder** — captures input+output to WAV
 
 ---
 
