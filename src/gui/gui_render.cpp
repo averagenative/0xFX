@@ -1328,7 +1328,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     "Fullerton Clean", "British Crunch", "Southwest Lead",
                     "Essex Chime", "Tweed Blues", "Meridian High Gain",
                     "Citrus Roar", "Citrus Terror", "Regent 800",
-                    "Solar Monolith", "Eclipse Drone"
+                    "Solar Monolith", "Eclipse Drone", "Emerald Deluxe"
                 };
                 int current_amp = (int)amp_type;
                 float avail_w = ImGui::GetContentRegionAvail().x;
@@ -1544,6 +1544,15 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         { FX_AMP_PARAM_FEEDBACK, 0.557f, 0.505f },
                         { FX_AMP_PARAM_VOLUME,   0.662f, 0.507f },
                     };
+                    static const AmpKnobPos emerald_deluxe_knobs[] = {
+                        { FX_AMP_PARAM_VOLUME,   0.299f, 0.476f },
+                        { FX_AMP_PARAM_TREBLE,   0.375f, 0.475f },
+                        { FX_AMP_PARAM_MID,      0.451f, 0.477f },
+                        { FX_AMP_PARAM_BASS,     0.527f, 0.476f },
+                        { FX_AMP_PARAM_PRESENCE, 0.603f, 0.477f },
+                        { FX_AMP_PARAM_GAIN,     0.678f, 0.476f },
+                        { FX_AMP_PARAM_SAG,      0.753f, 0.476f },
+                    };
 
                     const AmpKnobPos *knob_map = nullptr;
                     int knob_map_count = 0;
@@ -1559,6 +1568,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         case FX_AMP_REGENT_800:         knob_map = regent_knobs;        knob_map_count = 7; break;
                         case FX_AMP_SOLAR_MONOLITH:     knob_map = solar_knobs;         knob_map_count = 6; break;
                         case FX_AMP_ECLIPSE_DRONE:      knob_map = eclipse_knobs;       knob_map_count = 6; break;
+                        case FX_AMP_EMERALD_DELUXE:     knob_map = emerald_deluxe_knobs; knob_map_count = 7; break;
                         default: break;
                     }
 

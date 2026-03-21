@@ -54,6 +54,7 @@ static const char *amp_type_keys[FX_AMP_COUNT] = {
     "regent_800",
     "solar_monolith",
     "eclipse_drone",
+    "emerald_deluxe",
 };
 
 static const char *amp_param_keys[FX_AMP_PARAM_COUNT] = {

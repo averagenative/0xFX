@@ -291,6 +291,28 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .presence_freq = 3500.0f,
         .power_threshold = 0.88f,
     },
+    /* Emerald Deluxe — inspired by American 22W 6V6 combo amps (AB763 Deluxe Reverb)
+     * Fender TMB topology with the Deluxe's unique component values:
+     * - 10k mid pot (NOT 25k like the Twin) gives a different mid character
+     * - 2 preamp gain stages (12AX7 dual triode): moderate gain, chimey cleans
+     * - 6V6 power section breaks up earlier than the Twin's 6L6 tubes
+     * - Lower power threshold (0.60) = sweet power amp compression at moderate volumes
+     * - The "sweet spot" is volume 5-7: clean rhythm, breaks up on hard picking
+     * - Less bass than Twin, warmer mids, less harsh treble */
+    [FX_AMP_EMERALD_DELUXE] = {
+        .num_stages = 2,
+        .stage_gains = { 2.5f, 2.0f, 0, 0 },
+        .shaper = waveshape_tanh,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble pot, 250pF */
+            .R2 = 1e6f,    .C2 = 100e-9f,     /* 1M bass pot, 0.1uF */
+            .R3 = 10e3f,   .C3 = 47e-9f,      /* 10k mid pot, 0.047uF (Deluxe value — smaller than Twin's 25k) */
+            .R4 = 56e3f,                        /* 56k slope resistor */
+        },
+        .presence_freq = 4000.0f,
+        .power_threshold = 0.60f,
+    },
 };
 
 /* ── TMB Tone Stack — Circuit Model ──────────────────────────── */
@@ -767,6 +789,7 @@ static const char *amp_type_names[FX_AMP_COUNT] = {
     "Regent 800",
     "Solar Monolith",
     "Eclipse Drone",
+    "Emerald Deluxe",
 };
 
 static const char *amp_param_names[FX_AMP_PARAM_COUNT] = {
@@ -788,6 +811,7 @@ int fx_amp_get_param_count(fx_amp_type_t type) {
         case FX_AMP_REGENT_800:         return 7;
         case FX_AMP_SOLAR_MONOLITH:     return 6;
         case FX_AMP_ECLIPSE_DRONE:      return 6;
+        case FX_AMP_EMERALD_DELUXE:     return 7;
         default: return 0;
     }
 }

@@ -10,7 +10,7 @@ digitized version of its actual analog R/C tone stack network.
 
 ### 1. Fender TMB (Treble-Mid-Bass)
 
-**Used by:** Fullerton Clean, Tweed Blues, Southwest Lead, Meridian High Gain, Solar Monolith, Eclipse Drone
+**Used by:** Fullerton Clean, Emerald Deluxe, Tweed Blues, Southwest Lead, Meridian High Gain, Solar Monolith, Eclipse Drone
 
 The classic Fender tone stack is a passive R/C ladder network placed between preamp stages.
 It was first used in the 5F6-A Bassman and became the basis for nearly all American amp
@@ -46,13 +46,14 @@ and vice versa, which is what creates the distinctive Fender "feel."
 | Model | R1 | C1 | R2 | C2 | R3 | C3 | R4 | Character |
 |-------|----|----|----|----|----|----|-----|-----------|
 | Fullerton Clean | 250k | 250pF | 1M | 0.1uF | 25k | 47nF | 56k | Classic silver panel mid-scoop |
+| Emerald Deluxe | 250k | 250pF | 1M | 0.1uF | 10k | 47nF | 56k | AB763 Deluxe Reverb — 10k mid pot, warmer mids, earlier breakup |
 | Tweed Blues | 250k | 250pF | 1M | 0.1uF | 10k | 22nF | 56k | Warmer, less scooped than blackface |
 | Southwest Lead | 250k | 250pF | 1M | 68nF | 25k | 33nF | 39k | Tight bass, deep V-curve scoop |
 | Meridian High Gain | 250k | 500pF | 1M | 22nF | 25k | 22nF | 33k | 5150 lead ch. schematic values |
 | Solar Monolith | 250k | 500pF | 1M | 220nF | 25k | 100nF | 68k | Massive bass, warm mids |
 | Eclipse Drone | 250k | 680pF | 1M | 330nF | 25k | 150nF | 82k | Extreme bass, subsonic emphasis |
 
-**Sources:** Fender Twin Reverb AB763 schematic, 5F6-A Bassman schematic, Mesa Dual Rectifier service manual, Peavey 5150 schematic (1992).
+**Sources:** Fender Twin Reverb AB763 schematic, Fender Deluxe Reverb AB763 schematic, 5F6-A Bassman schematic, Mesa Dual Rectifier service manual, Peavey 5150 schematic (1992).
 
 ### 2. Marshall TMB
 
@@ -175,12 +176,13 @@ simpler topologies (Vox cut, tilt EQ).
    Audio Effects (DAFX-06), Montreal, Canada, 2006.
 
 2. Fender Twin Reverb AB763 schematic (1963)
-3. Fender 5F6-A Bassman schematic (1958)
-4. Marshall JTM45 schematic (1962)
-5. Marshall JCM800 2203 schematic (1981)
-6. Vox AC30/6 Top Boost schematic (1964)
-7. Mesa/Boogie Dual Rectifier schematic
-8. Peavey 5150 schematic (1992)
-9. Orange Tiny Terror schematic (2006)
-10. Orange Rockerverb schematic
-11. Sunn Model T schematic (1969)
+3. Fender Deluxe Reverb AB763 schematic (1963)
+4. Fender 5F6-A Bassman schematic (1958)
+5. Marshall JTM45 schematic (1962)
+6. Marshall JCM800 2203 schematic (1981)
+7. Vox AC30/6 Top Boost schematic (1964)
+8. Mesa/Boogie Dual Rectifier schematic
+9. Peavey 5150 schematic (1992)
+10. Orange Tiny Terror schematic (2006)
+11. Orange Rockerverb schematic
+12. Sunn Model T schematic (1969)

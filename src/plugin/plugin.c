@@ -1444,7 +1444,7 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
             "Fullerton Clean", "Brit Crunch", "Southwest Lead",
             "Essex Chime", "Tweed Blues", "Meridian High Gain",
             "Citrus Roar", "Citrus Terror", "Regent 800",
-            "Solar Monolith", "Eclipse Drone"
+            "Solar Monolith", "Eclipse Drone", "Emerald Deluxe"
         };
         snprintf(buf, bufsize, "%s", amp_names[model]);
         return;
