@@ -1,0 +1,38 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "60s British Invasion",
+  "author": "0xFX Factory",
+  "description": "Jangly AC30-inspired chime with spring reverb. Beatles, Kinks, The Who.",
+  "category": "Classic",
+  "tags": ["60s", "british", "jangle", "chime", "clean"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+    },
+    "pre_pedals": [
+      {
+        "type": "glass_comp",
+        "bypass": false,
+        "params": { "threshold": 0.45, "ratio": 0.3, "blend": 0.5, "output": 0.65 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "essex_chime",
+          "params": { "gain": 0.45, "volume": 0.6, "bass": 0.35, "mid": 0.55, "treble": 0.7, "presence": 0.6, "cut": 0.35, "bright": 1.0 }
+        },
+        "cab": { "type": "2x12_closed", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "drip_verb",
+        "bypass": false,
+        "params": { "decay": 0.35, "tone": 0.6, "mix": 0.25 }
+      }
+    ]
+  }
+}

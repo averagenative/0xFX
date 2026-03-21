@@ -2654,7 +2654,7 @@
     "title": "Genre preset library + preset browser UI",
     "domain": "frontend",
     "phase": 3,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 60000,

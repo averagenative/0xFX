@@ -1,0 +1,48 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Worship Ambient",
+  "author": "0xFX Factory",
+  "description": "Warm overdrive into lush shimmer, delay, and tremolo. Hillsong, Bethel ambient pad tones.",
+  "category": "Modern",
+  "tags": ["worship", "ambient", "shimmer", "clean", "pad"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 55, "hold_ms": 12 }
+    },
+    "pre_pedals": [
+      {
+        "type": "gold_drive",
+        "bypass": false,
+        "params": { "gain": 0.3, "treble": 0.55, "output": 0.6 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "essex_chime",
+          "params": { "gain": 0.35, "volume": 0.55, "bass": 0.4, "mid": 0.5, "treble": 0.65, "presence": 0.55, "cut": 0.3 }
+        },
+        "cab": { "type": "1x12_open", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "pulse_trem",
+        "bypass": false,
+        "params": { "speed": 0.3, "depth": 0.35, "wave": 0.0 }
+      },
+      {
+        "type": "echo_delay",
+        "bypass": false,
+        "params": { "time": 0.4, "feedback": 0.35, "mix": 0.25 }
+      },
+      {
+        "type": "shimmer_verb",
+        "bypass": false,
+        "params": { "decay": 0.65, "shimmer": 0.5, "mix": 0.35 }
+      }
+    ]
+  }
+}

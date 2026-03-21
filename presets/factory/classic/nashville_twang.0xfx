@@ -1,0 +1,43 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Nashville Twang",
+  "author": "0xFX Factory",
+  "description": "Sparkling clean with compression, slapback delay, and tremolo. Country chicken pickin'.",
+  "category": "Classic",
+  "tags": ["country", "clean", "twang", "chicken-pickin", "tremolo"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+    },
+    "pre_pedals": [
+      {
+        "type": "glass_comp",
+        "bypass": false,
+        "params": { "threshold": 0.35, "ratio": 0.5, "blend": 0.6, "output": 0.7 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "fullerton_clean",
+          "params": { "gain": 0.25, "volume": 0.65, "bass": 0.4, "mid": 0.5, "treble": 0.75, "presence": 0.65, "bright": 1.0 }
+        },
+        "cab": { "type": "1x12_open", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "echo_delay",
+        "bypass": false,
+        "params": { "time": 0.15, "feedback": 0.15, "mix": 0.2 }
+      },
+      {
+        "type": "pulse_trem",
+        "bypass": false,
+        "params": { "speed": 0.45, "depth": 0.5, "wave": 0.0 }
+      }
+    ]
+  }
+}

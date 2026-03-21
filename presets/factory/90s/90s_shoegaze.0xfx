@@ -1,0 +1,53 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "90s Shoegaze",
+  "author": "0xFX Factory",
+  "description": "Massive wall of sound — fuzz, shimmer, cloud reverb, and flanger. My Bloody Valentine, Slowdive, Ride.",
+  "category": "90s",
+  "tags": ["90s", "shoegaze", "ambient", "fuzz", "reverb", "wall-of-sound"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 60, "hold_ms": 15 }
+    },
+    "pre_pedals": [
+      {
+        "type": "mammoth_fuzz",
+        "bypass": false,
+        "params": { "fuzz": 0.7, "tone": 0.4, "volume": 0.55 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "essex_chime",
+          "params": { "gain": 0.5, "volume": 0.55, "bass": 0.45, "mid": 0.5, "treble": 0.6, "presence": 0.5, "cut": 0.35 }
+        },
+        "cab": { "type": "2x12_closed", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "jet_flanger",
+        "bypass": false,
+        "params": { "rate": 0.2, "depth": 0.5, "feedback": 0.4, "mix": 0.25 }
+      },
+      {
+        "type": "echo_delay",
+        "bypass": false,
+        "params": { "time": 0.45, "feedback": 0.35, "mix": 0.3 }
+      },
+      {
+        "type": "shimmer_verb",
+        "bypass": false,
+        "params": { "decay": 0.7, "shimmer": 0.55, "mix": 0.4 }
+      },
+      {
+        "type": "cloud_verb",
+        "bypass": false,
+        "params": { "decay": 0.8, "damping": 0.4, "mix": 0.35 }
+      }
+    ]
+  }
+}

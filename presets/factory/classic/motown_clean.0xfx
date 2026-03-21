@@ -1,0 +1,37 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Motown Clean",
+  "author": "0xFX Factory",
+  "description": "Warm, round clean tone with subtle chorus and tape saturation. R&B, soul, funk.",
+  "category": "Classic",
+  "tags": ["motown", "clean", "soul", "r&b", "warm"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+    },
+    "pre_pedals": [],
+    "chains": [
+      {
+        "amp": {
+          "model": "fullerton_clean",
+          "params": { "gain": 0.2, "volume": 0.6, "bass": 0.55, "mid": 0.5, "treble": 0.45, "presence": 0.4 }
+        },
+        "cab": { "type": "direct_flat", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "liquid_chorus",
+        "bypass": false,
+        "params": { "rate": 0.3, "depth": 0.25, "mix": 0.2 }
+      },
+      {
+        "type": "warm_tape",
+        "bypass": false,
+        "params": { "drive": 0.2, "tone": 0.45, "mix": 0.3 }
+      }
+    ]
+  }
+}

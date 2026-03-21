@@ -1,0 +1,32 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "90s Pop Punk",
+  "author": "0xFX Factory",
+  "description": "Tight British crunch with moderate distortion. Green Day, Blink-182, The Offspring.",
+  "category": "90s",
+  "tags": ["90s", "punk", "pop-punk", "crunch", "tight"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -48, "attack_ms": 0.8, "release_ms": 35, "hold_ms": 10 }
+    },
+    "pre_pedals": [
+      {
+        "type": "rodent",
+        "bypass": false,
+        "params": { "distortion": 0.5, "filter": 0.55, "volume": 0.6 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "regent_800",
+          "params": { "gain": 0.6, "volume": 0.5, "bass": 0.5, "mid": 0.6, "treble": 0.6, "presence": 0.55, "sag": 0.2, "master": 0.55 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": []
+  }
+}

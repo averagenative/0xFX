@@ -1,0 +1,42 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Drone",
+  "author": "0xFX Factory",
+  "description": "Infinite sustain with cavernous reverbs. Sunn O))), Earth, Boris. Hold a chord and let it breathe.",
+  "category": "Heavy",
+  "tags": ["drone", "ambient", "heavy", "sustain", "experimental"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 2, "release_ms": 100, "hold_ms": 30 }
+    },
+    "pre_pedals": [],
+    "chains": [
+      {
+        "amp": {
+          "model": "eclipse_drone",
+          "params": { "gain": 0.6, "volume": 0.5, "bass": 0.7, "mid": 0.4, "treble": 0.35, "presence": 0.3, "feedback": 0.6 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "infinite_hold",
+        "bypass": false,
+        "params": { "mix": 0.6, "decay": 0.9, "tone": 0.4 }
+      },
+      {
+        "type": "cloud_verb",
+        "bypass": false,
+        "params": { "decay": 0.9, "damping": 0.35, "mix": 0.4 }
+      },
+      {
+        "type": "hall_verb",
+        "bypass": false,
+        "params": { "decay": 0.8, "damping": 0.4, "mix": 0.3 }
+      }
+    ]
+  }
+}

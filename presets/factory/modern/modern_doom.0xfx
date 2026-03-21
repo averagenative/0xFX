@@ -1,0 +1,43 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Modern Doom",
+  "author": "0xFX Factory",
+  "description": "Massive low-end fuzz with tape saturation and cavernous hall. Sleep, Electric Wizard, Bongripper.",
+  "category": "Modern",
+  "tags": ["doom", "fuzz", "heavy", "slow", "sludge"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -50, "attack_ms": 1, "release_ms": 60, "hold_ms": 20 }
+    },
+    "pre_pedals": [
+      {
+        "type": "mammoth_fuzz",
+        "bypass": false,
+        "params": { "fuzz": 0.8, "tone": 0.35, "volume": 0.6 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "solar_monolith",
+          "params": { "gain": 0.7, "volume": 0.55, "bass": 0.7, "mid": 0.45, "treble": 0.4, "presence": 0.35, "sag": 0.5 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "warm_tape",
+        "bypass": false,
+        "params": { "drive": 0.35, "tone": 0.4, "mix": 0.3 }
+      },
+      {
+        "type": "hall_verb",
+        "bypass": false,
+        "params": { "decay": 0.6, "damping": 0.5, "mix": 0.2 }
+      }
+    ]
+  }
+}

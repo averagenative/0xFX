@@ -1,0 +1,44 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Thrash Metal",
+  "author": "0xFX Factory",
+  "description": "Aggressive British high-gain with tight gate and scooped mids. Metallica, Slayer, Megadeth.",
+  "category": "Heavy",
+  "tags": ["thrash", "metal", "aggressive", "tight", "fast"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -40, "attack_ms": 0.5, "release_ms": 25, "hold_ms": 12 }
+    },
+    "pre_pedals": [
+      {
+        "type": "noise_gate",
+        "bypass": false,
+        "params": { "threshold": 0.6, "attack": 0.05, "release": 0.2 }
+      },
+      {
+        "type": "metal_zone",
+        "bypass": false,
+        "params": { "gain": 0.7, "level": 0.55, "low": 0.55, "mid": 0.3, "mid_freq": 0.5, "high": 0.65 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "regent_800",
+          "params": { "gain": 0.75, "volume": 0.45, "bass": 0.55, "mid": 0.35, "treble": 0.65, "presence": 0.6, "sag": 0.1, "master": 0.55 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [],
+    "studio": [
+      {
+        "type": "iron_squeeze",
+        "bypass": false,
+        "params": { "input": 0.45, "output": 0.6, "attack": 0.1, "release": 0.35 }
+      }
+    ]
+  }
+}

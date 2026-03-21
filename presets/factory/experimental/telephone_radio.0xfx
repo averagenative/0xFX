@@ -1,0 +1,37 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Telephone / Radio",
+  "author": "0xFX Factory",
+  "description": "AM radio vocal mic effect — extreme mid boost with bass and treble rolled off, subtle crush.",
+  "category": "Experimental",
+  "tags": ["telephone", "radio", "lo-fi", "effect", "vocal"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -50, "attack_ms": 1, "release_ms": 40, "hold_ms": 10 }
+    },
+    "pre_pedals": [
+      {
+        "type": "precision_eq",
+        "bypass": false,
+        "params": { "low": 0.1, "low_mid": 0.2, "mid": 0.9, "high_mid": 0.7, "high": 0.15 }
+      },
+      {
+        "type": "grit_crush",
+        "bypass": false,
+        "params": { "bits": 0.55, "rate": 0.6, "mix": 0.3 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "fullerton_clean",
+          "params": { "gain": 0.15, "volume": 0.65, "bass": 0.2, "mid": 0.8, "treble": 0.3, "presence": 0.3 }
+        },
+        "cab": { "type": "direct_flat", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": []
+  }
+}

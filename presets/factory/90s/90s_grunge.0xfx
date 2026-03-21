@@ -1,0 +1,38 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "90s Grunge",
+  "author": "0xFX Factory",
+  "description": "Thick distortion wall with scooped mids and hall reverb. Nirvana, Soundgarden, Alice in Chains.",
+  "category": "90s",
+  "tags": ["90s", "grunge", "distortion", "heavy", "seattle"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -45, "attack_ms": 0.8, "release_ms": 35, "hold_ms": 12 }
+    },
+    "pre_pedals": [
+      {
+        "type": "rodent",
+        "bypass": false,
+        "params": { "distortion": 0.75, "filter": 0.4, "volume": 0.6 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "citrus_roar",
+          "params": { "gain": 0.65, "volume": 0.5, "bass": 0.6, "mid": 0.35, "treble": 0.55, "presence": 0.45, "sag": 0.4 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "hall_verb",
+        "bypass": false,
+        "params": { "decay": 0.35, "damping": 0.45, "mix": 0.15 }
+      }
+    ]
+  }
+}

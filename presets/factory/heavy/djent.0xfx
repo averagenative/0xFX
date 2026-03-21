@@ -1,0 +1,49 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Djent",
+  "author": "0xFX Factory",
+  "description": "Ultra-tight high-gain with fast compression and surgical EQ. Periphery, Meshuggah, Animals as Leaders.",
+  "category": "Heavy",
+  "tags": ["djent", "progressive", "metal", "tight", "modern"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -38, "attack_ms": 0.3, "release_ms": 20, "hold_ms": 10 }
+    },
+    "pre_pedals": [
+      {
+        "type": "noise_gate",
+        "bypass": false,
+        "params": { "threshold": 0.65, "attack": 0.03, "release": 0.15 }
+      },
+      {
+        "type": "punch_comp",
+        "bypass": false,
+        "params": { "input": 0.5, "output": 0.6, "attack": 0.1, "release": 0.35 }
+      },
+      {
+        "type": "precision_eq",
+        "bypass": false,
+        "params": { "low": 0.35, "low_mid": 0.5, "mid": 0.65, "high_mid": 0.6, "high": 0.55 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "meridian_high_gain",
+          "params": { "gain": 0.85, "volume": 0.45, "bass": 0.45, "mid": 0.6, "treble": 0.6, "presence": 0.7, "sag": 0.05, "master": 0.5 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [],
+    "studio": [
+      {
+        "type": "glue_bus",
+        "bypass": false,
+        "params": { "threshold": 0.45, "ratio": 0.5, "attack": 0.1, "release": 0.3, "makeup": 0.5 }
+      }
+    ]
+  }
+}

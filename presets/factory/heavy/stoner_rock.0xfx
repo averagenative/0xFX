@@ -1,0 +1,43 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Stoner Rock",
+  "author": "0xFX Factory",
+  "description": "Thick fuzz with warm tape saturation and slapback delay. QOTSA, Kyuss, Fu Manchu.",
+  "category": "Heavy",
+  "tags": ["stoner", "rock", "fuzz", "desert", "warm"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -50, "attack_ms": 1, "release_ms": 50, "hold_ms": 15 }
+    },
+    "pre_pedals": [
+      {
+        "type": "round_fuzz",
+        "bypass": false,
+        "params": { "fuzz": 0.65, "tone": 0.45, "volume": 0.6 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "citrus_roar",
+          "params": { "gain": 0.6, "volume": 0.55, "bass": 0.6, "mid": 0.5, "treble": 0.5, "presence": 0.45, "sag": 0.4 }
+        },
+        "cab": { "type": "4x12_straight", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "warm_tape",
+        "bypass": false,
+        "params": { "drive": 0.3, "tone": 0.45, "mix": 0.25 }
+      },
+      {
+        "type": "echo_delay",
+        "bypass": false,
+        "params": { "time": 0.25, "feedback": 0.2, "mix": 0.15 }
+      }
+    ]
+  }
+}

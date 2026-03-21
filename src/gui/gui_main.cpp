@@ -38,7 +38,14 @@ extern "C" {
 #include <cmath>
 #include <cstring>
 #include <ctime>
+#include <cstdlib>
 #include <sys/stat.h>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <dirent.h>
+#endif
 
 extern "C" {
 #include "cJSON.h"
@@ -140,6 +147,355 @@ static void session_config_save(const SessionConfig *cfg) {
     FILE *f = fopen(get_config_path(), "w");
     if (f) { fputs(json, f); fclose(f); }
     free(json);
+}
+
+/* ── Preset Browser ─────────────────────────────────────────── */
+
+struct PresetEntry {
+    char name[128];
+    char description[256];
+    char category[32];
+    char path[512];       /* relative path to .0xfx file */
+    bool is_factory;
+};
+
+#define MAX_BROWSER_PRESETS 128
+static PresetEntry s_browser_presets[MAX_BROWSER_PRESETS];
+static int s_browser_preset_count = 0;
+static bool s_browser_needs_scan = true;
+
+static const char *s_preset_categories[] = {
+    "Classic", "80s", "90s", "Modern", "Heavy", "Experimental", "User"
+};
+static const int s_preset_category_count = 7;
+
+/* Scan a single .0xfx file and extract metadata via cJSON */
+static bool preset_scan_file(const char *path, PresetEntry *entry, bool is_factory) {
+    FILE *f = fopen(path, "r");
+    if (!f) return false;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz <= 0 || sz > 65536) { fclose(f); return false; }
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(sz + 1);
+    if (!buf) { fclose(f); return false; }
+    size_t rd = fread(buf, 1, sz, f);
+    fclose(f);
+    buf[rd] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    if (!root) return false;
+
+    cJSON *name_j = cJSON_GetObjectItemCaseSensitive(root, "name");
+    cJSON *desc_j = cJSON_GetObjectItemCaseSensitive(root, "description");
+    cJSON *cat_j  = cJSON_GetObjectItemCaseSensitive(root, "category");
+
+    if (name_j && cJSON_IsString(name_j))
+        snprintf(entry->name, sizeof(entry->name), "%s", name_j->valuestring);
+    else
+        snprintf(entry->name, sizeof(entry->name), "Untitled");
+
+    if (desc_j && cJSON_IsString(desc_j))
+        snprintf(entry->description, sizeof(entry->description), "%s", desc_j->valuestring);
+    else
+        entry->description[0] = '\0';
+
+    if (cat_j && cJSON_IsString(cat_j))
+        snprintf(entry->category, sizeof(entry->category), "%s", cat_j->valuestring);
+    else
+        snprintf(entry->category, sizeof(entry->category), "User");
+
+    snprintf(entry->path, sizeof(entry->path), "%s", path);
+    entry->is_factory = is_factory;
+
+    cJSON_Delete(root);
+    return true;
+}
+
+/* Scan a directory for .0xfx files (non-recursive) */
+static void preset_scan_dir(const char *dirpath, bool is_factory, const char *category_override) {
+#ifdef _WIN32
+    char pattern[600];
+    snprintf(pattern, sizeof(pattern), "%s\\*.0xfx", dirpath);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+        char fullpath[600];
+        snprintf(fullpath, sizeof(fullpath), "%s\\%s", dirpath, fd.cFileName);
+        PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+        if (preset_scan_file(fullpath, e, is_factory)) {
+            if (category_override && category_override[0])
+                snprintf(e->category, sizeof(e->category), "%s", category_override);
+            s_browser_preset_count++;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR *d = opendir(dirpath);
+    if (!d) return;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+        const char *name = ent->d_name;
+        size_t len = strlen(name);
+        if (len < 5 || strcmp(name + len - 5, ".0xfx") != 0) continue;
+        char fullpath[600];
+        snprintf(fullpath, sizeof(fullpath), "%s/%s", dirpath, name);
+        PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+        if (preset_scan_file(fullpath, e, is_factory)) {
+            if (category_override && category_override[0])
+                snprintf(e->category, sizeof(e->category), "%s", category_override);
+            s_browser_preset_count++;
+        }
+    }
+    closedir(d);
+#endif
+}
+
+/* Full preset library scan — factory subdirs + user presets */
+static void preset_browser_scan(void) {
+    s_browser_preset_count = 0;
+
+    /* Factory presets in subdirectories */
+    const char *factory_cats[] = { "classic", "80s", "90s", "modern", "heavy", "experimental" };
+    const char *cat_labels[]   = { "Classic", "80s", "90s", "Modern", "Heavy", "Experimental" };
+    for (int i = 0; i < 6; i++) {
+        char dirpath[600];
+        snprintf(dirpath, sizeof(dirpath), "presets/factory/%s", factory_cats[i]);
+        preset_scan_dir(dirpath, true, cat_labels[i]);
+        /* Try ../presets/ too (for running from build dir) */
+        snprintf(dirpath, sizeof(dirpath), "../presets/factory/%s", factory_cats[i]);
+        preset_scan_dir(dirpath, true, cat_labels[i]);
+    }
+
+    /* User presets in root presets/ (excluding factory/ and last_session) */
+    const char *user_dirs[] = { "presets", "../presets" };
+    for (int d = 0; d < 2; d++) {
+#ifdef _WIN32
+        char pattern[600];
+        snprintf(pattern, sizeof(pattern), "%s\\*.0xfx", user_dirs[d]);
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA(pattern, &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+            if (strstr(fd.cFileName, "last_session") != NULL) continue;
+            char fullpath[600];
+            snprintf(fullpath, sizeof(fullpath), "%s\\%s", user_dirs[d], fd.cFileName);
+            /* Check if already scanned (avoid duplicates from presets/ and ../presets/) */
+            bool dup = false;
+            for (int k = 0; k < s_browser_preset_count; k++) {
+                /* Compare filenames only */
+                const char *existing = strrchr(s_browser_presets[k].path, '\\');
+                if (!existing) existing = strrchr(s_browser_presets[k].path, '/');
+                if (!existing) existing = s_browser_presets[k].path;
+                else existing++;
+                if (strcmp(existing, fd.cFileName) == 0) { dup = true; break; }
+            }
+            if (dup) continue;
+            PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+            if (preset_scan_file(fullpath, e, false)) {
+                if (e->category[0] == '\0' || strcmp(e->category, "User") == 0)
+                    snprintf(e->category, sizeof(e->category), "User");
+                s_browser_preset_count++;
+            }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+#else
+        DIR *dd = opendir(user_dirs[d]);
+        if (!dd) continue;
+        struct dirent *ent;
+        while ((ent = readdir(dd)) != NULL) {
+            if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+            const char *name = ent->d_name;
+            size_t len = strlen(name);
+            if (len < 5 || strcmp(name + len - 5, ".0xfx") != 0) continue;
+            if (strstr(name, "last_session") != NULL) continue;
+            char fullpath[600];
+            snprintf(fullpath, sizeof(fullpath), "%s/%s", user_dirs[d], name);
+            bool dup = false;
+            for (int k = 0; k < s_browser_preset_count; k++) {
+                const char *existing = strrchr(s_browser_presets[k].path, '/');
+                if (!existing) existing = s_browser_presets[k].path;
+                else existing++;
+                if (strcmp(existing, name) == 0) { dup = true; break; }
+            }
+            if (dup) continue;
+            PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+            if (preset_scan_file(fullpath, e, false)) {
+                if (e->category[0] == '\0' || strcmp(e->category, "User") == 0)
+                    snprintf(e->category, sizeof(e->category), "User");
+                s_browser_preset_count++;
+            }
+        }
+        closedir(dd);
+#endif
+    }
+
+    s_browser_needs_scan = false;
+    FX_INFO("Preset browser: scanned %d presets", s_browser_preset_count);
+}
+
+/* ── Surprise Me — random preset generator ──────────────────── */
+
+static float randf(float lo, float hi) {
+    return lo + (float)rand() / (float)RAND_MAX * (hi - lo);
+}
+
+static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int name_sz) {
+    srand((unsigned)time(NULL));
+
+    /* Clear existing chain */
+    int pre_count = fx_chain_get_pedal_count(engine, FX_CHAIN_POS_PRE);
+    for (int i = pre_count - 1; i >= 0; i--) {
+        fx_pedal_id pid = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_PRE, i);
+        fx_chain_remove_pedal(engine, pid);
+    }
+    int post_count = fx_chain_get_pedal_count(engine, FX_CHAIN_POS_POST);
+    for (int i = post_count - 1; i >= 0; i--) {
+        fx_pedal_id pid = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_POST, i);
+        fx_chain_remove_pedal(engine, pid);
+    }
+
+    /* Random amp */
+    fx_amp_type_t amp = (fx_amp_type_t)(rand() % FX_AMP_COUNT);
+    fx_amp_set_model(engine, FX_CHAIN_DEFAULT, amp);
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN,     randf(0.1f, 0.9f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME,   randf(0.3f, 0.8f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_BASS,     randf(0.2f, 0.8f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MID,      randf(0.2f, 0.8f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_TREBLE,   randf(0.2f, 0.8f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_PRESENCE, randf(0.3f, 0.7f));
+
+    /* Random cab */
+    fx_cab_type_t cab = (fx_cab_type_t)(rand() % FX_CAB_TYPE_COUNT);
+    fx_cab_params_t cab_params = {};
+    cab_params.cab_type = cab;
+    cab_params.mic_pos = FX_MIC_ON_AXIS;
+    cab_params.speaker_fs = 80.0f;
+    cab_params.brightness = randf(0.3f, 0.7f);
+    cab_params.resonance = randf(0.2f, 0.6f);
+    fx_cab_generate_ir(engine, FX_CHAIN_DEFAULT, &cab_params);
+
+    /* Noise gate defaults */
+    fx_gate_set_threshold(engine, randf(-55.0f, -42.0f));
+    fx_gate_set_attack(engine, 1.0f);
+    fx_gate_set_release(engine, 40.0f);
+    fx_gate_set_hold(engine, 12.0f);
+
+    /* Pre-pedal types that make sense before amp */
+    fx_pedal_type_t pre_types[] = {
+        FX_PEDAL_JADE_DRIVE, FX_PEDAL_GOLD_DRIVE, FX_PEDAL_BLUES_GRIT,
+        FX_PEDAL_RODENT, FX_PEDAL_ORANGE_DIST, FX_PEDAL_METAL_ZONE,
+        FX_PEDAL_AMP_BOX, FX_PEDAL_MAMMOTH_FUZZ, FX_PEDAL_ROUND_FUZZ,
+        FX_PEDAL_WRAITH_FUZZ, FX_PEDAL_CHAOS_FUZZ,
+        FX_PEDAL_SQUEEZE_BOX, FX_PEDAL_GLASS_COMP, FX_PEDAL_PUNCH_COMP,
+        FX_PEDAL_NOISE_GATE, FX_PEDAL_HOWL_WAH, FX_PEDAL_QUACK_FILTER,
+        FX_PEDAL_WARM_TAPE, FX_PEDAL_GRIT_CRUSH, FX_PEDAL_OCTAVE_ENGINE
+    };
+    int n_pre_types = (int)(sizeof(pre_types) / sizeof(pre_types[0]));
+
+    int n_pre = rand() % 6; /* 0-5 pre pedals */
+    for (int i = 0; i < n_pre; i++) {
+        fx_pedal_type_t pt = pre_types[rand() % n_pre_types];
+        fx_pedal_id pid = fx_chain_add_pedal(engine, pt, FX_CHAIN_POS_PRE);
+        int pc = fx_pedal_get_param_count(pt);
+        for (int p = 0; p < pc; p++) {
+            /* Musically useful random ranges per param type */
+            const char *pname = fx_pedal_get_param_name(pt, p);
+            float val;
+            if (strstr(pname, "mix") || strstr(pname, "blend"))
+                val = randf(0.15f, 0.5f);
+            else if (strstr(pname, "drive") || strstr(pname, "gain") || strstr(pname, "fuzz") || strstr(pname, "distortion"))
+                val = randf(0.3f, 0.8f);
+            else if (strstr(pname, "level") || strstr(pname, "output") || strstr(pname, "volume"))
+                val = randf(0.4f, 0.75f);
+            else if (strstr(pname, "tone") || strstr(pname, "treble") || strstr(pname, "filter"))
+                val = randf(0.3f, 0.7f);
+            else
+                val = randf(0.2f, 0.7f);
+            fx_pedal_set_param(engine, pid, p, val);
+        }
+    }
+
+    /* Post-pedal types */
+    fx_pedal_type_t post_types[] = {
+        FX_PEDAL_ECHO_DELAY, FX_PEDAL_CARBON_DELAY, FX_PEDAL_TAPE_MACHINE,
+        FX_PEDAL_MEMORY_ECHO, FX_PEDAL_DRIP_VERB, FX_PEDAL_PLATE_VERB,
+        FX_PEDAL_HALL_VERB, FX_PEDAL_SHIMMER_VERB, FX_PEDAL_CLOUD_VERB,
+        FX_PEDAL_LIQUID_CHORUS, FX_PEDAL_PHASE_SWEEP, FX_PEDAL_JET_FLANGER,
+        FX_PEDAL_PULSE_TREM, FX_PEDAL_DRIFT_VIBRATO, FX_PEDAL_WARM_TAPE,
+        FX_PEDAL_GRAIN_CLOUD, FX_PEDAL_INFINITE_HOLD
+    };
+    int n_post_types = (int)(sizeof(post_types) / sizeof(post_types[0]));
+
+    int n_post = rand() % 5; /* 0-4 post pedals */
+    for (int i = 0; i < n_post; i++) {
+        fx_pedal_type_t pt = post_types[rand() % n_post_types];
+        fx_pedal_id pid = fx_chain_add_pedal(engine, pt, FX_CHAIN_POS_POST);
+        int pc = fx_pedal_get_param_count(pt);
+        for (int p = 0; p < pc; p++) {
+            const char *pname = fx_pedal_get_param_name(pt, p);
+            float val;
+            if (strstr(pname, "mix"))
+                val = randf(0.1f, 0.4f);
+            else if (strstr(pname, "time") || strstr(pname, "decay"))
+                val = randf(0.2f, 0.6f);
+            else if (strstr(pname, "feedback"))
+                val = randf(0.15f, 0.45f);
+            else if (strstr(pname, "rate") || strstr(pname, "speed"))
+                val = randf(0.15f, 0.5f);
+            else if (strstr(pname, "depth"))
+                val = randf(0.2f, 0.5f);
+            else
+                val = randf(0.2f, 0.6f);
+            fx_pedal_set_param(engine, pid, p, val);
+        }
+    }
+
+    /* Random rack effect (0-2) */
+    fx_studio_type_t rack_types[] = {
+        FX_STUDIO_IRON_SQUEEZE, FX_STUDIO_GLASS_EQ, FX_STUDIO_REEL_WARMTH,
+        FX_STUDIO_VELVET_PRESS, FX_STUDIO_GLUE_BUS, FX_STUDIO_VALVE_COLOR
+    };
+    int n_rack_types = (int)(sizeof(rack_types) / sizeof(rack_types[0]));
+    int n_rack = rand() % 3;
+    for (int i = 0; i < n_rack; i++) {
+        fx_studio_type_t rt = rack_types[rand() % n_rack_types];
+        fx_studio_id sid = fx_studio_add(engine, rt);
+        int pc = fx_studio_get_param_count(rt);
+        for (int p = 0; p < pc; p++)
+            fx_studio_set_param(engine, sid, p, randf(0.2f, 0.6f));
+    }
+
+    /* Fun name */
+    const char *adjectives[] = {
+        "Cosmic", "Vintage", "Electric", "Fuzzy", "Crystal", "Molten",
+        "Midnight", "Neon", "Thunder", "Velvet", "Atomic", "Rusty",
+        "Golden", "Phantom", "Wild", "Savage", "Dreamy", "Gritty"
+    };
+    const char *nouns[] = {
+        "Machine", "Vibe", "Storm", "Tone", "Wave", "Howl",
+        "Blaze", "Echo", "Surge", "Whisper", "Roar", "Drift",
+        "Pulse", "Spark", "Crush", "Bloom", "Growl", "Shimmer"
+    };
+    int n_adj = (int)(sizeof(adjectives) / sizeof(adjectives[0]));
+    int n_noun = (int)(sizeof(nouns) / sizeof(nouns[0]));
+    snprintf(preset_name, name_sz, "%s %s", adjectives[rand() % n_adj], nouns[rand() % n_noun]);
+
+    FX_INFO("Surprise Me: generated '%s'", preset_name);
+}
+
+/* HSV to RGB for rainbow button effect */
+static ImVec4 hsv_to_rgb(float h, float s, float v) {
+    float r, g, b;
+    ImGui::ColorConvertHSVtoRGB(h, s, v, r, g, b);
+    return ImVec4(r, g, b, 1.0f);
 }
 
 /* ── Amp param tooltips (TASK-201) ───────────────────────────── */
@@ -789,6 +1145,10 @@ int main(int argc, char *argv[]) {
             s_theme_tex_tried = true;
         }
 
+        /* Save-As state (shared between preset browser and Ctrl+Shift+S) */
+        static bool s_save_as_open = false;
+        static char s_save_as_name[128] = "";
+
         /* ── Toolbar ──────────────────────────────────────────── */
         {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -930,7 +1290,192 @@ int main(int argc, char *argv[]) {
                     ImGui::SetTooltip("Current preset — Ctrl+S to save, Ctrl+Shift+S to save as");
             }
 
-            ImGui::SameLine(0, 20);
+            ImGui::SameLine(0, 10);
+
+            /* ── Presets browser button ───────────────────────── */
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.13f, 0.11f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.22f, 0.18f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.65f, 0.45f, 1.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                if (ImGui::Button("Presets", ImVec2(70.0f, 32.0f))) {
+                    if (s_browser_needs_scan) preset_browser_scan();
+                    ImGui::OpenPopup("preset_browser_popup");
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(4);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Browse factory and user presets");
+            }
+
+            /* ── Preset browser popup ────────────────────────── */
+            if (ImGui::BeginPopup("preset_browser_popup")) {
+                if (s_browser_needs_scan) preset_browser_scan();
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+                ImGui::Text("Preset Library");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+
+                /* ── Surprise Me button with rainbow border ──── */
+                {
+                    float t = (float)ImGui::GetTime();
+                    float hue = fmodf(t * 0.3f, 1.0f);
+                    ImVec4 rainbow = hsv_to_rgb(hue, 0.8f, 0.9f);
+                    (void)hsv_to_rgb(hue, 0.5f, 0.6f); /* rainbow_dim available if needed */
+
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.15f, 0.12f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.08f, 0.07f, 0.05f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, rainbow);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+
+                    if (ImGui::Button("Mystery Rig", ImVec2(ImGui::GetContentRegionAvail().x, 36.0f))) {
+                        surprise_me_generate(engine, s_preset_name, sizeof(s_preset_name));
+                        s_needs_gui_sync = true;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(4);
+
+                    /* Draw rainbow border around the button */
+                    {
+                        ImDrawList *dl = ImGui::GetWindowDrawList();
+                        ImVec2 bmin = ImGui::GetItemRectMin();
+                        ImVec2 bmax = ImGui::GetItemRectMax();
+                        float pulse = 0.7f + 0.3f * sinf(t * 4.0f);
+                        ImU32 border_col = ImGui::ColorConvertFloat4ToU32(
+                            ImVec4(rainbow.x * pulse, rainbow.y * pulse, rainbow.z * pulse, 0.9f));
+                        dl->AddRect(bmin, bmax, border_col, 6.0f, 0, 2.0f);
+                        /* Outer glow */
+                        ImU32 glow_col = ImGui::ColorConvertFloat4ToU32(
+                            ImVec4(rainbow.x * 0.4f, rainbow.y * 0.4f, rainbow.z * 0.4f, 0.3f * pulse));
+                        dl->AddRect(ImVec2(bmin.x - 1, bmin.y - 1),
+                                    ImVec2(bmax.x + 1, bmax.y + 1), glow_col, 7.0f, 0, 2.0f);
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Generate a random rig — surprise yourself!");
+
+                    ImGui::Spacing();
+                }
+
+                /* ── Category tabs ───────────────────────────── */
+                static int s_selected_cat = 0;
+
+                /* Tab-style category selector */
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 2));
+                for (int c = 0; c < s_preset_category_count; c++) {
+                    /* Count presets in this category */
+                    int cat_count = 0;
+                    for (int p = 0; p < s_browser_preset_count; p++) {
+                        if (strcmp(s_browser_presets[p].category, s_preset_categories[c]) == 0)
+                            cat_count++;
+                    }
+                    if (cat_count == 0) continue;
+
+                    if (c > 0) ImGui::SameLine();
+                    bool selected = (s_selected_cat == c);
+                    if (selected) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.25f, 0.15f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.85f, 0.6f, 1.0f));
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.55f, 0.45f, 1.0f));
+                    }
+                    char tab_label[64];
+                    snprintf(tab_label, sizeof(tab_label), "%s (%d)", s_preset_categories[c], cat_count);
+                    if (ImGui::Button(tab_label)) {
+                        s_selected_cat = c;
+                    }
+                    ImGui::PopStyleColor(2);
+                }
+                ImGui::PopStyleVar();
+
+                ImGui::Separator();
+
+                /* ── Preset list for selected category ───────── */
+                ImGui::BeginChild("preset_list", ImVec2(480, 320), true);
+
+                const char *sel_cat = s_preset_categories[s_selected_cat];
+                for (int p = 0; p < s_browser_preset_count; p++) {
+                    PresetEntry *pe = &s_browser_presets[p];
+                    if (strcmp(pe->category, sel_cat) != 0) continue;
+
+                    ImGui::PushID(p);
+
+                    /* Factory presets get a gold icon, user presets get a blue icon */
+                    if (pe->is_factory) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.7f, 0.3f, 1.0f));
+                        ImGui::Text("[F]");
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.6f, 0.85f, 1.0f));
+                        ImGui::Text("[U]");
+                    }
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+
+                    /* Preset name as selectable */
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.82f, 0.65f, 1.0f));
+                    if (ImGui::Selectable(pe->name, false, ImGuiSelectableFlags_None, ImVec2(440, 0))) {
+                        /* Load this preset */
+                        bool ok = fx_preset_load(engine, pe->path);
+                        if (ok) {
+                            snprintf(s_preset_name, sizeof(s_preset_name), "%s", pe->name);
+                            s_needs_gui_sync = true;
+                            FX_INFO("Loaded preset: %s", pe->name);
+                        } else {
+                            FX_ERROR("Failed to load preset: %s", pe->path);
+                        }
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopStyleColor();
+
+                    /* Description tooltip */
+                    if (ImGui::IsItemHovered() && pe->description[0]) {
+                        ImGui::SetTooltip("%s", pe->description);
+                    }
+
+                    ImGui::PopID();
+                }
+
+                ImGui::EndChild();
+
+                ImGui::Separator();
+
+                /* ── Save / Save As at bottom ────────────────── */
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.15f, 0.12f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.24f, 0.18f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.68f, 0.5f, 1.0f));
+
+                    if (ImGui::Button("Save (Ctrl+S)", ImVec2(150, 0))) {
+                        bool ok = fx_preset_save(engine, "presets/last_session.0xfx");
+                        if (!ok) ok = fx_preset_save(engine, "../presets/last_session.0xfx");
+                        FX_INFO(ok ? "Quick-saved" : "Quick-save failed");
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Save As... (Ctrl+Shift+S)", ImVec2(200, 0))) {
+                        ImGui::CloseCurrentPopup();
+                        /* Will trigger save-as popup via keyboard shortcut path */
+                        s_save_as_open = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Refresh", ImVec2(80, 0))) {
+                        s_browser_needs_scan = true;
+                        preset_browser_scan();
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Rescan preset directories");
+
+                    ImGui::PopStyleColor(3);
+                }
+
+                ImGui::EndPopup();
+            }
+
+            ImGui::SameLine(0, 10);
 
             /* ── LIVE button — neon red-orange ─────────────────── */
             {
@@ -1463,8 +2008,6 @@ int main(int argc, char *argv[]) {
             }
         }
         /* Ctrl+S = quick-save preset */
-        static bool s_save_as_open = false;
-        static char s_save_as_name[128] = "";
         {
             bool ctrl = ImGui::GetIO().KeyCtrl;
             bool shift = ImGui::GetIO().KeyShift;

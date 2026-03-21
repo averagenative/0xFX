@@ -1,0 +1,43 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Neo-Soul",
+  "author": "0xFX Factory",
+  "description": "Silky clean with transparent compression, chorus, and plate reverb. D'Angelo, Anderson .Paak, Tom Misch.",
+  "category": "Modern",
+  "tags": ["neo-soul", "clean", "smooth", "r&b", "jazz"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+    },
+    "pre_pedals": [
+      {
+        "type": "glass_comp",
+        "bypass": false,
+        "params": { "threshold": 0.4, "ratio": 0.35, "blend": 0.55, "output": 0.65 }
+      }
+    ],
+    "chains": [
+      {
+        "amp": {
+          "model": "emerald_deluxe",
+          "params": { "gain": 0.25, "volume": 0.6, "bass": 0.5, "mid": 0.55, "treble": 0.5, "presence": 0.45 }
+        },
+        "cab": { "type": "direct_flat", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "liquid_chorus",
+        "bypass": false,
+        "params": { "rate": 0.25, "depth": 0.3, "mix": 0.2 }
+      },
+      {
+        "type": "plate_verb",
+        "bypass": false,
+        "params": { "decay": 0.35, "damping": 0.3, "mix": 0.2 }
+      }
+    ]
+  }
+}

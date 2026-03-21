@@ -1,0 +1,54 @@
+{
+  "format": "0xfx",
+  "version": "1.0",
+  "name": "Synthwave Guitar",
+  "author": "0xFX Factory",
+  "description": "80s synth-like guitar with chorus, delay, phaser, and tremolo. Outrun, retrowave aesthetic.",
+  "category": "Experimental",
+  "tags": ["synthwave", "80s", "retro", "chorus", "synth-like"],
+  "signal_chain": {
+    "input": {
+      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+    },
+    "pre_pedals": [],
+    "chains": [
+      {
+        "amp": {
+          "model": "essex_chime",
+          "params": { "gain": 0.3, "volume": 0.55, "bass": 0.4, "mid": 0.5, "treble": 0.65, "presence": 0.55, "cut": 0.3 }
+        },
+        "cab": { "type": "2x12_closed", "bypass": false },
+        "mix": 1.0
+      }
+    ],
+    "post_pedals": [
+      {
+        "type": "liquid_chorus",
+        "bypass": false,
+        "params": { "rate": 0.4, "depth": 0.5, "mix": 0.4 }
+      },
+      {
+        "type": "phase_sweep",
+        "bypass": false,
+        "params": { "rate": 0.2, "depth": 0.35, "feedback": 0.25, "mix": 0.2 }
+      },
+      {
+        "type": "echo_delay",
+        "bypass": false,
+        "params": { "time": 0.35, "feedback": 0.3, "mix": 0.25 }
+      },
+      {
+        "type": "pulse_trem",
+        "bypass": false,
+        "params": { "speed": 0.35, "depth": 0.3, "wave": 0.0 }
+      }
+    ],
+    "studio": [
+      {
+        "type": "reel_warmth",
+        "bypass": false,
+        "params": { "drive": 0.25, "tone": 0.5, "mix": 0.3 }
+      }
+    ]
+  }
+}
