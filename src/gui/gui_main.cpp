@@ -1801,6 +1801,17 @@ int main(int argc, char *argv[]) {
                     } else if (n.kind == NODE_CAB) {
                         int ctype = (n.chain_id == 0) ? s_cab_type : s_cab_type_b;
                         tex = load_cab_texture(ctype);
+                    } else if (n.kind == NODE_STUDIO) {
+                        static const char *rack_fnames[] = {
+                            "iron_squeeze", "glass_eq", "reel_warmth", "brick_wall",
+                            "velvet_press", "glue_bus", "valve_color", "precision_eq", "room_engine"
+                        };
+                        fx_studio_type_t st = fx_studio_get_type(engine, n.pedal_id);
+                        if (st >= 0 && st < FX_STUDIO_COUNT) {
+                            char spath[256];
+                            snprintf(spath, sizeof(spath), "resources/studio/%s_nobg.png", rack_fnames[st]);
+                            tex = fx_texture_load(spath);
+                        }
                     } else if (n.kind == NODE_INPUT) {
                         tex = fx_texture_load("resources/cables/trs_plug_input.png");
                         /* Render INPUT flipped horizontally (plug tip faces left) */
@@ -3248,22 +3259,94 @@ int main(int argc, char *argv[]) {
                         }
                         ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
-                        /* Knobs — centered */
+                        /* Rack unit image + overlay knobs */
                         {
-                            const float KNOB_W = 66.0f;
-                            const float KNOB_PAD = 8.0f;
-                            float row_w = nparam * KNOB_W + (nparam > 1 ? (nparam - 1) * KNOB_PAD : 0.0f);
-                            float knob_off = (avail_w - row_w) * 0.5f;
-                            if (knob_off < 0.0f) knob_off = 0.0f;
-                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + knob_off);
-                        }
-                        for (int k = 0; k < nparam; k++) {
-                            const char *kname = fx_studio_get_param_name(st, k);
-                            float kval = fx_studio_get_param(engine, sid, k);
-                            ImGui::Dummy(ImVec2(8.0f, 0.0f)); ImGui::SameLine();
-                            if (knob_float(kname, &kval, 0.0f, 1.0f, 0.5f, 0.01f))
-                                fx_studio_set_param(engine, sid, k, kval);
-                            if (k < nparam - 1) ImGui::SameLine();
+                            static const char *rack_fnames[] = {
+                                "iron_squeeze", "glass_eq", "reel_warmth", "brick_wall",
+                                "velvet_press", "glue_bus", "valve_color", "precision_eq", "room_engine"
+                            };
+
+                            /* Knob position maps from red dot detection */
+                            struct RackKnobMap { int count; float pos[8][2]; };
+                            static const RackKnobMap rack_knob_maps[] = {
+                                /* iron_squeeze: 6 (5 params + 1 dummy) */
+                                { 6, { {0.154f,0.628f},{0.244f,0.628f},{0.338f,0.630f},{0.656f,0.628f},{0.746f,0.628f},{0.838f,0.628f} } },
+                                /* glass_eq: 7 (6 params + 1 dummy) */
+                                { 7, { {0.139f,0.516f},{0.244f,0.516f},{0.354f,0.516f},{0.461f,0.516f},{0.568f,0.516f},{0.676f,0.519f},{0.783f,0.516f} } },
+                                /* reel_warmth: 5 (4 params + 1 dummy) */
+                                { 5, { {0.227f,0.648f},{0.344f,0.651f},{0.447f,0.648f},{0.551f,0.651f},{0.656f,0.651f} } },
+                                /* brick_wall: 3 (3 params) */
+                                { 3, { {0.239f,0.523f},{0.390f,0.523f},{0.546f,0.523f} } },
+                                /* velvet_press: 3 (3 params) */
+                                { 3, { {0.213f,0.545f},{0.348f,0.543f},{0.486f,0.543f} } },
+                                /* glue_bus: 5 (5 params) */
+                                { 5, { {0.438f,0.551f},{0.521f,0.551f},{0.607f,0.551f},{0.693f,0.554f},{0.777f,0.554f} } },
+                                /* valve_color: 4 (4 params) */
+                                { 4, { {0.246f,0.557f},{0.367f,0.540f},{0.481f,0.528f},{0.588f,0.513f} } },
+                                /* precision_eq: 6 (5 params + 1 dummy) */
+                                { 6, { {0.196f,0.547f},{0.323f,0.544f},{0.446f,0.544f},{0.567f,0.544f},{0.688f,0.541f},{0.813f,0.541f} } },
+                                /* room_engine: 5 (4 params + 1 dummy) */
+                                { 5, { {0.448f,0.538f},{0.554f,0.521f},{0.649f,0.512f},{0.743f,0.500f},{0.831f,0.485f} } },
+                            };
+
+                            char rpath[256];
+                            if (st >= 0 && st < FX_STUDIO_COUNT)
+                                snprintf(rpath, sizeof(rpath), "resources/studio/%s_nobg.png", rack_fnames[st]);
+                            else
+                                rpath[0] = '\0';
+                            uintptr_t rack_tex = fx_texture_load(rpath);
+
+                            float img_w = 500.0f;
+                            float img_h = img_w * 0.3f;
+                            if (rack_tex) {
+                                int rw = 0, rh = 0;
+                                if (fx_texture_get_size(rack_tex, &rw, &rh) && rh > 0) {
+                                    float aspect = (float)rw / (float)rh;
+                                    img_h = img_w / aspect;
+                                }
+                            }
+                            float img_x = (avail_w - img_w) * 0.5f;
+                            if (img_x > 0.0f)
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + img_x);
+
+                            ImVec2 img_pos = ImGui::GetCursorScreenPos();
+
+                            if (rack_tex) {
+                                ImVec4 tint = bypassed ? ImVec4(0.5f,0.5f,0.5f,0.7f) : ImVec4(1,1,1,1);
+                                ImGui::Image((ImTextureID)rack_tex, ImVec2(img_w, img_h),
+                                    ImVec2(0,0), ImVec2(1,1), tint);
+                            } else {
+                                ImGui::Dummy(ImVec2(img_w, img_h));
+                            }
+
+                            /* Overlay knobs on the rack image */
+                            if (st >= 0 && st < FX_STUDIO_COUNT) {
+                                const RackKnobMap &rmap = rack_knob_maps[st];
+                                const float RACK_KNOB_SZ = 30.0f;
+                                const char *knob_tex = "resources/knobs/knob_dome_silver_nobg.png";
+
+                                for (int k = 0; k < rmap.count; k++) {
+                                    float kx = img_pos.x + rmap.pos[k][0] * img_w - RACK_KNOB_SZ * 0.5f;
+                                    float ky = img_pos.y + rmap.pos[k][1] * img_h - RACK_KNOB_SZ * 0.5f;
+
+                                    if (k < nparam) {
+                                        const char *kname = fx_studio_get_param_name(st, k);
+                                        float kval = fx_studio_get_param(engine, sid, k);
+                                        char kid[48];
+                                        snprintf(kid, sizeof(kid), "%s##rack_ov_%d_%d", kname, (int)sid, k);
+                                        if (knob_overlay(kid, &kval, 0.0f, 1.0f, 0.5f, 0.01f,
+                                                         kx, ky, RACK_KNOB_SZ, knob_tex)) {
+                                            fx_studio_set_param(engine, sid, k, kval);
+                                        }
+                                    } else {
+                                        float dummy = 0.5f;
+                                        char did[32];
+                                        snprintf(did, sizeof(did), "##rack_d_%d_%d", (int)sid, k);
+                                        knob_overlay(did, &dummy, 0.0f, 1.0f, 0.5f, 0.0f,
+                                                     kx, ky, RACK_KNOB_SZ, knob_tex);
+                                    }
+                                }
+                            }
                         }
 
                         ImGui::Dummy(ImVec2(0.0f, 12.0f));
