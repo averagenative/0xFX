@@ -48,11 +48,11 @@ and vice versa, which is what creates the distinctive Fender "feel."
 | Fullerton Clean | 250k | 250pF | 1M | 0.1uF | 25k | 47nF | 56k | Classic silver panel mid-scoop |
 | Tweed Blues | 250k | 250pF | 1M | 0.1uF | 10k | 22nF | 56k | Warmer, less scooped than blackface |
 | Southwest Lead | 250k | 250pF | 1M | 68nF | 25k | 33nF | 39k | Tight bass, deep V-curve scoop |
-| Meridian High Gain | 250k | 220pF | 1M | 47nF | 25k | 22nF | 33k | Deep scoop, tight bass |
+| Meridian High Gain | 250k | 500pF | 1M | 22nF | 25k | 22nF | 33k | 5150 lead ch. schematic values |
 | Solar Monolith | 250k | 500pF | 1M | 220nF | 25k | 100nF | 68k | Massive bass, warm mids |
 | Eclipse Drone | 250k | 680pF | 1M | 330nF | 25k | 150nF | 82k | Extreme bass, subsonic emphasis |
 
-**Sources:** Fender Twin Reverb AB763 schematic, 5F6-A Bassman schematic, Mesa Dual Rectifier service manual.
+**Sources:** Fender Twin Reverb AB763 schematic, 5F6-A Bassman schematic, Mesa Dual Rectifier service manual, Peavey 5150 schematic (1992).
 
 ### 2. Marshall TMB
 
@@ -69,12 +69,12 @@ bass response compared to Fender.
 |-------|----|----|----|----|----|----|-----|-----------|
 | British Crunch | 220k | 470pF | 1M | 22nF | 25k | 22nF | 33k | Classic Plexi warmth |
 | Regent 800 | 220k | 470pF | 1M | 22nF | 25k | 22nF | 33k | JCM800 bright punch |
-| Citrus Roar | 220k | 330pF | 1M | 47nF | 22k | 22nF | 39k | Thick mids, warm top |
+| Citrus Roar | 250k | 470pF | 1M | 47nF | 25k | 22nF | 39k | Rockerverb 50 schematic values |
 
 **Key difference from Fender:** Smaller C2 (22nF vs 100nF) = tighter bass.
 Larger C1 (470pF vs 250pF) = slightly brighter treble response.
 
-**Sources:** Marshall JTM45/1959 schematic, JCM800 2203 schematic.
+**Sources:** Marshall JTM45/1959 schematic, JCM800 2203 schematic, Orange Rockerverb 50 schematic.
 
 ### 3. Vox Cut Control
 

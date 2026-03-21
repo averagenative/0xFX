@@ -192,7 +192,9 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .power_threshold = 0.72f,
     },
     /* Meridian High Gain — inspired by American high-gain metal amps (5150/6505)
-     * Modified Fender/Mesa hybrid — scooped mids, tight bass, aggressive presence
+     * Modified Fender TMB topology — from actual 5150 schematic (lead channel)
+     * C1=500pF (lead channel; rhythm uses 250pF), C2=0.022uF, C3=0.022uF
+     * 470pF bright cap across volume pot (not modeled in tone stack)
      * Extra gain stages before tone stack for saturated character */
     [FX_AMP_MERIDIAN_HIGH_GAIN] = {
         .num_stages = 4,
@@ -200,16 +202,17 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .shaper = waveshape_hard,
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
-            .R1 = 250e3f,  .C1 = 220e-12f,   /* 250k treble, 220pF (slightly darker) */
-            .R2 = 1e6f,    .C2 = 47e-9f,      /* 1M bass, 0.047uF (tight bass) */
-            .R3 = 25e3f,   .C3 = 22e-9f,      /* 25k mid, 0.022uF (deep scoop) */
-            .R4 = 33e3f,                        /* 33k slope */
+            .R1 = 250e3f,  .C1 = 500e-12f,   /* 250k treble pot, 500pF (lead ch.) */
+            .R2 = 1e6f,    .C2 = 22e-9f,      /* 1M bass pot, 0.022uF */
+            .R3 = 25e3f,   .C3 = 22e-9f,      /* 25k mid pot, 0.022uF */
+            .R4 = 33e3f,                        /* 33k slope resistor */
         },
         .presence_freq = 5000.0f,
         .power_threshold = 0.65f,
     },
     /* Citrus Roar — inspired by British thick/fuzzy crunch amps (Rockerverb)
-     * Modified Marshall TMB — thicker mids, less fizzy treble
+     * From actual Rockerverb 50 schematic — Marshall-derived TMB topology
+     * C2=0.047uF (larger than Marshall = more bass), C1=470pF
      * EL34 power section, warm and authoritative */
     [FX_AMP_CITRUS_ROAR] = {
         .num_stages = 3,
@@ -217,10 +220,10 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .shaper = waveshape_tanh,
         .tone_topology = TONE_STACK_MARSHALL_TMB,
         .tmb = {
-            .R1 = 220e3f,  .C1 = 330e-12f,   /* 220k treble, 330pF (darker than Plexi) */
-            .R2 = 1e6f,    .C2 = 47e-9f,      /* 1M bass, 0.047uF */
-            .R3 = 22e3f,   .C3 = 22e-9f,      /* 22k mid, 0.022uF */
-            .R4 = 39e3f,                        /* 39k slope */
+            .R1 = 250e3f,  .C1 = 470e-12f,   /* 250k treble pot, 470pF */
+            .R2 = 1e6f,    .C2 = 47e-9f,      /* 1M bass pot, 0.047uF (bigger = more bass) */
+            .R3 = 25e3f,   .C3 = 22e-9f,      /* 25k mid pot, 0.022uF */
+            .R4 = 39e3f,                        /* 39k slope resistor */
         },
         .presence_freq = 4500.0f,
         .power_threshold = 0.72f,
