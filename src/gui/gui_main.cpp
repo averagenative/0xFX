@@ -2733,13 +2733,13 @@ int main(int argc, char *argv[]) {
 
                         /* Emerald Deluxe: 7 knobs (same layout as Fullerton Clean) */
                         static const AmpKnobPos emerald_deluxe_knobs[] = {
-                            { FX_AMP_PARAM_VOLUME,   0.299f, 0.476f },
-                            { FX_AMP_PARAM_TREBLE,   0.375f, 0.475f },
-                            { FX_AMP_PARAM_MID,      0.451f, 0.477f },
-                            { FX_AMP_PARAM_BASS,     0.527f, 0.476f },
-                            { FX_AMP_PARAM_PRESENCE, 0.603f, 0.477f },
-                            { FX_AMP_PARAM_GAIN,     0.678f, 0.476f },
-                            { FX_AMP_PARAM_SAG,      0.753f, 0.476f },
+                            { FX_AMP_PARAM_VOLUME,   0.345f, 0.289f },
+                            { FX_AMP_PARAM_TREBLE,   0.409f, 0.286f },
+                            { FX_AMP_PARAM_MID,      0.472f, 0.286f },
+                            { FX_AMP_PARAM_BASS,     0.536f, 0.286f },
+                            { FX_AMP_PARAM_PRESENCE, 0.599f, 0.289f },
+                            { FX_AMP_PARAM_GAIN,     0.663f, 0.289f },
+                            { FX_AMP_PARAM_SAG,      0.726f, 0.289f },
                         };
 
                         /* Select the right map */
