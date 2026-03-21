@@ -365,8 +365,8 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
     /* Random amp */
     fx_amp_type_t amp = (fx_amp_type_t)(rand() % FX_AMP_COUNT);
     fx_amp_set_model(engine, FX_CHAIN_DEFAULT, amp);
-    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN,     randf(0.1f, 0.9f));
-    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME,   randf(0.3f, 0.8f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN,     randf(0.2f, 0.7f));
+    fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME,   randf(0.5f, 0.7f));
     fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_BASS,     randf(0.2f, 0.8f));
     fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MID,      randf(0.2f, 0.8f));
     fx_amp_set_param(engine, FX_CHAIN_DEFAULT, FX_AMP_PARAM_TREBLE,   randf(0.2f, 0.8f));
@@ -400,9 +400,22 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
     };
     int n_pre_types = (int)(sizeof(pre_types) / sizeof(pre_types[0]));
 
-    int n_pre = rand() % 6; /* 0-5 pre pedals */
+    int n_pre = rand() % 4; /* 0-3 pre pedals (was 0-5, too many = gain stack) */
+    int gain_pedals_added = 0;
     for (int i = 0; i < n_pre; i++) {
         fx_pedal_type_t pt = pre_types[rand() % n_pre_types];
+        /* Limit gain-stacking pedals to max 1 drive/fuzz/distortion */
+        bool is_gain = (pt == FX_PEDAL_JADE_DRIVE || pt == FX_PEDAL_GOLD_DRIVE ||
+                        pt == FX_PEDAL_BLUES_GRIT || pt == FX_PEDAL_RODENT ||
+                        pt == FX_PEDAL_ORANGE_DIST || pt == FX_PEDAL_METAL_ZONE ||
+                        pt == FX_PEDAL_AMP_BOX || pt == FX_PEDAL_MAMMOTH_FUZZ ||
+                        pt == FX_PEDAL_ROUND_FUZZ || pt == FX_PEDAL_WRAITH_FUZZ ||
+                        pt == FX_PEDAL_CHAOS_FUZZ);
+        if (is_gain && gain_pedals_added >= 1) {
+            /* Skip this one — pick a non-gain pedal instead */
+            pt = FX_PEDAL_NOISE_GATE;
+        }
+        if (is_gain) gain_pedals_added++;
         fx_pedal_id pid = fx_chain_add_pedal(engine, pt, FX_CHAIN_POS_PRE);
         int pc = fx_pedal_get_param_count(pt);
         for (int p = 0; p < pc; p++) {

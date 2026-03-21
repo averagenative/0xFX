@@ -63,14 +63,20 @@ uintptr_t fx_texture_load(const char *path)
     int w, h, channels;
     unsigned char *data = stbi_load(path, &w, &h, &channels, 4); /* force RGBA */
     if (!data) {
-        FX_WARN("fx_texture_load: failed to load '%s': %s", path, stbi_failure_reason());
-        /* Cache the failure so we don't retry and spam warnings every frame */
-        TexEntry *e = &s_cache[s_count++];
-        strncpy(e->path, path, sizeof(e->path) - 1);
-        e->path[sizeof(e->path) - 1] = '\0';
-        e->gl_id  = 0;
-        e->width  = 0;
-        e->height = 0;
+        /* Don't cache failures — the file might appear later (asset deploy).
+         * Use a simple "already warned" check to avoid log spam. */
+        static char s_warned[32][512];
+        static int s_warn_count = 0;
+        bool already_warned = false;
+        for (int wi = 0; wi < s_warn_count; wi++) {
+            if (strncmp(s_warned[wi], path, 511) == 0) { already_warned = true; break; }
+        }
+        if (!already_warned && s_warn_count < 32) {
+            strncpy(s_warned[s_warn_count], path, 511);
+            s_warned[s_warn_count][511] = '\0';
+            s_warn_count++;
+            FX_WARN("fx_texture_load: failed to load '%s': %s", path, stbi_failure_reason());
+        }
         return 0;
     }
 
