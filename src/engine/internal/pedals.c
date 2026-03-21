@@ -1371,7 +1371,7 @@ static void chaos_fuzz_process(fx_pedal_instance_t *p, float *buf, int n, float 
     (void)sr;
 
     float volume   = p->params[0];
-    float gate_thr = p->params[1] * 0.15f;          /* threshold 0-0.15 (was 0-0.5, too aggressive) */
+    float gate_thr = p->params[1] * 0.03f;           /* threshold 0-0.03 — very subtle gate for sputtery character */
     float drive    = 1.0f + p->params[2] * 29.0f;  /* 1x-30x */
     float stab     = p->params[3];
     /* Low stab = strong feedback (oscillation) */

@@ -427,7 +427,7 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
             else if (strstr(pname, "drive") || strstr(pname, "gain") || strstr(pname, "fuzz") || strstr(pname, "distortion"))
                 val = randf(0.3f, 0.8f);
             else if (strstr(pname, "level") || strstr(pname, "output") || strstr(pname, "volume"))
-                val = randf(0.4f, 0.75f);
+                val = randf(0.6f, 0.85f);
             else if (strstr(pname, "tone") || strstr(pname, "treble") || strstr(pname, "filter"))
                 val = randf(0.3f, 0.7f);
             else
