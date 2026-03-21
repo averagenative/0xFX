@@ -5,19 +5,40 @@
   "author": "0xFX Factory",
   "description": "Ethereal clean with cascading delays, shimmer, and vibrato. Explosions in the Sky, Mogwai, Sigur Ros.",
   "category": "Modern",
-  "tags": ["post-rock", "ambient", "clean", "delay", "shimmer"],
+  "tags": [
+    "post-rock",
+    "ambient",
+    "clean",
+    "delay",
+    "shimmer"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 60, "hold_ms": 15 }
+      "noise_gate": {
+        "threshold_db": -55,
+        "attack_ms": 1,
+        "release_ms": 60,
+        "hold_ms": 15
+      }
     },
     "pre_pedals": [],
     "chains": [
       {
         "amp": {
           "model": "fullerton_clean",
-          "params": { "gain": 0.2, "volume": 0.6, "bass": 0.45, "mid": 0.5, "treble": 0.6, "presence": 0.55, "bright": 1.0 }
+          "params": {
+            "gain": 0.2,
+            "volume": 0.6,
+            "bass": 0.45,
+            "mid": 0.5,
+            "treble": 0.6,
+            "presence": 0.55
+          }
         },
-        "cab": { "type": "1x12_open", "bypass": false },
+        "cab": {
+          "type": "1x12_open",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -25,27 +46,48 @@
       {
         "type": "drift_vibrato",
         "bypass": false,
-        "params": { "rate": 0.2, "depth": 0.25, "mix": 0.3 }
+        "params": {
+          "rate": 0.2,
+          "depth": 0.25,
+          "mix": 0.3
+        }
       },
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.45, "feedback": 0.4, "mix": 0.3 }
+        "params": {
+          "time": 0.45,
+          "feedback": 0.4,
+          "mix": 0.3
+        }
       },
       {
         "type": "carbon_delay",
         "bypass": false,
-        "params": { "time": 0.6, "feedback": 0.35, "tone": 0.45, "mix": 0.25 }
+        "params": {
+          "time": 0.6,
+          "feedback": 0.35,
+          "tone": 0.45,
+          "mix": 0.25
+        }
       },
       {
         "type": "shimmer_verb",
         "bypass": false,
-        "params": { "decay": 0.7, "shimmer": 0.5, "mix": 0.35 }
+        "params": {
+          "decay": 0.7,
+          "shimmer": 0.5,
+          "mix": 0.35
+        }
       },
       {
         "type": "cloud_verb",
         "bypass": false,
-        "params": { "decay": 0.75, "damping": 0.4, "mix": 0.3 }
+        "params": {
+          "decay": 0.75,
+          "damping": 0.4,
+          "mix": 0.3
+        }
       }
     ]
   }

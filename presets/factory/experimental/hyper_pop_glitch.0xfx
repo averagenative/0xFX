@@ -5,35 +5,66 @@
   "author": "0xFX Factory",
   "description": "Crushed, pitch-warped chaos with ring mod and granular. 100 gecs, SOPHIE, Charli XCX.",
   "category": "Experimental",
-  "tags": ["hyper-pop", "glitch", "experimental", "crush", "weird"],
+  "tags": [
+    "hyper-pop",
+    "glitch",
+    "experimental",
+    "crush",
+    "weird"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -50, "attack_ms": 0.5, "release_ms": 30, "hold_ms": 8 }
+      "noise_gate": {
+        "threshold_db": -50,
+        "attack_ms": 0.5,
+        "release_ms": 30,
+        "hold_ms": 8
+      }
     },
     "pre_pedals": [
       {
         "type": "grit_crush",
         "bypass": false,
-        "params": { "bits": 0.3, "rate": 0.35, "mix": 0.6 }
+        "params": {
+          "bits": 0.3,
+          "rate": 0.35,
+          "mix": 0.6
+        }
       },
       {
         "type": "ring_tone",
         "bypass": false,
-        "params": { "frequency": 0.4, "mix": 0.35 }
+        "params": {
+          "frequency": 0.4,
+          "mix": 0.35
+        }
       },
       {
         "type": "pitch_warp",
         "bypass": false,
-        "params": { "pitch": 0.65, "mix": 0.4 }
+        "params": {
+          "pitch": 0.65,
+          "mix": 0.4
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "fullerton_clean",
-          "params": { "gain": 0.2, "volume": 0.65, "bass": 0.4, "mid": 0.5, "treble": 0.65, "presence": 0.6 }
+          "params": {
+            "gain": 0.2,
+            "volume": 0.65,
+            "bass": 0.4,
+            "mid": 0.5,
+            "treble": 0.65,
+            "presence": 0.4
+          }
         },
-        "cab": { "type": "direct_flat", "bypass": false },
+        "cab": {
+          "type": "direct_flat",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -41,12 +72,21 @@
       {
         "type": "grain_cloud",
         "bypass": false,
-        "params": { "size": 0.3, "density": 0.6, "pitch": 0.55, "mix": 0.35 }
+        "params": {
+          "size": 0.3,
+          "density": 0.6,
+          "pitch": 0.55,
+          "mix": 0.35
+        }
       },
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.15, "feedback": 0.4, "mix": 0.25 }
+        "params": {
+          "time": 0.15,
+          "feedback": 0.4,
+          "mix": 0.25
+        }
       }
     ]
   }

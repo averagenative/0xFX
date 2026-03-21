@@ -5,25 +5,51 @@
   "author": "0xFX Factory",
   "description": "Polished studio clean with compression, delay, and tape warmth. John Mayer, Ed Sheeran, Mac DeMarco.",
   "category": "Modern",
-  "tags": ["pop", "clean", "studio", "polished", "warm"],
+  "tags": [
+    "pop",
+    "clean",
+    "studio",
+    "polished",
+    "warm"
+  ],
   "signal_chain": {
     "input": {
-      "noise_gate": { "threshold_db": -55, "attack_ms": 1, "release_ms": 50, "hold_ms": 10 }
+      "noise_gate": {
+        "threshold_db": -55,
+        "attack_ms": 1,
+        "release_ms": 50,
+        "hold_ms": 10
+      }
     },
     "pre_pedals": [
       {
         "type": "glass_comp",
         "bypass": false,
-        "params": { "threshold": 0.4, "ratio": 0.3, "blend": 0.5, "output": 0.65 }
+        "params": {
+          "threshold": 0.4,
+          "ratio": 0.3,
+          "blend": 0.5,
+          "output": 0.65
+        }
       }
     ],
     "chains": [
       {
         "amp": {
           "model": "fullerton_clean",
-          "params": { "gain": 0.2, "volume": 0.6, "bass": 0.45, "mid": 0.5, "treble": 0.6, "presence": 0.55, "bright": 1.0 }
+          "params": {
+            "gain": 0.2,
+            "volume": 0.6,
+            "bass": 0.45,
+            "mid": 0.5,
+            "treble": 0.6,
+            "presence": 0.4
+          }
         },
-        "cab": { "type": "direct_flat", "bypass": false },
+        "cab": {
+          "type": "direct_flat",
+          "bypass": false
+        },
         "mix": 1.0
       }
     ],
@@ -31,19 +57,31 @@
       {
         "type": "echo_delay",
         "bypass": false,
-        "params": { "time": 0.3, "feedback": 0.2, "mix": 0.15 }
+        "params": {
+          "time": 0.3,
+          "feedback": 0.2,
+          "mix": 0.15
+        }
       },
       {
         "type": "plate_verb",
         "bypass": false,
-        "params": { "decay": 0.35, "damping": 0.3, "mix": 0.2 }
+        "params": {
+          "decay": 0.35,
+          "damping": 0.3,
+          "mix": 0.2
+        }
       }
     ],
     "studio": [
       {
         "type": "reel_warmth",
         "bypass": false,
-        "params": { "drive": 0.2, "tone": 0.5, "mix": 0.25 }
+        "params": {
+          "drive": 0.2,
+          "tone": 0.5,
+          "mix": 0.25
+        }
       }
     ]
   }
