@@ -1706,6 +1706,34 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            /* ── Section labels above the signal chain ──────────────── */
+            {
+                ImGui::SetWindowFontScale(0.75f);
+                ImU32 label_col = IM_COL32(160, 140, 110, 120);
+                float label_y = cy - NODE_H * 0.5f - 18.0f;
+                if (is_dual) label_y = cy_a - NODE_H * 0.5f - 18.0f;
+
+                /* Find first/last column for each section */
+                for (int ni = 0; ni < chain_len; ni++) {
+                    const char *section = nullptr;
+                    if (chain[ni].kind == NODE_PEDAL_PRE && (ni == 0 || chain[ni-1].kind != NODE_PEDAL_PRE))
+                        section = "PEDALS";
+                    else if (chain[ni].kind == NODE_AMP && (ni == 0 || (chain[ni-1].kind != NODE_AMP && chain[ni-1].kind != NODE_SPLIT)))
+                        section = "AMP";
+                    else if (chain[ni].kind == NODE_CAB && (ni == 0 || chain[ni-1].kind != NODE_CAB))
+                        section = "CABINET";
+                    else if (chain[ni].kind == NODE_STUDIO && (ni == 0 || chain[ni-1].kind != NODE_STUDIO))
+                        section = "RACK FX";
+
+                    if (section) {
+                        float nx = col_to_x(node_col[ni]);
+                        ImVec2 sz = ImGui::CalcTextSize(section);
+                        dl->AddText(ImVec2(nx + (NODE_W - sz.x) * 0.5f, label_y), label_col, section);
+                    }
+                }
+                ImGui::SetWindowFontScale(1.0f);
+            }
+
             /* ── Draw all nodes ──────────────────────────────────────── */
             for (int ni = 0; ni < chain_len; ni++) {
                 ChainNode &n = chain[ni];
@@ -2975,6 +3003,54 @@ int main(int argc, char *argv[]) {
                                             /* Dim red when bypassed */
                                             ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 4.0f,
                                                 IM_COL32(180, 40, 30, 150), 12);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+
+                            /* Stomp switch click area (detected from purple dots) */
+                            {
+                                static const struct { const char *name; float x0,y0,x1,y1; } s_stomp[] = {
+                                    {"amp_box",0.410f,0.652f,0.602f,0.809f},{"blues_grit",0.383f,0.656f,0.602f,0.812f},
+                                    {"carbon_delay",0.395f,0.680f,0.621f,0.848f},{"chaos_fuzz",0.516f,0.570f,0.695f,0.738f},
+                                    {"cloud_verb",0.387f,0.676f,0.602f,0.828f},{"drift_vibrato",0.387f,0.609f,0.609f,0.777f},
+                                    {"drip_verb",0.395f,0.660f,0.617f,0.832f},{"echo_delay",0.375f,0.648f,0.613f,0.812f},
+                                    {"glass_comp",0.375f,0.633f,0.613f,0.832f},{"gold_drive",0.375f,0.621f,0.621f,0.809f},
+                                    {"grit_crush",0.379f,0.551f,0.629f,0.797f},{"hall_verb",0.387f,0.645f,0.617f,0.816f},
+                                    {"howl_wah",0.551f,0.629f,0.719f,0.773f},{"jade_drive",0.391f,0.652f,0.598f,0.820f},
+                                    {"jet_flanger",0.387f,0.625f,0.617f,0.805f},{"liquid_chorus",0.395f,0.590f,0.602f,0.777f},
+                                    {"mammoth_fuzz",0.398f,0.621f,0.602f,0.777f},{"memory_echo",0.391f,0.598f,0.605f,0.777f},
+                                    {"metal_zone",0.387f,0.633f,0.621f,0.816f},{"noise_gate",0.395f,0.582f,0.602f,0.754f},
+                                    {"orange_dist",0.383f,0.582f,0.609f,0.781f},{"phase_sweep",0.383f,0.613f,0.582f,0.793f},
+                                    {"plate_verb",0.391f,0.590f,0.609f,0.773f},{"pulse_trem",0.391f,0.660f,0.605f,0.844f},
+                                    {"punch_comp",0.406f,0.613f,0.598f,0.773f},{"quack_filter",0.328f,0.551f,0.566f,0.750f},
+                                    {"ring_tone",0.395f,0.621f,0.605f,0.770f},{"rodent",0.395f,0.617f,0.602f,0.785f},
+                                    {"round_fuzz",0.379f,0.578f,0.621f,0.781f},{"shimmer_verb",0.395f,0.707f,0.609f,0.855f},
+                                    {"squeeze_box",0.391f,0.617f,0.617f,0.789f},{"tape_machine",0.398f,0.648f,0.605f,0.812f},
+                                    {"tone_sculptor",0.406f,0.684f,0.605f,0.844f},{"warm_tape",0.398f,0.629f,0.598f,0.805f},
+                                    {"wraith_fuzz",0.414f,0.602f,0.594f,0.742f},
+                                };
+                                for (int si = 0; si < 35; si++) {
+                                    if (strcmp(s_stomp[si].name, pedal_fname) == 0) {
+                                        float sx0 = img_pos.x + s_stomp[si].x0 * img_w;
+                                        float sy0 = img_pos.y + s_stomp[si].y0 * img_h;
+                                        float sx1 = img_pos.x + s_stomp[si].x1 * img_w;
+                                        float sy1 = img_pos.y + s_stomp[si].y1 * img_h;
+
+                                        /* Invisible stomp button */
+                                        ImGui::SetCursorScreenPos(ImVec2(sx0, sy0));
+                                        char stomp_id[32];
+                                        snprintf(stomp_id, sizeof(stomp_id), "##stomp_%d", (int)pid);
+                                        if (ImGui::InvisibleButton(stomp_id, ImVec2(sx1-sx0, sy1-sy0))) {
+                                            fx_pedal_set_bypass(engine, pid, !bypassed);
+                                        }
+                                        /* Hover highlight on stomp area */
+                                        if (ImGui::IsItemHovered()) {
+                                            ImDrawList *sdl = ImGui::GetWindowDrawList();
+                                            sdl->AddRectFilled(ImVec2(sx0, sy0), ImVec2(sx1, sy1),
+                                                IM_COL32(255, 255, 255, 20), 4.0f);
+                                            ImGui::SetTooltip("Click to %s", bypassed ? "activate" : "bypass");
                                         }
                                         break;
                                     }
