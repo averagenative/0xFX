@@ -336,7 +336,7 @@ enum NodeKind {
     NODE_CAB,
     NODE_MERGE,       /* merge/mix diamond node (paths join here) */
     NODE_PEDAL_POST,
-    NODE_STUDIO,      /* studio rack processor (post-amp) */
+    NODE_STUDIO,      /* rack effect processor (post-amp) */
     NODE_OUTPUT
 };
 
@@ -1941,7 +1941,7 @@ int main(int argc, char *argv[]) {
                             for (int j = 0; j <= ni; j++)
                                 if (chain[j].kind == NODE_PEDAL_PRE) add_insert_slot++;
                         }
-                        /* Post-amp zone — studio processors */
+                        /* Post-amp zone — rack effects */
                         else if ((cur_kind == NODE_CAB || cur_kind == NODE_PEDAL_POST ||
                                   cur_kind == NODE_STUDIO) &&
                                  (nxt_kind == NODE_PEDAL_POST || nxt_kind == NODE_STUDIO ||
@@ -2182,14 +2182,14 @@ int main(int argc, char *argv[]) {
                 ImGui::EndPopup();
             }
 
-            /* ── Studio processor add popup (post-amp [+]) ──── */
-            ImGui::SetNextWindowSize(ImVec2(320, 220), ImGuiCond_Always);
+            /* ── Rack effect add popup (post-amp [+]) ──── */
+            ImGui::SetNextWindowSize(ImVec2(320, 340), ImGuiCond_Always);
             if (ImGui::BeginPopup("add_studio_popup",
                                   ImGuiWindowFlags_NoResize)) {
                 ImGui::PushStyleColor(ImGuiCol_Text,
                     ImVec4(0.90f, 0.65f, 0.20f, 1.0f));
                 ImGui::SetWindowFontScale(1.15f);
-                ImGui::Text("Add Studio Processor  [POST-AMP]");
+                ImGui::Text("Add Rack Effect  [POST-AMP]");
                 ImGui::SetWindowFontScale(1.0f);
                 ImGui::PopStyleColor();
                 ImGui::Separator();
@@ -2197,12 +2197,17 @@ int main(int argc, char *argv[]) {
 
                 static const struct { fx_studio_type_t type; const char *name; const char *desc; } studio_menu[] = {
                     { FX_STUDIO_IRON_SQUEEZE, "Iron Squeeze",  "FET compressor — punchy, fast attack" },
+                    { FX_STUDIO_VELVET_PRESS, "Velvet Press",  "Optical compressor — smooth, musical" },
+                    { FX_STUDIO_GLUE_BUS,     "Glue Bus",      "VCA bus compressor — glue, punch" },
                     { FX_STUDIO_GLASS_EQ,     "Glass EQ",      "Passive EQ — musical, sweet top end" },
+                    { FX_STUDIO_PRECISION_EQ, "Precision EQ",  "Channel EQ — warm, proportional-Q" },
                     { FX_STUDIO_REEL_WARMTH,  "Reel Warmth",   "Tape saturation — warmth, harmonics" },
+                    { FX_STUDIO_VALVE_COLOR,  "Valve Color",   "Tube saturation — rich harmonics" },
                     { FX_STUDIO_BRICK_WALL,   "Brick Wall",    "Brickwall limiter — output protection" },
+                    { FX_STUDIO_ROOM_ENGINE,  "Room Engine",   "Room simulation — studio ambience" },
                 };
 
-                for (int si = 0; si < 4; si++) {
+                for (int si = 0; si < 9; si++) {
                     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.18f, 0.22f, 0.30f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.25f, 0.35f, 0.50f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.30f, 0.45f, 0.65f, 1.0f));
@@ -3229,9 +3234,9 @@ int main(int argc, char *argv[]) {
                             else
                                 ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f), "%s", sname);
                             ImGui::SetWindowFontScale(1.0f);
-                            ImVec2 sub_sz = ImGui::CalcTextSize("Studio Processor");
+                            ImVec2 sub_sz = ImGui::CalcTextSize("Rack Effect");
                             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
-                            ImGui::TextDisabled("Studio Processor");
+                            ImGui::TextDisabled("Rack Effect");
                         }
                         ImGui::Dummy(ImVec2(0.0f, 4.0f));
                         {

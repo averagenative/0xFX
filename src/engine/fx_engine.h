@@ -255,6 +255,12 @@ typedef enum {
     FX_STUDIO_GLASS_EQ,          /* Passive EQ */
     FX_STUDIO_REEL_WARMTH,       /* Tape saturation */
     FX_STUDIO_BRICK_WALL,        /* Limiter */
+    /* Phase 2 */
+    FX_STUDIO_VELVET_PRESS,      /* Optical compressor (LA-2A style) */
+    FX_STUDIO_GLUE_BUS,          /* VCA bus compressor (SSL style) */
+    FX_STUDIO_VALVE_COLOR,       /* Tube saturation */
+    FX_STUDIO_PRECISION_EQ,      /* Channel EQ (Neve style) */
+    FX_STUDIO_ROOM_ENGINE,       /* Room simulation */
     FX_STUDIO_COUNT
 } fx_studio_type_t;
 

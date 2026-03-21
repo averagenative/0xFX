@@ -1,7 +1,7 @@
 /*
- * 0xFX — Studio processor DSP dispatch + implementations
+ * 0xFX — Rack effect DSP dispatch + implementations
  *
- * Post-amp rack gear: compressors, EQ, tape saturation, limiter.
+ * Post-amp rack gear: compressors, EQ, tape saturation, limiter, room sim.
  * These run after amp+cab in the signal chain, before output.
  *
  * Each processor type has init/process/free functions.
@@ -412,6 +412,487 @@ static void brick_wall_process(fx_studio_instance_t *p, float *buf, int n, float
 }
 
 /* ══════════════════════════════════════════════════════════════════
+ * VELVET PRESS — Optical compressor (LA-2A style)
+ * Smooth, program-dependent compression with slow attack
+ * Params: [0] peak_reduction, [1] gain, [2] mode (0=compress, 1=limit)
+ * ══════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    float envelope;        /* optical cell envelope (slow) */
+    float gain_reduction;  /* current GR in linear */
+} velvet_press_state_t;
+
+static void velvet_press_init(fx_studio_instance_t *p, float sr) {
+    (void)sr;
+    velvet_press_state_t *s = (velvet_press_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->envelope = 0.0f;
+    s->gain_reduction = 1.0f;
+
+    p->state = s;
+    p->params[0] = 0.5f;  /* peak reduction */
+    p->params[1] = 0.5f;  /* gain (makeup) */
+    p->params[2] = 0.0f;  /* mode: 0=compress, 1=limit */
+}
+
+static void velvet_press_process(fx_studio_instance_t *p, float *buf, int n, float sr) {
+    velvet_press_state_t *s = (velvet_press_state_t *)p->state;
+    if (!s) return;
+
+    float peak_reduction = p->params[0];
+    float makeup = 0.5f + p->params[1] * 2.5f;  /* 0.5x to 3x */
+    bool limit_mode = p->params[2] >= 0.5f;
+
+    /* Optical cell: very slow attack (~10ms), program-dependent release (60ms-2s) */
+    float attack_ms = 10.0f;
+    float attack_coeff = expf(-1.0f / (attack_ms * 0.001f * sr));
+
+    /* Threshold set by peak reduction knob */
+    float threshold_db = -30.0f + (1.0f - peak_reduction) * 25.0f;  /* -30 to -5 dB */
+    float threshold_lin = powf(10.0f, threshold_db / 20.0f);
+
+    /* Ratio: compress=3:1, limit=inf:1 */
+    float ratio = limit_mode ? 100.0f : 3.0f;
+
+    for (int i = 0; i < n; i++) {
+        float x = buf[i];
+
+        /* Peak detection with slow optical-style response */
+        float abs_x = fabsf(x);
+
+        /* Program-dependent release: faster release when signal drops quickly */
+        float release_ms = 60.0f + s->envelope * 2000.0f;  /* 60ms to ~2s */
+        float release_coeff = expf(-1.0f / (release_ms * 0.001f * sr));
+
+        if (abs_x > s->envelope) {
+            s->envelope = attack_coeff * s->envelope + (1.0f - attack_coeff) * abs_x;
+        } else {
+            s->envelope = release_coeff * s->envelope + (1.0f - release_coeff) * abs_x;
+        }
+
+        /* Compute gain reduction */
+        float gr = 1.0f;
+        if (s->envelope > threshold_lin) {
+            float env_db = 20.0f * log10f(s->envelope + 1e-30f);
+            float over_db = env_db - threshold_db;
+            float target_db = threshold_db + over_db / ratio;
+            float target_lin = powf(10.0f, target_db / 20.0f);
+            gr = target_lin / (s->envelope + 1e-30f);
+        }
+
+        /* Smooth gain reduction (very smooth for optical style) */
+        float smooth_coeff = (gr < s->gain_reduction) ? attack_coeff : release_coeff;
+        s->gain_reduction = smooth_coeff * s->gain_reduction +
+                            (1.0f - smooth_coeff) * gr;
+
+        buf[i] = x * s->gain_reduction * makeup;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * GLUE BUS — VCA bus compressor (SSL G-bus style)
+ * RMS detection, discrete attack/release, auto-release option
+ * Params: [0] threshold, [1] ratio, [2] attack, [3] release, [4] makeup
+ * ══════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    float rms_env;         /* RMS envelope */
+    float gain_reduction;  /* current GR */
+} glue_bus_state_t;
+
+static void glue_bus_init(fx_studio_instance_t *p, float sr) {
+    (void)sr;
+    glue_bus_state_t *s = (glue_bus_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->rms_env = 0.0f;
+    s->gain_reduction = 1.0f;
+
+    p->state = s;
+    p->params[0] = 0.5f;  /* threshold */
+    p->params[1] = 0.3f;  /* ratio */
+    p->params[2] = 0.3f;  /* attack */
+    p->params[3] = 0.5f;  /* release */
+    p->params[4] = 0.5f;  /* makeup */
+}
+
+static void glue_bus_process(fx_studio_instance_t *p, float *buf, int n, float sr) {
+    glue_bus_state_t *s = (glue_bus_state_t *)p->state;
+    if (!s) return;
+
+    /* Threshold: -20dB to +10dB */
+    float threshold_db = -20.0f + p->params[0] * 30.0f;
+    float threshold_lin = powf(10.0f, threshold_db / 20.0f);
+
+    /* Ratio: discrete 2:1, 4:1, 10:1 */
+    float ratio;
+    float r = p->params[1];
+    if (r < 0.33f)      ratio = 2.0f;
+    else if (r < 0.66f) ratio = 4.0f;
+    else                 ratio = 10.0f;
+
+    /* Attack: discrete steps (0.1, 0.3, 1, 3, 10, 30 ms) */
+    static const float attack_times[] = { 0.1f, 0.3f, 1.0f, 3.0f, 10.0f, 30.0f };
+    int att_idx = (int)(p->params[2] * 5.99f);
+    if (att_idx > 5) att_idx = 5;
+    float attack_ms = attack_times[att_idx];
+    float attack_coeff = expf(-1.0f / (attack_ms * 0.001f * sr));
+
+    /* Release: discrete (0.1, 0.3, 0.6, 1.2s, auto) */
+    static const float release_times[] = { 100.0f, 300.0f, 600.0f, 1200.0f };
+    bool auto_release = p->params[3] >= 0.8f;
+    float release_ms;
+    if (auto_release) {
+        release_ms = 300.0f;  /* base for auto — modulated below */
+    } else {
+        int rel_idx = (int)(p->params[3] * 4.99f);
+        if (rel_idx > 3) rel_idx = 3;
+        release_ms = release_times[rel_idx];
+    }
+    float release_coeff = expf(-1.0f / (release_ms * 0.001f * sr));
+
+    /* Makeup: 0 to 2x */
+    float makeup = p->params[4] * 2.0f;
+
+    /* RMS integration window ~10ms */
+    float rms_coeff = expf(-1.0f / (10.0f * 0.001f * sr));
+
+    for (int i = 0; i < n; i++) {
+        float x = buf[i];
+
+        /* RMS envelope */
+        s->rms_env = rms_coeff * s->rms_env + (1.0f - rms_coeff) * (x * x);
+        float rms_level = sqrtf(s->rms_env + 1e-30f);
+
+        /* Auto-release: faster when GR is deep */
+        if (auto_release) {
+            float auto_rel = 100.0f + (1.0f - (1.0f - s->gain_reduction)) * 800.0f;
+            release_coeff = expf(-1.0f / (auto_rel * 0.001f * sr));
+        }
+
+        /* Compute gain reduction */
+        float gr = 1.0f;
+        if (rms_level > threshold_lin) {
+            float env_db = 20.0f * log10f(rms_level + 1e-30f);
+            float over_db = env_db - threshold_db;
+            float target_db = threshold_db + over_db / ratio;
+            float target_lin = powf(10.0f, target_db / 20.0f);
+            gr = target_lin / (rms_level + 1e-30f);
+        }
+
+        /* Smooth GR */
+        if (gr < s->gain_reduction) {
+            s->gain_reduction = attack_coeff * s->gain_reduction +
+                                (1.0f - attack_coeff) * gr;
+        } else {
+            s->gain_reduction = release_coeff * s->gain_reduction +
+                                (1.0f - release_coeff) * gr;
+        }
+
+        buf[i] = x * s->gain_reduction * makeup;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * VALVE COLOR — Tube saturation
+ * Triode waveshaping with bias-dependent even/odd harmonics
+ * Params: [0] drive, [1] bias (0=A, 0.5=AB, 1=B), [2] output, [3] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    float dc_block_z1;  /* DC blocking filter state */
+    float dc_block_y1;
+} valve_color_state_t;
+
+static void valve_color_init(fx_studio_instance_t *p, float sr) {
+    (void)sr;
+    valve_color_state_t *s = (valve_color_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->dc_block_z1 = 0.0f;
+    s->dc_block_y1 = 0.0f;
+
+    p->state = s;
+    p->params[0] = 0.3f;  /* drive */
+    p->params[1] = 0.0f;  /* bias (class A default) */
+    p->params[2] = 0.7f;  /* output */
+    p->params[3] = 1.0f;  /* mix (wet) */
+}
+
+static void valve_color_process(fx_studio_instance_t *p, float *buf, int n, float sr) {
+    valve_color_state_t *s = (valve_color_state_t *)p->state;
+    if (!s) return;
+
+    float drive = 1.0f + p->params[0] * 9.0f;  /* 1x to 10x */
+    float bias = p->params[1];
+    float output = p->params[2];
+    float mix = p->params[3];
+
+    /* Bias determines even/odd harmonic balance:
+     * Class A (bias=0): asymmetric clipping -> even harmonics (warm)
+     * Class AB (bias=0.5): balanced
+     * Class B (bias=1): symmetric clipping -> odd harmonics (edgy) */
+    float asymmetry = 1.0f - bias;  /* 1=full asymmetry (A), 0=symmetric (B) */
+
+    /* DC blocking coefficient (~20Hz HPF) */
+    float dc_coeff = 1.0f - (20.0f * 2.0f * (float)M_PI / sr);
+    if (dc_coeff < 0.99f) dc_coeff = 0.99f;
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+        float x = dry * drive;
+
+        /* Triode waveshaping with bias-dependent asymmetry */
+        float pos, neg;
+
+        /* Positive half: soft clip */
+        if (x >= 0.0f) {
+            pos = tanhf(x * (1.0f + asymmetry * 0.5f));
+        } else {
+            pos = 0.0f;
+        }
+
+        /* Negative half: harder clip with bias control */
+        if (x < 0.0f) {
+            neg = tanhf(x * (1.0f - asymmetry * 0.3f));
+        } else {
+            neg = 0.0f;
+        }
+
+        float wet = pos + neg;
+
+        /* DC blocking filter (asymmetric clipping generates DC offset) */
+        float dc_out = wet - s->dc_block_z1 + dc_coeff * s->dc_block_y1;
+        s->dc_block_z1 = wet;
+        s->dc_block_y1 = dc_out;
+        wet = dc_out;
+
+        /* Mix dry/wet */
+        buf[i] = (dry * (1.0f - mix) + wet * mix) * output;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * PRECISION EQ — Neve-style channel EQ
+ * Proportional-Q bands with HP filter
+ * Params: [0] hp_freq, [1] low_gain, [2] mid_freq, [3] mid_gain,
+ *         [4] high_gain
+ * ══════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    fx_biquad_t hp_filt;        /* high-pass filter */
+    fx_biquad_t low_shelf;      /* low shelf */
+    fx_biquad_t mid_bell;       /* mid parametric bell */
+    fx_biquad_t high_shelf;     /* high shelf (fixed 12kHz) */
+    float       cached_params[5];
+    float       cached_sr;
+} precision_eq_state_t;
+
+static void precision_eq_init(fx_studio_instance_t *p, float sr) {
+    precision_eq_state_t *s = (precision_eq_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    /* Init all filters flat */
+    fx_biquad_highpass(&s->hp_filt, 20.0f, 0.707f, sr);
+    fx_biquad_lowshelf(&s->low_shelf, 110.0f, 0.0f, sr);
+    fx_biquad_peak(&s->mid_bell, 1200.0f, 0.0f, 1.0f, sr);
+    fx_biquad_highshelf(&s->high_shelf, 12000.0f, 0.0f, sr);
+    memset(s->cached_params, 0, sizeof(s->cached_params));
+    s->cached_sr = sr;
+
+    p->state = s;
+    p->params[0] = 0.0f;  /* HP freq (off) */
+    p->params[1] = 0.5f;  /* low gain (0dB = center) */
+    p->params[2] = 0.4f;  /* mid freq */
+    p->params[3] = 0.5f;  /* mid gain (0dB = center) */
+    p->params[4] = 0.5f;  /* high gain (0dB = center) */
+}
+
+static void precision_eq_process(fx_studio_instance_t *p, float *buf, int n, float sr) {
+    precision_eq_state_t *s = (precision_eq_state_t *)p->state;
+    if (!s) return;
+
+    /* Check if params changed */
+    bool changed = (s->cached_sr != sr);
+    for (int i = 0; i < 5; i++) {
+        if (s->cached_params[i] != p->params[i]) {
+            changed = true;
+            s->cached_params[i] = p->params[i];
+        }
+    }
+
+    if (changed) {
+        s->cached_sr = sr;
+
+        /* HP filter: discrete freqs (off, 50, 80, 160, 300 Hz) */
+        static const float hp_freqs[] = { 20.0f, 50.0f, 80.0f, 160.0f, 300.0f };
+        int hp_idx = (int)(p->params[0] * 4.99f);
+        if (hp_idx > 4) hp_idx = 4;
+        fx_biquad_highpass(&s->hp_filt, hp_freqs[hp_idx], 0.707f, sr);
+
+        /* Low shelf: select freq from (35, 60, 110, 220 Hz) based on position,
+         * gain from -16 to +16 dB */
+        static const float low_freqs[] = { 35.0f, 60.0f, 110.0f, 220.0f };
+        /* Use a fixed freq selection — for simplicity, map to 110Hz default */
+        float low_gain_db = (p->params[1] - 0.5f) * 32.0f;  /* -16 to +16 dB */
+        /* Proportional Q: wider at low gain, narrower at high gain */
+        fx_biquad_lowshelf(&s->low_shelf, low_freqs[2], low_gain_db, sr);
+
+        /* Mid bell: freq 360Hz to 7200Hz, gain -18 to +18 dB */
+        float mid_freq = 360.0f + p->params[2] * 6840.0f;
+        float mid_gain_db = (p->params[3] - 0.5f) * 36.0f;  /* -18 to +18 dB */
+        /* Proportional Q: Q increases with gain */
+        float mid_q = 0.5f + fabsf(mid_gain_db) * 0.1f;
+        if (mid_q > 4.0f) mid_q = 4.0f;
+        fx_biquad_peak(&s->mid_bell, mid_freq, mid_gain_db, mid_q, sr);
+
+        /* High shelf: fixed 12kHz, gain -16 to +16 dB */
+        float high_gain_db = (p->params[4] - 0.5f) * 32.0f;
+        fx_biquad_highshelf(&s->high_shelf, 12000.0f, high_gain_db, sr);
+    }
+
+    /* Process through all 4 filters in series */
+    for (int i = 0; i < n; i++) {
+        float x = buf[i];
+        x = fx_biquad_process(&s->hp_filt, x);
+        x = fx_biquad_process(&s->low_shelf, x);
+        x = fx_biquad_process(&s->mid_bell, x);
+        x = fx_biquad_process(&s->high_shelf, x);
+        buf[i] = x;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * ROOM ENGINE — Room simulation
+ * Early reflection network for recording space emulation
+ * Params: [0] room_type, [1] size, [2] damping, [3] mix
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* Early reflection delay taps (in ms) — tuned for natural room feel */
+#define ROOM_NUM_TAPS     6
+#define ROOM_MAX_DELAY_MS 80.0f
+#define ROOM_MAX_DELAY    4096  /* max samples for delay buffer (~80ms @ 48kHz) */
+
+typedef struct {
+    float delay_buf[ROOM_MAX_DELAY];
+    int   buf_len;
+    int   write_pos;
+    int   tap_offsets[ROOM_NUM_TAPS];  /* delay in samples per tap */
+    float tap_gains[ROOM_NUM_TAPS];    /* gain per tap */
+    fx_biquad_t damping_filt;          /* HF damping */
+    float cached_params[4];
+    float cached_sr;
+} room_engine_state_t;
+
+static void room_engine_init(fx_studio_instance_t *p, float sr) {
+    room_engine_state_t *s = (room_engine_state_t *)calloc(1, sizeof(*s));
+    if (!s) return;
+
+    s->buf_len = (int)(ROOM_MAX_DELAY_MS * 0.001f * sr);
+    if (s->buf_len > ROOM_MAX_DELAY) s->buf_len = ROOM_MAX_DELAY;
+    if (s->buf_len < 1) s->buf_len = 1;
+    s->write_pos = 0;
+    memset(s->delay_buf, 0, sizeof(s->delay_buf));
+    fx_biquad_lowpass(&s->damping_filt, 8000.0f, 0.707f, sr);
+    memset(s->cached_params, -1.0f, sizeof(s->cached_params));
+    s->cached_sr = sr;
+
+    p->state = s;
+    p->params[0] = 0.0f;  /* room type (Tight Booth) */
+    p->params[1] = 0.5f;  /* size */
+    p->params[2] = 0.5f;  /* damping */
+    p->params[3] = 0.3f;  /* mix */
+}
+
+/* Room type presets: early reflection patterns */
+static const float room_tap_ms[3][ROOM_NUM_TAPS] = {
+    /* Tight Booth:  close walls, short delays */
+    { 2.1f, 4.3f, 7.2f, 11.5f, 15.8f, 21.0f },
+    /* Live Room:  medium space, spaced reflections */
+    { 5.0f, 11.2f, 18.7f, 27.3f, 38.1f, 49.5f },
+    /* Large Hall: long delays, sparse reflections */
+    { 12.0f, 23.5f, 37.8f, 51.2f, 64.0f, 78.0f },
+};
+
+static const float room_tap_gain[3][ROOM_NUM_TAPS] = {
+    /* Tight Booth: strong, quick decay */
+    { 0.7f, 0.55f, 0.4f, 0.25f, 0.15f, 0.08f },
+    /* Live Room: moderate decay */
+    { 0.6f, 0.45f, 0.35f, 0.25f, 0.18f, 0.12f },
+    /* Large Hall: slow decay */
+    { 0.5f, 0.42f, 0.35f, 0.30f, 0.25f, 0.20f },
+};
+
+static void room_engine_process(fx_studio_instance_t *p, float *buf, int n, float sr) {
+    room_engine_state_t *s = (room_engine_state_t *)p->state;
+    if (!s) return;
+
+    float mix = p->params[3];
+
+    /* Check if params changed */
+    bool changed = (s->cached_sr != sr);
+    for (int i = 0; i < 4; i++) {
+        if (s->cached_params[i] != p->params[i]) {
+            changed = true;
+            s->cached_params[i] = p->params[i];
+        }
+    }
+
+    if (changed) {
+        s->cached_sr = sr;
+        s->buf_len = (int)(ROOM_MAX_DELAY_MS * 0.001f * sr);
+        if (s->buf_len > ROOM_MAX_DELAY) s->buf_len = ROOM_MAX_DELAY;
+        if (s->buf_len < 1) s->buf_len = 1;
+
+        /* Room type: discrete */
+        int room_idx = (int)(p->params[0] * 2.99f);
+        if (room_idx > 2) room_idx = 2;
+
+        /* Size multiplier: 0.5x to 1.5x */
+        float size_mult = 0.5f + p->params[1] * 1.0f;
+
+        /* Calculate tap delays and gains */
+        for (int t = 0; t < ROOM_NUM_TAPS; t++) {
+            float delay_ms = room_tap_ms[room_idx][t] * size_mult;
+            int delay_samples = (int)(delay_ms * 0.001f * sr);
+            if (delay_samples >= s->buf_len) delay_samples = s->buf_len - 1;
+            if (delay_samples < 1) delay_samples = 1;
+            s->tap_offsets[t] = delay_samples;
+            s->tap_gains[t] = room_tap_gain[room_idx][t];
+        }
+
+        /* Damping: LPF cutoff 2kHz (dark) to 16kHz (bright) */
+        float damp_freq = 2000.0f + (1.0f - p->params[2]) * 14000.0f;
+        fx_biquad_lowpass(&s->damping_filt, damp_freq, 0.707f, sr);
+    }
+
+    for (int i = 0; i < n; i++) {
+        float dry = buf[i];
+
+        /* Write dry signal to delay buffer */
+        s->delay_buf[s->write_pos] = dry;
+
+        /* Sum early reflections from taps */
+        float wet = 0.0f;
+        for (int t = 0; t < ROOM_NUM_TAPS; t++) {
+            int read_pos = s->write_pos - s->tap_offsets[t];
+            if (read_pos < 0) read_pos += s->buf_len;
+            wet += s->delay_buf[read_pos] * s->tap_gains[t];
+        }
+
+        /* Apply damping filter to wet signal */
+        wet = fx_biquad_process(&s->damping_filt, wet);
+
+        s->write_pos++;
+        if (s->write_pos >= s->buf_len) s->write_pos = 0;
+
+        /* Mix */
+        buf[i] = dry * (1.0f - mix) + wet * mix;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════
  * Type name + param name tables
  * ══════════════════════════════════════════════════════════════════ */
 
@@ -420,6 +901,11 @@ static const char *studio_type_names[FX_STUDIO_COUNT] = {
     "Glass EQ",
     "Reel Warmth",
     "Brick Wall",
+    "Velvet Press",
+    "Glue Bus",
+    "Valve Color",
+    "Precision EQ",
+    "Room Engine",
 };
 
 static const char *iron_squeeze_params[] = { "Input", "Output", "Attack", "Release", "Ratio" };
@@ -427,6 +913,11 @@ static const char *glass_eq_params[]     = { "Low Freq", "Low Boost", "Low Cut",
                                               "High Freq", "High Boost", "High Atten" };
 static const char *reel_warmth_params[]  = { "Input", "Speed", "Bias", "Output" };
 static const char *brick_wall_params[]   = { "Threshold", "Ceiling", "Release" };
+static const char *velvet_press_params[] = { "Peak Reduction", "Gain", "Mode" };
+static const char *glue_bus_params[]     = { "Threshold", "Ratio", "Attack", "Release", "Makeup" };
+static const char *valve_color_params[]  = { "Drive", "Bias", "Output", "Mix" };
+static const char *precision_eq_params[] = { "HP Freq", "Low Gain", "Mid Freq", "Mid Gain", "High Gain" };
+static const char *room_engine_params[]  = { "Room", "Size", "Damping", "Mix" };
 
 const char *fx_studio_get_type_name(fx_studio_type_t type) {
     if (type < 0 || type >= FX_STUDIO_COUNT) return "?";
@@ -439,6 +930,11 @@ int fx_studio_get_param_count(fx_studio_type_t type) {
         case FX_STUDIO_GLASS_EQ:     return 6;
         case FX_STUDIO_REEL_WARMTH:  return 4;
         case FX_STUDIO_BRICK_WALL:   return 3;
+        case FX_STUDIO_VELVET_PRESS: return 3;
+        case FX_STUDIO_GLUE_BUS:     return 5;
+        case FX_STUDIO_VALVE_COLOR:  return 4;
+        case FX_STUDIO_PRECISION_EQ: return 5;
+        case FX_STUDIO_ROOM_ENGINE:  return 4;
         default: return 0;
     }
 }
@@ -458,6 +954,21 @@ const char *fx_studio_get_param_name(fx_studio_type_t type, int param) {
             break;
         case FX_STUDIO_BRICK_WALL:
             if (param < 3) return brick_wall_params[param];
+            break;
+        case FX_STUDIO_VELVET_PRESS:
+            if (param < 3) return velvet_press_params[param];
+            break;
+        case FX_STUDIO_GLUE_BUS:
+            if (param < 5) return glue_bus_params[param];
+            break;
+        case FX_STUDIO_VALVE_COLOR:
+            if (param < 4) return valve_color_params[param];
+            break;
+        case FX_STUDIO_PRECISION_EQ:
+            if (param < 5) return precision_eq_params[param];
+            break;
+        case FX_STUDIO_ROOM_ENGINE:
+            if (param < 4) return room_engine_params[param];
             break;
         default:
             break;
@@ -486,6 +997,11 @@ void fx_studio_init_state(fx_studio_instance_t *p, float sr) {
         case FX_STUDIO_GLASS_EQ:     glass_eq_init(p, sr);     break;
         case FX_STUDIO_REEL_WARMTH:  reel_warmth_init(p, sr);  break;
         case FX_STUDIO_BRICK_WALL:   brick_wall_init(p, sr);   break;
+        case FX_STUDIO_VELVET_PRESS: velvet_press_init(p, sr);  break;
+        case FX_STUDIO_GLUE_BUS:     glue_bus_init(p, sr);      break;
+        case FX_STUDIO_VALVE_COLOR:  valve_color_init(p, sr);   break;
+        case FX_STUDIO_PRECISION_EQ: precision_eq_init(p, sr);  break;
+        case FX_STUDIO_ROOM_ENGINE:  room_engine_init(p, sr);   break;
         default:
             break;
     }
@@ -509,6 +1025,11 @@ void fx_studio_process_dsp(fx_studio_instance_t *p, float *buf, int n, float sr)
         case FX_STUDIO_GLASS_EQ:     glass_eq_process(p, buf, n, sr);     break;
         case FX_STUDIO_REEL_WARMTH:  reel_warmth_process(p, buf, n, sr);  break;
         case FX_STUDIO_BRICK_WALL:   brick_wall_process(p, buf, n, sr);   break;
+        case FX_STUDIO_VELVET_PRESS: velvet_press_process(p, buf, n, sr);  break;
+        case FX_STUDIO_GLUE_BUS:     glue_bus_process(p, buf, n, sr);      break;
+        case FX_STUDIO_VALVE_COLOR:  valve_color_process(p, buf, n, sr);   break;
+        case FX_STUDIO_PRECISION_EQ: precision_eq_process(p, buf, n, sr);  break;
+        case FX_STUDIO_ROOM_ENGINE:  room_engine_process(p, buf, n, sr);   break;
         default:
             break;
     }

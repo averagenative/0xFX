@@ -1293,11 +1293,11 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
         int slot     = offset / PARAMS_PER_STUDIO;
         int sub      = offset % PARAMS_PER_STUDIO;
         if (sub == 0) {
-            snprintf(buf, buflen, "Studio %d Type", slot + 1);
+            snprintf(buf, buflen, "Rack %d Type", slot + 1);
         } else if (sub == 1) {
-            snprintf(buf, buflen, "Studio %d Bypass", slot + 1);
+            snprintf(buf, buflen, "Rack %d Bypass", slot + 1);
         } else {
-            snprintf(buf, buflen, "Studio %d P%d", slot + 1, sub - 1);
+            snprintf(buf, buflen, "Rack %d P%d", slot + 1, sub - 1);
         }
         return;
     }

@@ -1133,7 +1133,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::PopStyleVar();
                 ImGui::PopStyleColor(4);
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Add post-amp pedal or studio processor");
+                    ImGui::SetTooltip("Add post-amp pedal or rack effect");
             }
         }
 
@@ -1168,15 +1168,20 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
         if (ImGui::BeginPopup("add_pedal_gallery_post")) {
             ImGui::Text("Add Post-Amp Effect");
             ImGui::Separator();
-            /* Studio processors with descriptions */
-            if (ImGui::TreeNode("STUDIO")) {
+            /* Rack effects with descriptions */
+            if (ImGui::TreeNode("RACK EFFECTS")) {
                 static const struct { fx_studio_type_t type; const char *name; const char *desc; } studio_menu[] = {
                     { FX_STUDIO_IRON_SQUEEZE, "Iron Squeeze",  "FET compressor \xe2\x80\x94 punchy, fast attack" },
+                    { FX_STUDIO_VELVET_PRESS, "Velvet Press",  "Optical compressor \xe2\x80\x94 smooth, musical" },
+                    { FX_STUDIO_GLUE_BUS,     "Glue Bus",      "VCA bus compressor \xe2\x80\x94 glue, punch" },
                     { FX_STUDIO_GLASS_EQ,     "Glass EQ",      "Passive EQ \xe2\x80\x94 musical, sweet top end" },
+                    { FX_STUDIO_PRECISION_EQ, "Precision EQ",  "Channel EQ \xe2\x80\x94 warm, proportional-Q" },
                     { FX_STUDIO_REEL_WARMTH,  "Reel Warmth",   "Tape saturation \xe2\x80\x94 warmth, harmonics" },
+                    { FX_STUDIO_VALVE_COLOR,  "Valve Color",   "Tube saturation \xe2\x80\x94 rich harmonics" },
                     { FX_STUDIO_BRICK_WALL,   "Brick Wall",    "Brickwall limiter \xe2\x80\x94 output protection" },
+                    { FX_STUDIO_ROOM_ENGINE,  "Room Engine",   "Room simulation \xe2\x80\x94 studio ambience" },
                 };
-                for (int si = 0; si < 4; si++) {
+                for (int si = 0; si < 9; si++) {
                     if (ImGui::Selectable(studio_menu[si].name)) {
                         if (gui->studio_id_count < 8) {
                             fx_studio_id sid = fx_studio_add(engine, studio_menu[si].type);
@@ -2064,9 +2069,9 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         else
                             ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f), "%s", sname);
                         ImGui::SetWindowFontScale(1.0f);
-                        ImVec2 sub_sz = ImGui::CalcTextSize("Studio Processor");
+                        ImVec2 sub_sz = ImGui::CalcTextSize("Rack Effect");
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
-                        ImGui::TextDisabled("Studio Processor");
+                        ImGui::TextDisabled("Rack Effect");
                     }
                     ImGui::Dummy(ImVec2(0.0f, 4.0f));
                     {
