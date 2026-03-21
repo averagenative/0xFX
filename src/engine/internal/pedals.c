@@ -1393,7 +1393,8 @@ static void chaos_fuzz_process(fx_pedal_instance_t *p, float *buf, int n, float 
 
         s->feedback_z1 = x;
 
-        buf[i] = x * volume;
+        /* Volume as output gain: 0=silent, 0.5=unity, 1.0=3x boost */
+        buf[i] = x * (0.5f + volume * 2.5f);
     }
 }
 
