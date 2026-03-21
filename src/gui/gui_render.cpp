@@ -876,47 +876,142 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImVec2 tl = ImVec2(nx, ny);
                 ImVec2 br = ImVec2(nx + NODE_W, ny + NODE_H);
 
-                /* Node background with texture if available */
-                dl->AddRectFilled(tl, br, col_fill, 6.0f);
+                /* Node background — try texture first, then solid fill */
+                bool drew_texture = false;
+                {
+                    uintptr_t tex = 0;
+                    if (chain[i].kind == NODE_PEDAL_PRE || chain[i].kind == NODE_PEDAL_POST) {
+                        fx_pedal_type_t pt = fx_pedal_get_type(engine, chain[i].pedal_id);
+                        if (pt < FX_PEDAL_TYPE_COUNT) {
+                            const char *tname = fx_pedal_get_type_name(pt);
+                            tex = load_pedal_texture(tname);
+                        }
+                    } else if (chain[i].kind == NODE_AMP) {
+                        const char *aname = fx_amp_get_type_name(
+                            fx_amp_get_model(engine, (fx_chain_id)chain[i].chain_id));
+                        /* Use amp body texture for chain view thumbnail */
+                        char fname[128];
+                        amp_name_to_filename(aname, fname, sizeof(fname));
+                        char path[256];
+                        snprintf(path, sizeof(path), "resources/amps/%s_body_nobg.png", fname);
+                        tex = fx_texture_load(path);
+                    } else if (chain[i].kind == NODE_CAB) {
+                        int ctype = (chain[i].chain_id == 0) ? gui->cab_type : gui->cab_type_b;
+                        tex = load_cab_texture(ctype);
+                    } else if (chain[i].kind == NODE_INPUT) {
+                        /* TRS plug input — rendered flipped horizontally */
+                        tex = fx_texture_load("resources/cables/trs_plug_input.png");
+                        if (tex) {
+                            ImGui::SetCursorScreenPos(ImVec2(nx, ny));
+                            ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
+                                         ImVec2(1, 0), ImVec2(0, 1),
+                                         ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                            drew_texture = true;
+                            tex = 0; /* skip default rendering below */
+                        }
+                    } else if (chain[i].kind == NODE_OUTPUT) {
+                        /* XLR plug output */
+                        tex = fx_texture_load("resources/cables/xlr_plug_output.png");
+                    }
+                    if (tex) {
+                        ImVec4 tint = bypassed
+                            ? ImVec4(0.5f, 0.5f, 0.5f, 0.7f)
+                            : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                        ImGui::SetCursorScreenPos(ImVec2(nx, ny));
+                        ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
+                                     ImVec2(0, 0), ImVec2(1, 1), tint);
+                        drew_texture = true;
+                    }
+                }
+                if (!drew_texture) {
+                    dl->AddRectFilled(tl, br, col_fill, 6.0f);
+                }
 
                 /* Selection highlight */
                 if (is_selected)
                     dl->AddRect(ImVec2(tl.x-2,tl.y-2), ImVec2(br.x+2,br.y+2),
                                 IM_COL32(255, 200, 60, 255), 8.0f, 0, 2.5f);
-                else
+                else if (!drew_texture)
                     dl->AddRect(tl, br, IM_COL32(80, 70, 55, 200), 6.0f, 0, 1.0f);
 
                 /* LED indicator for bypass status */
                 if (chain[i].kind == NODE_PEDAL_PRE || chain[i].kind == NODE_PEDAL_POST ||
                     chain[i].kind == NODE_STUDIO) {
-                    float led_x = nx + NODE_W - 10.0f;
-                    float led_y = ny + 8.0f;
-                    ImU32 led_col = bypassed ? IM_COL32(80, 30, 30, 200)
-                                             : IM_COL32(30, 200, 50, 255);
-                    dl->AddCircleFilled(ImVec2(led_x, led_y), 4.0f, led_col);
-                    if (!bypassed) {
-                        dl->AddCircleFilled(ImVec2(led_x, led_y), 7.0f,
-                                            IM_COL32(30, 200, 50, 40));
+                    const char *led_path = bypassed
+                        ? "resources/leds/led_red_off_nobg.png"
+                        : "resources/leds/led_green_on_nobg.png";
+                    uintptr_t led_tex = fx_texture_load(led_path);
+                    const float LED_SZ = 12.0f;
+                    float led_x = nx + NODE_W - LED_SZ - 3.0f;
+                    float led_y = ny + 3.0f;
+                    if (led_tex) {
+                        ImGui::SetCursorScreenPos(ImVec2(led_x, led_y));
+                        ImGui::Image((ImTextureID)(uintptr_t)led_tex, ImVec2(LED_SZ, LED_SZ));
+                    } else {
+                        ImU32 led_col = bypassed ? IM_COL32(200, 60, 50, 200)
+                                                 : IM_COL32(60, 200, 60, 220);
+                        dl->AddCircleFilled(
+                            ImVec2(led_x + LED_SZ*0.5f, led_y + LED_SZ*0.5f),
+                            LED_SZ * 0.5f, led_col, 12);
                     }
                 }
 
-                /* Label text — truncate if needed */
+                /* Label text below node */
                 {
-                    ImGui::PushClipRect(tl, br, true);
+                    /* Override cab label with actual cab type name */
+                    if (chain[i].kind == NODE_CAB) {
+                        int ctype = (chain[i].chain_id == 0) ? gui->cab_type : gui->cab_type_b;
+                        if (ctype >= 0 && ctype < FX_CAB_TYPE_COUNT)
+                            label = s_cab_type_names[ctype];
+                    }
+                    char short_lbl[16];
                     ImVec2 ts = ImGui::CalcTextSize(label);
-                    float tx = nx + (NODE_W - ts.x) * 0.5f;
-                    float ty2 = ny + (NODE_H - ts.y) * 0.5f;
-                    ImU32 text_col = bypassed ? IM_COL32(120, 110, 100, 180)
-                                              : IM_COL32(230, 220, 200, 255);
-                    dl->AddText(ImVec2(tx, ty2), text_col, label);
-                    ImGui::PopClipRect();
+                    if (ts.x > NODE_W - 4.0f) {
+                        int copy_len = 9;
+                        if (copy_len > (int)strlen(label)) copy_len = (int)strlen(label);
+                        memcpy(short_lbl, label, copy_len);
+                        short_lbl[copy_len] = '\0';
+                        label = short_lbl;
+                        ts = ImGui::CalcTextSize(label);
+                    }
+                    float lbl_x = nx + (NODE_W - ts.x) * 0.5f;
+                    float lbl_y = ny + NODE_H + 4.0f;
+                    dl->AddText(ImVec2(lbl_x, lbl_y),
+                                bypassed ? IM_COL32(100, 90, 80, 200)
+                                         : IM_COL32(210, 200, 180, 255),
+                                label);
                 }
 
                 /* Clickable area */
                 ImGui::SetCursorScreenPos(tl);
                 char uid[32]; snprintf(uid, sizeof(uid), "##node_%d", i);
-                if (ImGui::InvisibleButton(uid, ImVec2(NODE_W, NODE_H)))
-                    gui->selected_node = i;
+                if (ImGui::InvisibleButton(uid, ImVec2(NODE_W, NODE_H))) {
+                    if (chain[i].kind != NODE_INPUT && chain[i].kind != NODE_OUTPUT)
+                        gui->selected_node = (gui->selected_node == i) ? -1 : i;
+                }
+
+                /* Right-click or double-click = stomp (toggle bypass) */
+                {
+                    bool stomped = false;
+                    if (ImGui::IsItemHovered()) {
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                            stomped = true;
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                            stomped = true;
+                    }
+                    if (stomped) {
+                        if (chain[i].kind == NODE_PEDAL_PRE || chain[i].kind == NODE_PEDAL_POST) {
+                            bool bp = fx_pedal_get_bypass(engine, chain[i].pedal_id);
+                            fx_pedal_set_bypass(engine, chain[i].pedal_id, !bp);
+                        } else if (chain[i].kind == NODE_STUDIO) {
+                            bool bp = fx_studio_get_bypass(engine, chain[i].pedal_id);
+                            fx_studio_set_bypass(engine, chain[i].pedal_id, !bp);
+                        } else if (chain[i].kind == NODE_CAB) {
+                            bool bp = fx_cab_get_bypass(engine, (fx_chain_id)chain[i].chain_id);
+                            fx_cab_set_bypass(engine, (fx_chain_id)chain[i].chain_id, !bp);
+                        }
+                    }
+                }
 
                 /* Tooltip */
                 if (ImGui::IsItemHovered()) {
@@ -924,6 +1019,9 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         fx_pedal_type_t pt = fx_pedal_get_type(engine, chain[i].pedal_id);
                         const char *tip = get_pedal_tooltip(pt);
                         if (tip) ImGui::SetTooltip("%s", tip);
+                    } else if (chain[i].kind == NODE_PEDAL_PRE || chain[i].kind == NODE_PEDAL_POST ||
+                               chain[i].kind == NODE_STUDIO) {
+                        ImGui::SetTooltip("Right-click to bypass/activate");
                     }
                 }
             }
@@ -934,14 +1032,62 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                                    columns[i] >= split_col && columns[i] < merge_col;
                 if (!in_parallel && chain[i+1].kind != NODE_SPLIT &&
                     chain[i].kind != NODE_MERGE) {
-                    /* Simple to next: skip if next is in parallel zone */
                     bool next_parallel = is_dual && split_col >= 0 && merge_col >= 0 &&
                                          columns[i+1] > split_col && columns[i+1] < merge_col;
                     if (!next_parallel) {
-                        ImVec2 p1 = ImVec2(center.x + NODE_W * 0.5f, center.y);
+                        /* Cable endpoints */
+                        float cable_x0 = center.x + NODE_W * 0.5f;
+                        float cable_y0 = center.y;
                         ImVec2 p2_center = get_node_pos(i + 1);
-                        ImVec2 p2 = ImVec2(p2_center.x - NODE_W * 0.5f, p2_center.y);
-                        dl->AddLine(p1, p2, IM_COL32(100, 90, 70, 180), 2.0f);
+                        float cable_x1 = p2_center.x - NODE_W * 0.5f;
+                        float cable_y1 = p2_center.y;
+
+                        /* INPUT/OUTPUT: adjust endpoints + droop */
+                        bool has_droop = false;
+                        if (chain[i].kind == NODE_INPUT) {
+                            cable_x0 = center.x + NODE_W * 0.05f;
+                            cable_y0 = center.y + NODE_H * 0.45f;
+                            has_droop = true;
+                        }
+                        if (i + 1 < chain_len && chain[i+1].kind == NODE_OUTPUT) {
+                            cable_x1 = p2_center.x - NODE_W * 0.35f;
+                            cable_y1 = p2_center.y + NODE_H * 0.15f;
+                            has_droop = true;
+                        }
+
+                        float span = cable_x1 - cable_x0;
+                        ImVec2 p0(cable_x0, cable_y0);
+                        ImVec2 p3(cable_x1, cable_y1);
+                        ImVec2 cp1, cp2;
+
+                        if (has_droop) {
+                            /* Natural cable sag for instrument/mic cables */
+                            float sag = 18.0f + span * 0.12f;
+                            cp1 = ImVec2(cable_x0 + span * 0.25f, cable_y0 + sag);
+                            cp2 = ImVec2(cable_x1 - span * 0.25f, cable_y1 + sag);
+                        } else {
+                            /* Straight patch cable between pedals/amps/cabs */
+                            cp1 = ImVec2(cable_x0 + span * 0.33f, cable_y0);
+                            cp2 = ImVec2(cable_x1 - span * 0.33f, cable_y1);
+                        }
+
+                        /* Shadow layer */
+                        dl->AddBezierCubic(
+                            ImVec2(p0.x + 1, p0.y + 2),
+                            ImVec2(cp1.x + 1, cp1.y + 2),
+                            ImVec2(cp2.x + 1, cp2.y + 2),
+                            ImVec2(p3.x + 1, p3.y + 2),
+                            IM_COL32(0, 0, 0, 120), 7.0f, 24);
+                        /* Cable body */
+                        dl->AddBezierCubic(p0, cp1, cp2, p3,
+                            IM_COL32(35, 30, 25, 255), 5.0f, 24);
+                        /* Highlight stripe */
+                        dl->AddBezierCubic(
+                            ImVec2(p0.x, p0.y - 1),
+                            ImVec2(cp1.x, cp1.y - 1),
+                            ImVec2(cp2.x, cp2.y - 1),
+                            ImVec2(p3.x, p3.y - 1),
+                            IM_COL32(70, 60, 45, 100), 1.5f, 24);
                     }
                 }
             }
@@ -967,8 +1113,9 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     ImGui::SetTooltip("Add pre-amp pedal");
             }
 
-            /* Post-amp [+] buttons */
+            /* Post-amp [+] buttons — opens combined pedal + studio popup */
             if (chain[i].kind == NODE_PEDAL_POST ||
+                chain[i].kind == NODE_STUDIO ||
                 (chain[i].kind == NODE_MERGE && is_dual) ||
                 (chain[i].kind == NODE_CAB && !is_dual)) {
                 float btn_x = center.x + NODE_W * 0.5f + (NODE_SPACING - ADD_BTN_W) * 0.5f;
@@ -1021,17 +1168,25 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
         if (ImGui::BeginPopup("add_pedal_gallery_post")) {
             ImGui::Text("Add Post-Amp Effect");
             ImGui::Separator();
-            /* Studio processors */
+            /* Studio processors with descriptions */
             if (ImGui::TreeNode("STUDIO")) {
-                for (int t = 0; t < FX_STUDIO_COUNT; t++) {
-                    const char *sname = fx_studio_get_type_name((fx_studio_type_t)t);
-                    if (ImGui::Selectable(sname)) {
-                        fx_studio_id sid = fx_studio_add(engine, (fx_studio_type_t)t);
-                        if (sid >= 0 && gui->studio_id_count < 8) {
-                            gui->studio_ids[gui->studio_id_count++] = sid;
+                static const struct { fx_studio_type_t type; const char *name; const char *desc; } studio_menu[] = {
+                    { FX_STUDIO_IRON_SQUEEZE, "Iron Squeeze",  "FET compressor \xe2\x80\x94 punchy, fast attack" },
+                    { FX_STUDIO_GLASS_EQ,     "Glass EQ",      "Passive EQ \xe2\x80\x94 musical, sweet top end" },
+                    { FX_STUDIO_REEL_WARMTH,  "Reel Warmth",   "Tape saturation \xe2\x80\x94 warmth, harmonics" },
+                    { FX_STUDIO_BRICK_WALL,   "Brick Wall",    "Brickwall limiter \xe2\x80\x94 output protection" },
+                };
+                for (int si = 0; si < 4; si++) {
+                    if (ImGui::Selectable(studio_menu[si].name)) {
+                        if (gui->studio_id_count < 8) {
+                            fx_studio_id sid = fx_studio_add(engine, studio_menu[si].type);
+                            if (sid >= 0)
+                                gui->studio_ids[gui->studio_id_count++] = sid;
                         }
                         ImGui::CloseCurrentPopup();
                     }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", studio_menu[si].desc);
                 }
                 ImGui::TreePop();
             }
@@ -1899,18 +2054,39 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     bool bypassed = fx_studio_get_bypass(engine, sid);
                     float avail_w = ImGui::GetContentRegionAvail().x;
 
-                    ImGui::SetWindowFontScale(1.35f);
-                    ImVec2 ts = ImGui::CalcTextSize(sname);
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
-                    if (bypassed)
-                        ImGui::TextDisabled("%s", sname);
-                    else
-                        ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f), "%s", sname);
-                    ImGui::SetWindowFontScale(1.0f);
-
+                    /* Title */
+                    {
+                        ImGui::SetWindowFontScale(1.35f);
+                        ImVec2 ts = ImGui::CalcTextSize(sname);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                        if (bypassed)
+                            ImGui::TextDisabled("%s", sname);
+                        else
+                            ImGui::TextColored(ImVec4(0.45f, 0.65f, 0.90f, 1.0f), "%s", sname);
+                        ImGui::SetWindowFontScale(1.0f);
+                        ImVec2 sub_sz = ImGui::CalcTextSize("Studio Processor");
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                        ImGui::TextDisabled("Studio Processor");
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    {
+                        ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                        ImGui::GetWindowDrawList()->AddLine(
+                            sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                            IM_COL32(60, 100, 160, 100), 1.0f);
+                        ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                    }
                     ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
-                    /* Knobs */
+                    /* Knobs — centered */
+                    {
+                        const float KNOB_W = 66.0f;
+                        const float KNOB_PAD = 8.0f;
+                        float row_w = nparam * KNOB_W + (nparam > 1 ? (nparam - 1) * KNOB_PAD : 0.0f);
+                        float knob_off = (avail_w - row_w) * 0.5f;
+                        if (knob_off < 0.0f) knob_off = 0.0f;
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + knob_off);
+                    }
                     for (int k = 0; k < nparam; k++) {
                         const char *kname = fx_studio_get_param_name(st, k);
                         float kval = fx_studio_get_param(engine, sid, k);
