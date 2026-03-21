@@ -1051,6 +1051,7 @@ int main(int argc, char *argv[]) {
     /* NOTE: GUI sync happens after static locals are declared below */
     static bool s_needs_gui_sync = false;
     static char s_preset_name[128] = "Untitled";
+    static bool s_preset_modified = false;
     {
         bool loaded = fx_preset_load(engine, "presets/last_session.0xfx");
         if (!loaded) loaded = fx_preset_load(engine, "../presets/last_session.0xfx");
@@ -1283,7 +1284,10 @@ int main(int argc, char *argv[]) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.55f, 1.0f));
                 ImGui::SetWindowFontScale(0.9f);
                 ImGui::AlignTextToFramePadding();
-                ImGui::Text("%s", s_preset_name);
+                if (s_preset_modified)
+                    ImGui::Text("%s (unsaved)", s_preset_name);
+                else
+                    ImGui::Text("%s", s_preset_name);
                 ImGui::SetWindowFontScale(1.0f);
                 ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered())
@@ -1333,7 +1337,18 @@ int main(int argc, char *argv[]) {
 
                     if (ImGui::Button("Mystery Rig", ImVec2(ImGui::GetContentRegionAvail().x, 36.0f))) {
                         surprise_me_generate(engine, s_preset_name, sizeof(s_preset_name));
-                        s_needs_gui_sync = true;
+                        s_preset_modified = false;
+                        /* Immediate sync */
+                        s_pre_id_count = fx_chain_get_pedal_count(engine, FX_CHAIN_POS_PRE);
+                        if (s_pre_id_count > 32) s_pre_id_count = 32;
+                        for (int si = 0; si < s_pre_id_count; si++)
+                            s_pre_ids[si] = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_PRE, si);
+                        s_post_id_count = fx_chain_get_pedal_count(engine, FX_CHAIN_POS_POST);
+                        if (s_post_id_count > 32) s_post_id_count = 32;
+                        for (int si = 0; si < s_post_id_count; si++)
+                            s_post_ids[si] = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_POST, si);
+                        s_studio_id_count = 0;
+                        s_selected_node = -1;
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::PopStyleVar();
@@ -1422,8 +1437,19 @@ int main(int argc, char *argv[]) {
                         bool ok = fx_preset_load(engine, pe->path);
                         if (ok) {
                             snprintf(s_preset_name, sizeof(s_preset_name), "%s", pe->name);
-                            s_needs_gui_sync = true;
-                            FX_INFO("Loaded preset: %s", pe->name);
+                            s_preset_modified = false;
+                            /* Immediate sync */
+                            s_pre_id_count = fx_chain_get_pedal_count(engine, FX_CHAIN_POS_PRE);
+                            if (s_pre_id_count > 32) s_pre_id_count = 32;
+                            for (int si = 0; si < s_pre_id_count; si++)
+                                s_pre_ids[si] = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_PRE, si);
+                            s_post_id_count = fx_chain_get_pedal_count(engine, FX_CHAIN_POS_POST);
+                            if (s_post_id_count > 32) s_post_id_count = 32;
+                            for (int si = 0; si < s_post_id_count; si++)
+                                s_post_ids[si] = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_POST, si);
+                            s_studio_id_count = 0;
+                            s_selected_node = -1;
+                            FX_INFO("Loaded preset: %s (%d pre, %d post)", pe->name, s_pre_id_count, s_post_id_count);
                         } else {
                             FX_ERROR("Failed to load preset: %s", pe->path);
                         }
