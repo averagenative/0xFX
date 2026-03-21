@@ -466,24 +466,34 @@ int knob_overlay(const char *id_str,
                          IM_COL32_WHITE);
 
         /* Position indicator dot at the edge of the knob.
-         * Clock face: 8 o'clock (min) → clockwise → 4 o'clock (max)
-         * In screen coords (Y-down, 0°=right, CW positive):
-         *   8 o'clock = 120° from top = 210° from right
-         *   4 o'clock = 300° from top = 30° from right (or -330°)
-         * Sweep: 210° → 360° → 30° = 180° range... no,
-         * 8→12→4 = 240° sweep
-         * Start at 210° (8 o'clock), sweep -240° (CCW in math = CW on screen)
-         * Actually simpler: start angle = 3π/4 + π/2 = 5π/4 (225° = ~7:30)
-         * to end angle = -π/4 (= 315° = ~4:30), going clockwise.
-         * In screen Y-down: angle = start - norm * sweep */
+         * Clock face: 7:30 (min=0) → clockwise → 4:30 (max=1)
+         * Screen coords: 0°=right, Y-down means positive angle = clockwise.
+         * 7:30 on clock = 225° from 12 = 225° CW from top.
+         * In math coords (0°=right): 7:30 = 225°-90° = 135° but with Y-down.
+         * Simplest: use screen angle where 0°=top, CW positive.
+         *   7:30 = 225°, 4:30 = 315° (wrap) = -45° = 360-45=315
+         *   Actually: 7:30→12→4:30 = 270° CW sweep
+         *   start_screen = 225° * pi/180 = 3.927 rad from top
+         * Convert screen-from-top to math: math_angle = screen_angle - pi/2
+         * Easier: just compute x,y directly.
+         *   screen_angle = (225 + norm * 270) degrees from 12-o-clock, CW
+         *   x = sin(screen_angle)  (sin because 0°=top, right=90°)
+         *   y = -cos(screen_angle) (negative cos because 0°=top=up=-Y) wait...
+         * In screen Y-down, from 12-o-clock (top):
+         *   x = sin(a), y = -cos(a) gives CW rotation.
+         * No wait: at 0° (12 o'clock): sin(0)=0, -cos(0)=-1 → (0,-1) = UP in screen. Wrong.
+         * Screen Y-down: UP = negative Y. So (0,-1) IS up. That's 12 o'clock. ✓
+         * At 90° (3 o'clock): sin(90)=1, -cos(90)=0 → (1,0) = right. ✓
+         * At 180° (6 o'clock): sin(180)=0, -cos(180)=1 → (0,1) = down. ✓
+         * At 270° (9 o'clock): sin(270)=-1, -cos(270)=0 → (-1,0) = left. ✓
+         * So: x=sin(a), y=-cos(a) with a in degrees-from-12-CW. Perfect.
+         */
         if (is_interactive) {
-            const float DOT_START = 2.356f;  /* 135° = 7:30 position (same as arc knob start) */
-            const float DOT_SWEEP = 4.712f;  /* 270° sweep */
-            /* screen Y-down: negate sin for correct CW direction */
-            float dot_angle = DOT_START - norm * DOT_SWEEP;
+            float deg = 225.0f + norm * 270.0f; /* 225°=7:30, 495°=4:30 */
+            float rad = deg * 3.14159265f / 180.0f;
             float dot_r_offset = knob_sz * 0.38f;
-            float dot_x = cx + dot_r_offset * cosf(dot_angle);
-            float dot_y = cy - dot_r_offset * sinf(dot_angle); /* negate sin for screen Y */
+            float dot_x = cx + dot_r_offset * sinf(rad);
+            float dot_y = cy - dot_r_offset * cosf(rad);
             dl->AddCircleFilled(ImVec2(dot_x, dot_y), 3.5f, IM_COL32(255, 255, 255, 220), 8);
             dl->AddCircleFilled(ImVec2(dot_x, dot_y), 2.0f, IM_COL32(220, 50, 30, 255), 8);
         }

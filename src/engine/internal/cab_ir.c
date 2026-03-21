@@ -137,6 +137,10 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
 bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, int block_size) {
     if (!cab || !ir_data || ir_len <= 0 || block_size <= 0) return false;
 
+    /* Temporarily mark as unloaded to prevent audio thread from using
+     * stale pointers while we reallocate */
+    cab->loaded = false;
+
     /* Free any previous IR */
     fx_cab_free(cab);
 

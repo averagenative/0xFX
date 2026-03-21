@@ -291,27 +291,28 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
         .presence_freq = 3500.0f,
         .power_threshold = 0.88f,
     },
-    /* Emerald Deluxe — inspired by American 22W 6V6 combo amps (AB763 Deluxe Reverb)
-     * Fender TMB topology with the Deluxe's unique component values:
-     * - 10k mid pot (NOT 25k like the Twin) gives a different mid character
-     * - 2 preamp gain stages (12AX7 dual triode): moderate gain, chimey cleans
-     * - 6V6 power section breaks up earlier than the Twin's 6L6 tubes
-     * - Lower power threshold (0.60) = sweet power amp compression at moderate volumes
-     * - The "sweet spot" is volume 5-7: clean rhythm, breaks up on hard picking
-     * - Less bass than Twin, warmer mids, less harsh treble */
+    /* Emerald Deluxe — inspired by Fender Hot Rod Deluxe (PR246)
+     * Modern Fender circuit (1990s), NOT a vintage Deluxe Reverb:
+     * - 3 channels: Clean / Drive / More Drive
+     * - 12AX7 preamp with gain + MOSFET/diode clipping on drive channels
+     * - 2x 6L6GC power tubes, 40W — more headroom than 6V6 Deluxe Reverb
+     * - Fender TMB tone stack but with slightly different values
+     * - Drive channel adds hard clipping (asymmetric) for gritty breakup
+     * - 3 gain stages: clean 12AX7 + clipped 12AX7 + recovery stage
+     * - The "grit" on the gain comes from diode/MOSFET clipping between stages */
     [FX_AMP_EMERALD_DELUXE] = {
-        .num_stages = 2,
-        .stage_gains = { 2.5f, 2.0f, 0, 0 },
-        .shaper = waveshape_tanh,
+        .num_stages = 3,
+        .stage_gains = { 3.5f, 4.0f, 2.0f, 0 },
+        .shaper = waveshape_hard,  /* drive channel has hard clipping diodes */
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
             .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble pot, 250pF */
             .R2 = 1e6f,    .C2 = 100e-9f,     /* 1M bass pot, 0.1uF */
-            .R3 = 10e3f,   .C3 = 47e-9f,      /* 10k mid pot, 0.047uF (Deluxe value — smaller than Twin's 25k) */
+            .R3 = 25e3f,   .C3 = 47e-9f,      /* 25k mid pot, 0.047uF */
             .R4 = 56e3f,                        /* 56k slope resistor */
         },
-        .presence_freq = 4000.0f,
-        .power_threshold = 0.60f,
+        .presence_freq = 4500.0f,
+        .power_threshold = 0.70f,  /* 6L6 power section, moderate headroom */
     },
 };
 
