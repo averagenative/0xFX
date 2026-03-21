@@ -1,13 +1,14 @@
 /*
  * 0xFX — Chromatic tuner
  *
- * Autocorrelation-based pitch detection.
- * Runs continuously, reads input before effects processing.
+ * NSDF (Normalized Square Difference Function) pitch detection
+ * with parabolic interpolation for sub-sample accuracy.
+ * Designed for guitar: detects fundamentals from ~60Hz (drop D) to ~1200Hz.
  */
 #include "engine_internal.h"
 
 #define TUNER_BUF_SIZE 4096
-#define TUNER_UPDATE_INTERVAL 1470  /* ~30Hz at 44.1kHz */
+#define TUNER_UPDATE_INTERVAL 2048  /* ~21Hz update rate at 44.1kHz */
 
 void fx_tuner_init(fx_tuner_state_t *t) {
     memset(t, 0, sizeof(*t));
@@ -24,62 +25,140 @@ void fx_tuner_feed(fx_tuner_state_t *t, const float *buf, int n, float sr) {
     if (t->samples_since_update < TUNER_UPDATE_INTERVAL) return;
     t->samples_since_update = 0;
 
-    /* Autocorrelation pitch detection */
-    /* Search for fundamental period between ~30Hz and ~4kHz */
-    int min_lag = (int)(sr / 4000.0f);  /* highest freq */
-    int max_lag = (int)(sr / 30.0f);    /* lowest freq */
-    if (max_lag > TUNER_BUF_SIZE / 2) max_lag = TUNER_BUF_SIZE / 2;
-    if (min_lag < 1) min_lag = 1;
-
-    /* Compute autocorrelation, find first peak after dip */
-    float best_corr = 0.0f;
-    int best_lag = 0;
-    float prev_corr = 1.0f;
-    bool found_dip = false;
-
-    int start = (t->write_pos + TUNER_BUF_SIZE - TUNER_BUF_SIZE / 2) % TUNER_BUF_SIZE;
-
-    /* Compute NSDF (Normalized Square Difference Function) for robust pitch detection */
+    /* Check signal level — skip if too quiet */
     int window = TUNER_BUF_SIZE / 2;
+    int start = (t->write_pos + TUNER_BUF_SIZE - window) % TUNER_BUF_SIZE;
 
-    for (int lag = min_lag; lag < max_lag; lag++) {
-        float acf = 0.0f;   /* autocorrelation */
-        float sdf_a = 0.0f; /* energy of window */
-        float sdf_b = 0.0f; /* energy of lagged window */
+    float rms = 0.0f;
+    for (int j = 0; j < window; j++) {
+        float s = t->buffer[(start + j) % TUNER_BUF_SIZE];
+        rms += s * s;
+    }
+    rms = sqrtf(rms / (float)window);
+    if (rms < 0.005f) {
+        /* Signal too weak — don't update, let display show last reading */
+        return;
+    }
 
-        for (int j = 0; j < window - lag; j++) {
-            int idx_a = (start + j) % TUNER_BUF_SIZE;
-            int idx_b = (start + j + lag) % TUNER_BUF_SIZE;
-            float a = t->buffer[idx_a];
-            float b = t->buffer[idx_b];
+    /* NSDF: search for fundamental between ~55Hz (A1) and ~1200Hz (D6) */
+    int min_lag = (int)(sr / 1200.0f);
+    int max_lag = (int)(sr / 55.0f);
+    if (max_lag > window) max_lag = window;
+    if (min_lag < 2) min_lag = 2;
+
+    /* Compute NSDF values */
+    float nsdf[2048]; /* max_lag can't exceed window (2048) */
+    for (int lag = min_lag; lag < max_lag && lag < 2048; lag++) {
+        float acf = 0.0f;
+        float energy_a = 0.0f;
+        float energy_b = 0.0f;
+        int len = window - lag;
+
+        for (int j = 0; j < len; j++) {
+            float a = t->buffer[(start + j) % TUNER_BUF_SIZE];
+            float b = t->buffer[(start + j + lag) % TUNER_BUF_SIZE];
             acf += a * b;
-            sdf_a += a * a;
-            sdf_b += b * b;
+            energy_a += a * a;
+            energy_b += b * b;
         }
 
-        float denom = sdf_a + sdf_b;
-        float nsdf = (denom > 1e-8f) ? (2.0f * acf / denom) : 0.0f;
-
-        if (nsdf < prev_corr && !found_dip && prev_corr > 0.0f) {
-            found_dip = true;
-        }
-        if (found_dip && nsdf > best_corr) {
-            best_corr = nsdf;
-            best_lag = lag;
-            /* Once we find a strong peak, stop searching */
-            if (best_corr > 0.8f) break;
-        }
-        prev_corr = nsdf;
+        float denom = energy_a + energy_b;
+        nsdf[lag] = (denom > 1e-10f) ? (2.0f * acf / denom) : 0.0f;
     }
 
-    if (best_lag > 0 && best_corr > 0.5f) {
-        t->frequency = sr / (float)best_lag;
+    /* Find peaks in NSDF using "first peak above threshold" method.
+     * This correctly identifies the fundamental instead of harmonics.
+     *
+     * Algorithm: MPM (McLeod Pitch Method)
+     * 1. Find all positive-going zero crossings
+     * 2. Find the peak in each positive lobe
+     * 3. Accept the first peak above a threshold (0.7)
+     */
+    float threshold = 0.7f;  /* minimum NSDF peak to accept */
+    int best_lag = 0;
+    float best_nsdf = 0.0f;
 
-        /* Map to nearest MIDI note */
-        float midi = 69.0f + 12.0f * log2f(t->frequency / 440.0f);
-        t->midi_note = (int)(midi + 0.5f);
-        t->cents = (midi - (float)t->midi_note) * 100.0f;
+    /* Collect peaks of each positive lobe */
+    typedef struct { int lag; float val; } Peak;
+    Peak peaks[64];
+    int num_peaks = 0;
+
+    bool in_positive = false;
+    int lobe_peak_lag = 0;
+    float lobe_peak_val = 0.0f;
+
+    for (int lag = min_lag; lag < max_lag && lag < 2048; lag++) {
+        float v = nsdf[lag];
+        if (v > 0.0f) {
+            if (!in_positive) {
+                /* Entering positive lobe */
+                in_positive = true;
+                lobe_peak_val = 0.0f;
+            }
+            if (v > lobe_peak_val) {
+                lobe_peak_val = v;
+                lobe_peak_lag = lag;
+            }
+        } else if (in_positive) {
+            /* Leaving positive lobe — record the peak */
+            if (num_peaks < 64) {
+                peaks[num_peaks].lag = lobe_peak_lag;
+                peaks[num_peaks].val = lobe_peak_val;
+                num_peaks++;
+            }
+            in_positive = false;
+        }
     }
+    /* Catch final lobe if still positive */
+    if (in_positive && num_peaks < 64) {
+        peaks[num_peaks].lag = lobe_peak_lag;
+        peaks[num_peaks].val = lobe_peak_val;
+        num_peaks++;
+    }
+
+    if (num_peaks == 0) return;
+
+    /* Find the maximum peak value for threshold scaling */
+    float max_peak = 0.0f;
+    for (int i = 0; i < num_peaks; i++) {
+        if (peaks[i].val > max_peak) max_peak = peaks[i].val;
+    }
+
+    /* Accept the FIRST peak above threshold * max_peak.
+     * This is key — harmonics have later (shorter period) peaks,
+     * so picking the first strong one gives us the fundamental. */
+    float accept_thresh = threshold * max_peak;
+    for (int i = 0; i < num_peaks; i++) {
+        if (peaks[i].val >= accept_thresh) {
+            best_lag = peaks[i].lag;
+            best_nsdf = peaks[i].val;
+            break;
+        }
+    }
+
+    if (best_lag < min_lag || best_nsdf < 0.3f) return;
+
+    /* Parabolic interpolation for sub-sample accuracy */
+    float refined_lag = (float)best_lag;
+    if (best_lag > min_lag && best_lag < max_lag - 1 && best_lag < 2047) {
+        float y0 = nsdf[best_lag - 1];
+        float y1 = nsdf[best_lag];
+        float y2 = nsdf[best_lag + 1];
+        float d = 2.0f * y1 - y0 - y2;
+        if (fabsf(d) > 1e-10f) {
+            float shift = (y0 - y2) / (2.0f * d);
+            if (shift > -1.0f && shift < 1.0f) {
+                refined_lag += shift;
+            }
+        }
+    }
+
+    t->frequency = sr / refined_lag;
+
+    /* Map to nearest MIDI note */
+    float midi = 69.0f + 12.0f * log2f(t->frequency / 440.0f);
+    t->midi_note = (int)(midi + 0.5f);
+    t->cents = (midi - (float)t->midi_note) * 100.0f;
 }
 
 /* ── Public tuner API ─────────────────────────────────────────── */

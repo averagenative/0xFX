@@ -37,6 +37,7 @@ extern "C" {
 #include <stdio.h>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <sys/stat.h>
 
 extern "C" {
@@ -659,6 +660,7 @@ int main(int argc, char *argv[]) {
     static int  s_selected_buf_idx = 2;    /* default: 256 frames */
     static int  s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
     static bool s_audio_active     = false;
+    static bool s_monitor_only    = false; /* device open for metering, output muted */
     static int  s_selected_midi   = -1;
     static bool s_midi_active     = false;
 
@@ -678,6 +680,16 @@ int main(int argc, char *argv[]) {
     static const char *sr_labels[]  = { "44100 Hz", "48000 Hz" };
 
     FX_INFO("Launched muted. Select input+output devices to start audio.");
+
+    /* Auto-start monitoring if we have saved device preferences */
+    if (s_selected_input >= 0 && num_input_devices > 0 && !s_monitor_only) {
+        if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+        if (fx_audio_set_device(engine, s_selected_input)) {
+            fx_audio_set_mute_output(true);
+            s_monitor_only = true;
+            FX_INFO("Auto-monitoring input: %s", fx_audio_get_device_name(s_selected_input));
+        }
+    }
 
     /* Auto-load last session preset first, then fall back to default */
     /* NOTE: GUI sync happens after static locals are declared below */
@@ -889,6 +901,18 @@ int main(int argc, char *argv[]) {
                     ImGui::Dummy(ImVec2(bar_w + padding * 2.0f, bar_h + dot_r * 2.0f));
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Chromatic tuner -- detects pitch of input signal");
+
+                    /* TUNER label */
+                    {
+                        ImDrawList *tdl = ImGui::GetWindowDrawList();
+                        ImGui::SetWindowFontScale(0.65f);
+                        const char *tlbl = "TUNER";
+                        ImVec2 tsz = ImGui::CalcTextSize(tlbl);
+                        float tlx = cursor.x + padding + (bar_w - tsz.x) * 0.5f;
+                        float tly = bar_bot_y + 4.0f;
+                        tdl->AddText(ImVec2(tlx, tly), IM_COL32(120, 110, 90, 150), tlbl);
+                        ImGui::SetWindowFontScale(1.0f);
+                    }
                 }
             }
 
@@ -933,37 +957,58 @@ int main(int argc, char *argv[]) {
                         ImVec4(0.40f, 0.35f, 0.28f, 1.0f));
                 }
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-                if (ImGui::Button("LIVE", live_sz)) {
+                if (ImGui::Button(s_audio_active ? "LIVE [ON]" : "LIVE [OFF]", live_sz)) {
                     if (s_audio_active) {
-                        fx_audio_shutdown(); fx_audio_init();
-                        num_input_devices = fx_audio_get_device_count();
-                        num_output_devices = fx_audio_get_output_count();
+                        /* Switch to monitor mode — keep device open, mute output */
+                        fx_audio_set_mute_output(true);
                         s_audio_active = false;
-                        FX_INFO("Audio stopped (LIVE off)");
+                        s_monitor_only = true;
+                        FX_INFO("LIVE off (monitoring input)");
                     } else {
                         if (s_selected_input < 0 && num_input_devices > 0) s_selected_input = 0;
                         if (s_selected_output < 0 && num_output_devices > 0) s_selected_output = 0;
                         if (s_selected_input >= 0) {
-                            if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
-                            if (fx_audio_set_device(engine, s_selected_input)) {
+                            if (s_monitor_only) {
+                                /* Already monitoring — just unmute */
+                                fx_audio_set_mute_output(false);
                                 s_audio_active = true;
-                                FX_INFO("LIVE on: in=%s out=%s",
-                                    fx_audio_get_device_name(s_selected_input),
-                                    s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
+                                s_monitor_only = false;
+                                FX_INFO("LIVE on (unmuted)");
+                            } else {
+                                /* Open device fresh */
+                                if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+                                if (fx_audio_set_device(engine, s_selected_input)) {
+                                    fx_audio_set_mute_output(false);
+                                    s_audio_active = true;
+                                    FX_INFO("LIVE on: in=%s out=%s",
+                                        fx_audio_get_device_name(s_selected_input),
+                                        s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
+                                }
                             }
                         }
                     }
                 }
                 ImGui::PopStyleVar();
                 ImGui::PopStyleColor(4);
-                /* Glow ring when active */
-                if (s_audio_active) {
+                /* Glow ring */
+                {
                     ImDrawList *dl = ImGui::GetWindowDrawList();
                     ImVec2 bmin = ImGui::GetItemRectMin(), bmax = ImGui::GetItemRectMax();
                     float t = (float)ImGui::GetTime();
-                    int g = (int)(120.0f * (0.3f + 0.2f * sinf(t * 3.0f)));
-                    dl->AddRect(ImVec2(bmin.x-2,bmin.y-2), ImVec2(bmax.x+2,bmax.y+2),
-                                IM_COL32(255, g, 30, g), 6.0f, 0, 2.0f);
+                    if (s_audio_active) {
+                        /* Hot glow when active */
+                        int g = (int)(120.0f * (0.3f + 0.2f * sinf(t * 3.0f)));
+                        dl->AddRect(ImVec2(bmin.x-2,bmin.y-2), ImVec2(bmax.x+2,bmax.y+2),
+                                    IM_COL32(255, g, 30, g), 6.0f, 0, 2.0f);
+                    } else {
+                        /* Pulsing "attention" glow when inactive — draw users to click */
+                        float pulse = 0.4f + 0.4f * sinf(t * 2.0f);
+                        int a = (int)(pulse * 120.0f);
+                        dl->AddRect(ImVec2(bmin.x-3,bmin.y-3), ImVec2(bmax.x+3,bmax.y+3),
+                                    IM_COL32(200, 140, 30, a), 8.0f, 0, 2.0f);
+                        dl->AddRect(ImVec2(bmin.x-6,bmin.y-6), ImVec2(bmax.x+6,bmax.y+6),
+                                    IM_COL32(200, 140, 30, a/3), 10.0f, 0, 1.5f);
+                    }
                 }
                 /* Tooltip */
                 if (ImGui::IsItemHovered())
@@ -1028,30 +1073,10 @@ int main(int argc, char *argv[]) {
 
             ImGui::SameLine();
 
-            /* Record button + format selector */
+            /* REC button + format selector (REC first, format after) */
             {
-                static int rec_format_idx = 0; /* index into fx_record_format_t */
+                static int rec_format_idx = 0;
                 bool recording = fx_recorder_active();
-
-                /* Format dropdown (disabled while recording) */
-                if (!recording) {
-                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.12f, 0.10f, 0.09f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.65f, 0.55f, 1.0f));
-                    ImGui::PushItemWidth(100.0f);
-                    const char *fmt_names[] = {
-                        "WAV 16-bit", "WAV 24-bit",
-                        "MP3 192k", "MP3 320k",
-                        "FLAC 16-bit", "FLAC 24-bit"
-                    };
-                    ImGui::Combo("##rec_fmt", &rec_format_idx, fmt_names, FX_RECORD_FORMAT_COUNT);
-                    ImGui::PopItemWidth();
-                    ImGui::PopStyleColor(2);
-                    ImGui::PopStyleVar();
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Recording format");
-                    ImGui::SameLine();
-                }
 
                 /* REC button */
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
@@ -1067,7 +1092,6 @@ int main(int argc, char *argv[]) {
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.12f, 0.10f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.50f, 0.15f, 0.12f, 1.0f));
 
-                /* Show duration while recording */
                 char rec_label[32];
                 if (recording) {
                     float dur = fx_recorder_duration();
@@ -1082,10 +1106,16 @@ int main(int argc, char *argv[]) {
                     if (recording) {
                         fx_recorder_stop();
                     } else {
-                        /* Build filename from format */
                         const char *exts[] = { ".wav", ".wav", ".mp3", ".mp3", ".flac", ".flac" };
                         char rec_path[256];
-                        snprintf(rec_path, sizeof(rec_path), "recording%s", exts[rec_format_idx]);
+                        /* Timestamp filename: recording_2026-03-21_110555.wav */
+                        time_t now = time(NULL);
+                        struct tm *t = localtime(&now);
+                        snprintf(rec_path, sizeof(rec_path),
+                            "recording_%04d-%02d-%02d_%02d%02d%02d%s",
+                            t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+                            t->tm_hour, t->tm_min, t->tm_sec,
+                            exts[rec_format_idx]);
                         fx_recorder_start(rec_path, (fx_record_format_t)rec_format_idx, 44100.0f);
                     }
                 }
@@ -1099,6 +1129,27 @@ int main(int argc, char *argv[]) {
                         ImGui::SetTooltip("Record processed output (%s)",
                             fx_recorder_format_name((fx_record_format_t)rec_format_idx));
                     }
+                }
+
+                /* Format dropdown after REC button */
+                if (!recording) {
+                    ImGui::SameLine();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.12f, 0.10f, 0.09f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.65f, 0.55f, 1.0f));
+                    ImGui::PushItemWidth(100.0f);
+                    const char *fmt_names[] = {
+                        "WAV 16-bit", "WAV 24-bit",
+                        "MP3 192k", "MP3 320k",
+                        "FLAC 16-bit", "FLAC 24-bit"
+                    };
+                    ImGui::Combo("##rec_fmt", &rec_format_idx, fmt_names, FX_RECORD_FORMAT_COUNT);
+                    ImGui::PopItemWidth();
+                    ImGui::PopStyleColor(2);
+                    ImGui::PopStyleVar();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Recording format");
                 }
             }
 
@@ -1169,17 +1220,22 @@ int main(int argc, char *argv[]) {
 
                 if (!s_audio_active) {
                     if (s_selected_input >= 0) {
-                        if (ImGui::Button("Start Audio", ImVec2(200, 30))) {
-                            if (s_selected_output >= 0)
-                                fx_audio_set_output(s_selected_output);
+                        /* Auto-start monitoring if not already open */
+                        if (!s_monitor_only) {
+                            if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
                             if (fx_audio_set_device(engine, s_selected_input)) {
-                                s_audio_active = true;
-                                FX_INFO("Audio started: in=%s out=%s",
-                                    fx_audio_get_device_name(s_selected_input),
-                                    s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
-                            } else {
-                                FX_ERROR("Failed to start audio");
+                                fx_audio_set_mute_output(true);
+                                s_monitor_only = true;
+                                FX_INFO("Monitoring input: %s", fx_audio_get_device_name(s_selected_input));
                             }
+                        }
+                        if (ImGui::Button("Start Audio (Go LIVE)", ImVec2(200, 30))) {
+                            fx_audio_set_mute_output(false);
+                            s_audio_active = true;
+                            s_monitor_only = false;
+                            FX_INFO("Audio started: in=%s out=%s",
+                                fx_audio_get_device_name(s_selected_input),
+                                s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : "(default)");
                         }
                     } else {
                         ImGui::TextDisabled("Select an input device first");
@@ -3340,9 +3396,8 @@ int main(int argc, char *argv[]) {
                             ImGui::GetWindowDrawList()->AddLine(
                                 sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
                                 IM_COL32(60, 100, 160, 100), 1.0f);
-                            ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                            ImGui::Dummy(ImVec2(0.0f, 2.0f));
                         }
-                        ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
                         /* Rack unit image + overlay knobs */
                         {
@@ -3403,6 +3458,7 @@ int main(int argc, char *argv[]) {
                             } else {
                                 ImGui::Dummy(ImVec2(img_w, img_h));
                             }
+                            float cursor_after_rack_y = ImGui::GetCursorPosY();
 
                             /* Overlay knobs on the rack image */
                             if (st >= 0 && st < FX_STUDIO_COUNT) {
@@ -3432,6 +3488,8 @@ int main(int argc, char *argv[]) {
                                     }
                                 }
                             }
+                            /* Restore cursor below image (overlay knobs moved it) */
+                            ImGui::SetCursorPosY(cursor_after_rack_y);
                         }
 
                         ImGui::Dummy(ImVec2(0.0f, 20.0f));

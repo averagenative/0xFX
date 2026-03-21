@@ -24,4 +24,7 @@ void        fx_audio_set_output(int index);
 bool        fx_audio_set_buffer_size(struct fx_engine *engine, int frames);
 bool        fx_audio_set_sample_rate(struct fx_engine *engine, float rate);
 
+/* Monitor mode: process engine (for tuner/meters) but mute output */
+void        fx_audio_set_mute_output(bool mute);
+
 #endif /* FX_AUDIO_DEVICE_H */

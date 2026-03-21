@@ -464,6 +464,29 @@ int knob_overlay(const char *id_str,
                          rv[0], rv[1], rv[2], rv[3],
                          ImVec2(0,0), ImVec2(1,0), ImVec2(1,1), ImVec2(0,1),
                          IM_COL32_WHITE);
+
+        /* Position indicator dot at the edge of the knob.
+         * Clock face: 8 o'clock (min) → clockwise → 4 o'clock (max)
+         * In screen coords (Y-down, 0°=right, CW positive):
+         *   8 o'clock = 120° from top = 210° from right
+         *   4 o'clock = 300° from top = 30° from right (or -330°)
+         * Sweep: 210° → 360° → 30° = 180° range... no,
+         * 8→12→4 = 240° sweep
+         * Start at 210° (8 o'clock), sweep -240° (CCW in math = CW on screen)
+         * Actually simpler: start angle = 3π/4 + π/2 = 5π/4 (225° = ~7:30)
+         * to end angle = -π/4 (= 315° = ~4:30), going clockwise.
+         * In screen Y-down: angle = start - norm * sweep */
+        if (is_interactive) {
+            const float DOT_START = 2.356f;  /* 135° = 7:30 position (same as arc knob start) */
+            const float DOT_SWEEP = 4.712f;  /* 270° sweep */
+            /* screen Y-down: negate sin for correct CW direction */
+            float dot_angle = DOT_START - norm * DOT_SWEEP;
+            float dot_r_offset = knob_sz * 0.38f;
+            float dot_x = cx + dot_r_offset * cosf(dot_angle);
+            float dot_y = cy - dot_r_offset * sinf(dot_angle); /* negate sin for screen Y */
+            dl->AddCircleFilled(ImVec2(dot_x, dot_y), 3.5f, IM_COL32(255, 255, 255, 220), 8);
+            dl->AddCircleFilled(ImVec2(dot_x, dot_y), 2.0f, IM_COL32(220, 50, 30, 255), 8);
+        }
     } else {
         /* Fallback: small arc knob at position */
         float cx = scr_x + knob_sz * 0.5f;

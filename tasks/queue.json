@@ -2621,5 +2621,31 @@
     "files": [
       "CMakeLists.txt"
     ]
+  },
+  {
+    "id": "TASK-345",
+    "priority": "HIGH",
+    "title": "Circuit-accurate tone stacks from real amp schematics",
+    "domain": "engine",
+    "phase": 5,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 50000,
+    "acceptanceCriteria": [
+      "Research actual R/C values for Fender TMB, Marshall TMB, Vox cut control tone stacks",
+      "Implement Fender tone stack (Fullerton, Tweed) using actual component values",
+      "Implement Marshall tone stack (Brit Crunch, Regent 800) using actual component values",
+      "Implement Vox tone stack (Essex Chime) using cut control topology",
+      "Implement Mesa/Boogie tone stack (Southwest Lead, Meridian) with V-curve",
+      "Research real 12AX7 plate curves for more accurate tube stage waveshaping",
+      "Use Duncan Tone Stack Calculator values as reference",
+      "A/B test against amp sim references (Neural DSP, Helix Native)",
+      "Document component values and transfer functions"
+    ],
+    "files": [
+      "src/engine/internal/amp.c",
+      "docs/tone_stack_research.md"
+    ]
   }
 ]

@@ -44,11 +44,16 @@ static audio_manager_t g_audio = {0};
 
 /* ── Audio callback ───────────────────────────────────────────── */
 
+static bool s_mute_output = false;
+
+void fx_audio_set_mute_output(bool mute) {
+    s_mute_output = mute;
+}
+
 static void audio_callback(ma_device *device, void *output,
                            const void *input, ma_uint32 frame_count) {
     audio_manager_t *mgr = (audio_manager_t *)device->pUserData;
     if (!mgr || !mgr->engine) {
-        /* Silence output if no engine */
         memset(output, 0, frame_count * sizeof(float));
         return;
     }
@@ -56,6 +61,11 @@ static void audio_callback(ma_device *device, void *output,
     /* Mono input → engine → mono output */
     fx_engine_process(mgr->engine, (const float *)input,
                       (float *)output, (int)frame_count);
+
+    /* Monitor mode: mute output but engine still processes (tuner + meters) */
+    if (s_mute_output) {
+        memset(output, 0, frame_count * sizeof(float));
+    }
 
     /* Audio recorder: capture processed output */
     {

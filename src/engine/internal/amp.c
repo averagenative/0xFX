@@ -380,8 +380,13 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
             x *= amp->sag_voltage;
         }
 
-        /* Master volume + output volume */
-        x *= master * volume;
+        /* Master volume + output volume.
+         * Makeup gain compensates for waveshaper compression.
+         * Quadratic taper for natural feel. */
+        float mv = master * master;
+        float vv = volume * volume;
+        float makeup = 4.0f;  /* +12dB makeup — waveshapers compress heavily */
+        x *= mv * vv * makeup;
 
         buf[i] = x;
     }
