@@ -768,8 +768,9 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
         float mv = master * master;
         float vv = volume * volume;
         /* TMB tone stacks are passive and attenuate ~10-15dB at noon.
-         * Compensate with higher makeup gain for circuit-modeled stacks. */
-        float makeup = use_tmb ? 12.0f : 4.0f;
+         * Vox cut control and tilt EQ are less lossy but still need makeup.
+         * All amps should produce similar output levels at noon settings. */
+        float makeup = use_tmb ? 12.0f : 8.0f;
         x *= mv * vv * makeup;
 
         buf[i] = x;
