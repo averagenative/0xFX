@@ -46,6 +46,14 @@ typedef struct {
 #define AMP_MAX_PREAMP_STAGES 4
 #define AMP_TONE_BANDS        3  /* bass, mid, treble */
 
+/* 3rd-order IIR filter for circuit-modeled tone stacks (TMB topology).
+ * Represents the direct digitization of the analog R/C network. */
+typedef struct {
+    float b0, b1, b2, b3;   /* numerator coefficients */
+    float a1, a2, a3;       /* denominator coefficients (a0 normalized to 1) */
+    float z1, z2, z3;       /* filter state (transposed direct form II) */
+} fx_tone_stack_3rd_t;
+
 typedef struct {
     fx_amp_type_t type;
     float         params[FX_AMP_PARAM_COUNT];
@@ -54,13 +62,12 @@ typedef struct {
     float         dc_block_z1[AMP_MAX_PREAMP_STAGES];
     int           num_stages;   /* 1-4 depending on model */
 
-    /* Tone stack — 3 biquad bands */
-    fx_biquad_t   tone_bass;
-    fx_biquad_t   tone_mid;
-    fx_biquad_t   tone_treble;
-    fx_biquad_t   presence_filter;
-    float         tone_sr;      /* sample rate for coefficient caching */
-    float         tone_cache[4]; /* cached param values to detect changes */
+    /* Tone stack — circuit-modeled 3rd-order IIR (TMB amps) or biquad (simple controls) */
+    fx_tone_stack_3rd_t tone_stack;    /* 3rd-order TMB filter */
+    fx_biquad_t   tone_simple;         /* simple 1st/2nd order (Vox cut, Terror tilt) */
+    fx_biquad_t   presence_filter;     /* presence: negative feedback shelf */
+    float         tone_sr;             /* sample rate for coefficient caching */
+    float         tone_cache[4];       /* cached param values to detect changes */
 
     /* Power amp */
     float         power_envelope; /* compression envelope follower */

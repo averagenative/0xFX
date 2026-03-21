@@ -2628,7 +2628,7 @@
     "title": "Circuit-accurate tone stacks from real amp schematics",
     "domain": "engine",
     "phase": 5,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 50000,

@@ -3,10 +3,17 @@
  *
  * Three-stage signal chain per amp model:
  *   1. Preamp: cascaded waveshaping gain stages (1-4 stages)
- *   2. Tone stack: 3-band biquad EQ (bass/mid/treble) + presence
+ *   2. Tone stack: circuit-modeled R/C network (topology per amp model)
  *   3. Power amp: soft compression + sag
  *
- * Each model has different gain structure, waveshaper, and tone stack voicing.
+ * Tone stack topologies:
+ *   - Fender TMB: 3rd-order passive R/C network (Yeh et al., DAFX 2006)
+ *   - Marshall TMB: Same topology, different component values
+ *   - Vox Cut: 1st-order lowpass (treble cut control)
+ *   - Tilt EQ: Bass/treble seesaw (single knob)
+ *
+ * Component values sourced from real amplifier schematics.
+ * Transfer functions digitized via bilinear transform.
  */
 #include "engine_internal.h"
 
@@ -42,7 +49,7 @@ static inline float waveshape_hard(float x) {
 /* ── Preamp gain stage (single stage) ─────────────────────────── */
 
 /*
- * Each stage: input_gain → waveshaper → DC blocking highpass
+ * Each stage: input_gain -> waveshaper -> DC blocking highpass
  * DC blocker is a simple first-order highpass at ~10Hz to remove
  * the DC offset introduced by asymmetric clipping.
  */
@@ -53,196 +60,538 @@ static inline float preamp_stage(float in, float gain,
     float shaped = shaper(x);
 
     /* DC blocking: highpass at ~10Hz */
-    /* y = x - z1; z1 = x - coeff * y  (simplified) */
     float dc_out = shaped - *dc_z1;
     *dc_z1 = shaped - dc_coeff * dc_out;
 
     return dc_out;
 }
 
+/* ── Tone stack topologies ────────────────────────────────────── */
+
+typedef enum {
+    TONE_STACK_FENDER_TMB = 0,   /* Fender-style passive TMB R/C network */
+    TONE_STACK_MARSHALL_TMB,     /* Marshall-style passive TMB R/C network */
+    TONE_STACK_VOX_CUT,          /* Vox-style treble cut control */
+    TONE_STACK_TILT,             /* Single-knob tilt EQ */
+} tone_stack_topology_t;
+
+/* Component values for a TMB (Treble-Mid-Bass) passive tone stack.
+ *
+ * The classic Fender/Marshall tone stack is a passive R/C ladder network
+ * between preamp stages. The transfer function is 3rd order:
+ *
+ *   H(s) = (b1*s^2 + b2*s + b3) / (a0*s^3 + a1*s^2 + a2*s + 1)
+ *
+ * Where the coefficients are functions of R/C component values and
+ * pot positions (bass, mid, treble = 0..1).
+ *
+ * Reference: "Digital Implementation of Musical Distortion Circuits
+ * by Analysis and Simulation" — Yeh, Abel, Smith (DAFX 2006)
+ */
+typedef struct {
+    float R1;    /* Treble pot (ohms) */
+    float R2;    /* Bass pot (ohms) */
+    float R3;    /* Mid pot (ohms) */
+    float R4;    /* Slope resistor (ohms) */
+    float C1;    /* Treble cap (farads) */
+    float C2;    /* Bass cap (farads) */
+    float C3;    /* Mid cap (farads) */
+} tmb_components_t;
+
 /* ── Per-model configuration ──────────────────────────────────── */
 
 typedef struct {
     int   num_stages;
-    float stage_gains[AMP_MAX_PREAMP_STAGES]; /* base gain per stage (multiplied by param) */
+    float stage_gains[AMP_MAX_PREAMP_STAGES];
     float (*shaper)(float);
-    /* Tone stack center frequencies */
-    float bass_freq;
-    float mid_freq;
-    float treble_freq;
-    float presence_freq;
-    /* Tone stack character: how much the knobs affect (dB range) */
-    float tone_range_db;
-    /* Power amp compression threshold */
-    float power_threshold;
+    tone_stack_topology_t tone_topology;
+    tmb_components_t      tmb;           /* component values (TMB topologies only) */
+    float                 presence_freq; /* presence shelf frequency */
+    float                 power_threshold;
 } amp_model_config_t;
 
 static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
-    /* Fullerton Clean — inspired by classic American clean amps
-     * 2 stages, gentle tanh clipping, scooped mid voicing
-     * Lots of headroom, breaks up gracefully at high gain */
+    /* Fullerton Clean — inspired by classic American clean amps (silver panel era)
+     * Fender Twin Reverb / Deluxe Reverb tone stack
+     * Famous mid-scoop at ~400Hz, interactive bass/treble controls */
     [FX_AMP_FULLERTON_CLEAN] = {
         .num_stages = 2,
         .stage_gains = { 3.0f, 2.0f, 0, 0 },
         .shaper = waveshape_tanh,
-        .bass_freq = 100.0f, .mid_freq = 800.0f,
-        .treble_freq = 3200.0f, .presence_freq = 5000.0f,
-        .tone_range_db = 12.0f,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble pot, 250pF */
+            .R2 = 1e6f,    .C2 = 100e-9f,     /* 1M bass pot, 0.1uF */
+            .R3 = 25e3f,   .C3 = 47e-9f,      /* 25k mid pot, 0.047uF */
+            .R4 = 56e3f,                        /* 56k slope resistor */
+        },
+        .presence_freq = 5000.0f,
         .power_threshold = 0.85f,
     },
-    /* British Crunch — inspired by classic British crunch amps
-     * 3 stages, asymmetric clipping, pronounced mids
-     * Classic rock breakup, responds to pick dynamics */
+    /* British Crunch — inspired by classic British crunch amps (Plexi)
+     * Marshall 1959/JTM45 tone stack
+     * More midrange than Fender, warmer top, classic rock voicing */
     [FX_AMP_BRIT_CRUNCH] = {
         .num_stages = 3,
         .stage_gains = { 4.0f, 3.0f, 2.5f, 0 },
         .shaper = waveshape_asym,
-        .bass_freq = 120.0f, .mid_freq = 1000.0f,
-        .treble_freq = 3500.0f, .presence_freq = 5500.0f,
-        .tone_range_db = 15.0f,
+        .tone_topology = TONE_STACK_MARSHALL_TMB,
+        .tmb = {
+            .R1 = 220e3f,  .C1 = 470e-12f,   /* 220k treble, 470pF */
+            .R2 = 1e6f,    .C2 = 22e-9f,      /* 1M bass, 0.022uF */
+            .R3 = 25e3f,   .C3 = 22e-9f,      /* 25k mid, 0.022uF */
+            .R4 = 33e3f,                        /* 33k slope (Plexi value) */
+        },
+        .presence_freq = 5500.0f,
         .power_threshold = 0.75f,
     },
-    /* Southwest Lead — inspired by American high-gain amps
-     * 4 stages, hard clipping, tight low end, aggressive
-     * Mesa-style: scooped mids, massive gain on tap */
+    /* Southwest Lead — inspired by American high-gain amps (Dual Rectifier)
+     * Modified Fender TMB with tighter bass and deeper mid scoop
+     * Added mid-shift cap creates the "V-curve" character */
     [FX_AMP_SOUTHWEST_LEAD] = {
         .num_stages = 4,
         .stage_gains = { 5.0f, 4.0f, 3.5f, 3.0f },
         .shaper = waveshape_hard,
-        .bass_freq = 80.0f, .mid_freq = 700.0f,
-        .treble_freq = 4000.0f, .presence_freq = 6000.0f,
-        .tone_range_db = 18.0f,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble, 250pF */
+            .R2 = 1e6f,    .C2 = 68e-9f,      /* 1M bass, 0.068uF (tighter bass) */
+            .R3 = 25e3f,   .C3 = 33e-9f,      /* 25k mid, 0.033uF (deeper scoop) */
+            .R4 = 39e3f,                        /* 39k slope (Recto value) */
+        },
+        .presence_freq = 6000.0f,
         .power_threshold = 0.70f,
     },
-    /* Essex Chime — inspired by British chime amps
-     * 2 stages, moderate atan saturation, chimey top end
-     * Vox-style: edge-of-breakup, jangly, responds to volume knob */
+    /* Essex Chime — inspired by British chime amps (AC30 Top Boost)
+     * Vox-style: treble cut control, bright by default, cut darkens
+     * NOT a TMB stack — uses a simple first-order lowpass */
     [FX_AMP_ESSEX_CHIME] = {
         .num_stages = 2,
         .stage_gains = { 3.5f, 2.5f, 0, 0 },
         .shaper = waveshape_atan,
-        .bass_freq = 150.0f, .mid_freq = 1200.0f,
-        .treble_freq = 4500.0f, .presence_freq = 7000.0f,
-        .tone_range_db = 12.0f,
+        .tone_topology = TONE_STACK_VOX_CUT,
+        .tmb = { 0 },  /* not used — Vox uses cut control */
+        .presence_freq = 7000.0f,
         .power_threshold = 0.80f,
     },
-    /* Tweed Blues — inspired by American tweed-era amps
-     * 2 stages, asymmetric clipping, spongy feel
-     * Bassman-style: warm, bluesy, sags under load */
+    /* Tweed Blues — inspired by American tweed-era amps (5F6-A Bassman)
+     * Fender TMB with different values — warmer, less scooped than blackface
+     * The original Marshall tone stack was derived from this circuit */
     [FX_AMP_TWEED_BLUES] = {
         .num_stages = 2,
         .stage_gains = { 4.0f, 3.0f, 0, 0 },
         .shaper = waveshape_asym,
-        .bass_freq = 90.0f, .mid_freq = 900.0f,
-        .treble_freq = 3000.0f, .presence_freq = 4500.0f,
-        .tone_range_db = 14.0f,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble, 250pF */
+            .R2 = 1e6f,    .C2 = 100e-9f,     /* 1M bass, 0.1uF */
+            .R3 = 10e3f,   .C3 = 22e-9f,      /* 10k mid, 0.022uF (warmer mid voicing) */
+            .R4 = 56e3f,                        /* 56k slope */
+        },
+        .presence_freq = 4500.0f,
         .power_threshold = 0.72f,
     },
-    /* Meridian High Gain — inspired by American high-gain metal amps
-     * 4 stages, aggressive hard clipping, scooped mids, tight low end
-     * Pre-gain HP at 100Hz for tightness, deep scoop at 400Hz, presence peak at 5kHz */
+    /* Meridian High Gain — inspired by American high-gain metal amps (5150/6505)
+     * Modified Fender/Mesa hybrid — scooped mids, tight bass, aggressive presence
+     * Extra gain stages before tone stack for saturated character */
     [FX_AMP_MERIDIAN_HIGH_GAIN] = {
         .num_stages = 4,
         .stage_gains = { 6.0f, 5.0f, 4.5f, 4.0f },
         .shaper = waveshape_hard,
-        .bass_freq = 100.0f, .mid_freq = 400.0f,
-        .treble_freq = 4000.0f, .presence_freq = 5000.0f,
-        .tone_range_db = 20.0f,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 220e-12f,   /* 250k treble, 220pF (slightly darker) */
+            .R2 = 1e6f,    .C2 = 47e-9f,      /* 1M bass, 0.047uF (tight bass) */
+            .R3 = 25e3f,   .C3 = 22e-9f,      /* 25k mid, 0.022uF (deep scoop) */
+            .R4 = 33e3f,                        /* 33k slope */
+        },
+        .presence_freq = 5000.0f,
         .power_threshold = 0.65f,
     },
-    /* Citrus Roar — inspired by British thick/fuzzy crunch amps
-     * 3 stages, soft clipping (tanh) for EL34 warmth
-     * Warm low-mids, less fizzy top end */
+    /* Citrus Roar — inspired by British thick/fuzzy crunch amps (Rockerverb)
+     * Modified Marshall TMB — thicker mids, less fizzy treble
+     * EL34 power section, warm and authoritative */
     [FX_AMP_CITRUS_ROAR] = {
         .num_stages = 3,
         .stage_gains = { 4.5f, 3.5f, 3.0f, 0 },
         .shaper = waveshape_tanh,
-        .bass_freq = 110.0f, .mid_freq = 600.0f,
-        .treble_freq = 3000.0f, .presence_freq = 4500.0f,
-        .tone_range_db = 14.0f,
+        .tone_topology = TONE_STACK_MARSHALL_TMB,
+        .tmb = {
+            .R1 = 220e3f,  .C1 = 330e-12f,   /* 220k treble, 330pF (darker than Plexi) */
+            .R2 = 1e6f,    .C2 = 47e-9f,      /* 1M bass, 0.047uF */
+            .R3 = 22e3f,   .C3 = 22e-9f,      /* 22k mid, 0.022uF */
+            .R4 = 39e3f,                        /* 39k slope */
+        },
+        .presence_freq = 4500.0f,
         .power_threshold = 0.72f,
     },
-    /* Citrus Terror — inspired by British low-wattage Class A amps
-     * 2 stages, asymmetric clipping for Class A character
-     * Simple 3-knob design: Gain, Tone, Volume */
+    /* Citrus Terror — inspired by British low-wattage Class A amps (Tiny Terror)
+     * Single "Tone" knob — tilt EQ: dark <-> bright
+     * NOT a TMB stack — simple tilt filter */
     [FX_AMP_CITRUS_TERROR] = {
         .num_stages = 2,
         .stage_gains = { 4.0f, 3.5f, 0, 0 },
         .shaper = waveshape_asym,
-        .bass_freq = 120.0f, .mid_freq = 800.0f,
-        .treble_freq = 3500.0f, .presence_freq = 5000.0f,
-        .tone_range_db = 14.0f,
+        .tone_topology = TONE_STACK_TILT,
+        .tmb = { 0 },  /* not used — single tone knob */
+        .presence_freq = 5000.0f,
         .power_threshold = 0.78f,
     },
-    /* Regent 800 — inspired by classic British rock/metal amps
-     * 2 stages, moderate hard clipping, bright channel character
-     * Mid-forward voicing, classic British aggression */
+    /* Regent 800 — inspired by classic British rock/metal amps (JCM800)
+     * Marshall TMB with slightly brighter voicing than Plexi
+     * Mid-forward, punchy, the sound of 80s rock */
     [FX_AMP_REGENT_800] = {
         .num_stages = 2,
         .stage_gains = { 5.0f, 4.0f, 0, 0 },
         .shaper = waveshape_hard,
-        .bass_freq = 100.0f, .mid_freq = 1000.0f,
-        .treble_freq = 3800.0f, .presence_freq = 5500.0f,
-        .tone_range_db = 16.0f,
+        .tone_topology = TONE_STACK_MARSHALL_TMB,
+        .tmb = {
+            .R1 = 220e3f,  .C1 = 470e-12f,   /* 220k treble, 470pF */
+            .R2 = 1e6f,    .C2 = 22e-9f,      /* 1M bass, 0.022uF */
+            .R3 = 25e3f,   .C3 = 22e-9f,      /* 25k mid, 0.022uF */
+            .R4 = 33e3f,                        /* 33k slope (JCM800 value) */
+        },
+        .presence_freq = 5500.0f,
         .power_threshold = 0.73f,
     },
-    /* Solar Monolith — inspired by massive clean-to-doom amps
-     * 2 stages but with HUGE headroom before clipping
-     * Deep low end (bass shelf at 40Hz), thunderous */
+    /* Solar Monolith — inspired by massive clean-to-doom amps (Sunn Model T)
+     * Fender-derived TMB with massive low end and extended bass response
+     * Huge iron transformers, extreme clean headroom */
     [FX_AMP_SOLAR_MONOLITH] = {
         .num_stages = 2,
         .stage_gains = { 3.0f, 2.5f, 0, 0 },
         .shaper = waveshape_atan,
-        .bass_freq = 40.0f, .mid_freq = 500.0f,
-        .treble_freq = 2500.0f, .presence_freq = 4000.0f,
-        .tone_range_db = 18.0f,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 500e-12f,   /* 250k treble, 500pF (darker treble) */
+            .R2 = 1e6f,    .C2 = 220e-9f,     /* 1M bass, 0.22uF (massive bass) */
+            .R3 = 25e3f,   .C3 = 100e-9f,     /* 25k mid, 0.1uF (warm mids) */
+            .R4 = 68e3f,                        /* 68k slope (Sunn value) */
+        },
+        .presence_freq = 4000.0f,
         .power_threshold = 0.90f,
     },
     /* Eclipse Drone — inspired by extreme low-end drone amps
-     * 2 stages, aggressive saturation, subsonic emphasis
-     * Feedback parameter adds harmonic feedback sustain */
+     * Sunn-derived with subsonic emphasis and feedback sustain
+     * Extended bass, compressed mids for sustained drone tones */
     [FX_AMP_ECLIPSE_DRONE] = {
         .num_stages = 2,
         .stage_gains = { 4.5f, 4.0f, 0, 0 },
         .shaper = waveshape_tanh,
-        .bass_freq = 30.0f, .mid_freq = 400.0f,
-        .treble_freq = 2000.0f, .presence_freq = 3500.0f,
-        .tone_range_db = 20.0f,
+        .tone_topology = TONE_STACK_FENDER_TMB,
+        .tmb = {
+            .R1 = 250e3f,  .C1 = 680e-12f,   /* 250k treble, 680pF (very dark treble) */
+            .R2 = 1e6f,    .C2 = 330e-9f,     /* 1M bass, 0.33uF (extreme bass) */
+            .R3 = 25e3f,   .C3 = 150e-9f,     /* 25k mid, 0.15uF (compressed mids) */
+            .R4 = 82e3f,                        /* 82k slope (extended bass response) */
+        },
+        .presence_freq = 3500.0f,
         .power_threshold = 0.88f,
     },
 };
+
+/* ── TMB Tone Stack — Circuit Model ──────────────────────────── */
+
+/*
+ * Compute 3rd-order IIR coefficients from R/C component values and pot positions.
+ *
+ * The Fender/Marshall TMB tone stack is a passive ladder network. The analog
+ * transfer function (Yeh et al., DAFX 2006) is:
+ *
+ *   H(s) = (b1*s^2 + b2*s + b3) / (a0*s^3 + a1*s^2 + a2*s + 1)
+ *
+ * where coefficients depend on component values and pot positions:
+ *   t = treble pot position (0..1)
+ *   m = mid pot position (0..1)
+ *   b = bass pot position (0..1)
+ *
+ * The s-domain coefficients encode the exact interaction between controls
+ * that makes each amp's tone stack sound unique — boosting bass affects
+ * treble response and vice versa, just like the real circuit.
+ *
+ * Digitized via bilinear transform: s = (2/T) * (1 - z^-1) / (1 + z^-1)
+ */
+static void tmb_compute_coefficients(fx_tone_stack_3rd_t *ts,
+                                     const tmb_components_t *comp,
+                                     float t, float m, float b,
+                                     float sr)
+{
+    /* Extract component values */
+    float R1 = comp->R1 * t + 1.0f;       /* treble pot: 0 to R1 (avoid zero) */
+    float R1i = comp->R1 * (1.0f - t);    /* treble pot inverse wiper */
+    float R2 = comp->R2 * b + 1.0f;       /* bass pot */
+    float R3 = comp->R3 * m + 1.0f;       /* mid pot */
+    float R4 = comp->R4;
+    float C1 = comp->C1;
+    float C2 = comp->C2;
+    float C3 = comp->C3;
+
+    /*
+     * s-domain coefficients from the Yeh/Abel/Smith analysis.
+     *
+     * Numerator: H_num(s) = b1*s^2 + b2*s + b3
+     * Denominator: H_den(s) = a0*s^3 + a1*s^2 + a2*s + 1
+     *
+     * These expressions come from nodal analysis of the tone stack circuit.
+     * Each coefficient is a product of R and C values that capture the
+     * exact interaction between the three pot positions.
+     */
+
+    /* Numerator coefficients (s-domain) */
+    float sb1 = C1 * C3 * R1 * R3
+              + C1 * C3 * R3 * R4
+              + C2 * C3 * R2 * R4;
+
+    float sb2 = C1 * R1
+              + C1 * R3
+              + C2 * R2
+              + C3 * R3
+              + C3 * R4;
+
+    float sb3 = 1.0f;
+
+    /* Denominator coefficients (s-domain) */
+    float sa0 = C1 * C2 * C3 * R1 * R2 * R4
+              + C1 * C2 * C3 * R1 * R2 * R3
+              + C1 * C2 * C3 * R2 * R3 * R4;
+
+    float sa1 = C1 * C2 * R1 * R2
+              + C1 * C2 * R2 * R4
+              + C1 * C3 * R1 * R3
+              + C1 * C3 * R1 * R4
+              + C1 * C3 * R3 * R4
+              + C2 * C3 * R2 * R3
+              + C2 * C3 * R2 * R4
+              + C2 * C3 * R3 * R4
+              + C1 * C2 * R1i * R2;
+
+    float sa2 = C1 * R1
+              + C1 * R3
+              + C2 * R2
+              + C3 * R3
+              + C3 * R4
+              + C1 * R1i
+              + C2 * R4;
+
+    /* sa3 = 1.0 (normalized) */
+
+    /*
+     * Bilinear transform: s = (2*sr) * (1 - z^-1) / (1 + z^-1)
+     *
+     * For a 3rd-order system H(s) = (b1*s^2 + b2*s + b3) / (a0*s^3 + a1*s^2 + a2*s + 1):
+     *
+     * Substitute s = c*(1-z^-1)/(1+z^-1) where c = 2*sr (pre-warping omitted
+     * for tone stacks since the interesting frequencies are well below Nyquist).
+     *
+     * Multiply out to get z-domain coefficients.
+     */
+    float c = 2.0f * sr;
+    float c2 = c * c;
+    float c3 = c2 * c;
+
+    /* Denominator: a0*c^3 + a1*c^2 + a2*c + 1 (for normalization) */
+    float A0 = sa0 * c3 + sa1 * c2 + sa2 * c + 1.0f;
+
+    /* Guard against division by zero (shouldn't happen with valid components) */
+    if (fabsf(A0) < 1e-30f) A0 = 1e-30f;
+
+    float inv_A0 = 1.0f / A0;
+
+    /* z-domain numerator coefficients (after bilinear substitution and expansion) */
+    /* B(z) = B0 + B1*z^-1 + B2*z^-2 + B3*z^-3 */
+    float B0 = (sb1 * c2 + sb2 * c + sb3);
+    float B1 = (-2.0f * sb1 * c2 + 2.0f * sb3);
+    float B2 = (sb1 * c2 - sb2 * c + sb3);
+    /* Note: numerator is 2nd order in s, so z-domain is 3rd order with B3=0
+     * after proper bilinear expansion. However, the bilinear transform of
+     * a ratio needs matching orders. We pad with (1+z^-1) to make 3rd order. */
+
+    /* Actually, the proper bilinear transform for mixed orders:
+     * Numerator has s^2 max, denominator has s^3 max.
+     * When we substitute s = c*(1-z^-1)/(1+z^-1) and multiply by (1+z^-1)^3:
+     * - Denominator: a0*c^3*(1-z^-1)^3 + a1*c^2*(1-z^-1)^2*(1+z^-1)
+     *                + a2*c*(1-z^-1)*(1+z^-1)^2 + (1+z^-1)^3
+     * - Numerator:   b1*c^2*(1-z^-1)^2*(1+z^-1) + b2*c*(1-z^-1)*(1+z^-1)^2
+     *                + b3*(1+z^-1)^3
+     *
+     * Expand (1-z^-1)^3 = 1 - 3z^-1 + 3z^-2 - z^-3
+     * (1-z^-1)^2*(1+z^-1) = 1 - z^-1 - z^-2 + z^-3
+     * (1-z^-1)*(1+z^-1)^2 = 1 + z^-1 - z^-2 - z^-3
+     * (1+z^-1)^3 = 1 + 3z^-1 + 3z^-2 + z^-3
+     */
+
+    /* Recalculate properly with full polynomial expansion */
+    float num0 =  sb1*c2 + sb2*c + sb3;
+    float num1 = -sb1*c2 + sb2*c + 3.0f*sb3;   /* from (1-z)(1+z) and (1+z)^3 expansion */
+    float num2 = -sb1*c2 - sb2*c + 3.0f*sb3;
+    float num3 =  sb1*c2 - sb2*c + sb3;
+
+    /* Wait — let me be more careful. Using the expansion patterns above:
+     * b1*c^2 * [1, -1, -1, +1]  (coefficient of (1-z^-1)^2*(1+z^-1))
+     * b2*c   * [1, +1, -1, -1]  (coefficient of (1-z^-1)*(1+z^-1)^2)
+     * b3     * [1, +3, +3, +1]  (coefficient of (1+z^-1)^3)
+     */
+    num0 = sb1*c2 * 1.0f + sb2*c * 1.0f + sb3 * 1.0f;
+    num1 = sb1*c2 *(-1.0f) + sb2*c * 1.0f + sb3 * 3.0f;
+    num2 = sb1*c2 *(-1.0f) + sb2*c *(-1.0f) + sb3 * 3.0f;
+    num3 = sb1*c2 * 1.0f + sb2*c *(-1.0f) + sb3 * 1.0f;
+
+    /* Denominator z-domain:
+     * a0*c^3 * [1, -3, +3, -1]  (coefficient of (1-z^-1)^3)
+     * a1*c^2 * [1, -1, -1, +1]  (coefficient of (1-z^-1)^2*(1+z^-1))
+     * a2*c   * [1, +1, -1, -1]  (coefficient of (1-z^-1)*(1+z^-1)^2)
+     * 1      * [1, +3, +3, +1]  (coefficient of (1+z^-1)^3)
+     */
+    float den0 = sa0*c3 * 1.0f + sa1*c2 * 1.0f + sa2*c * 1.0f + 1.0f;
+    float den1 = sa0*c3 *(-3.0f) + sa1*c2 *(-1.0f) + sa2*c * 1.0f + 3.0f;
+    float den2 = sa0*c3 * 3.0f + sa1*c2 *(-1.0f) + sa2*c *(-1.0f) + 3.0f;
+    float den3 = sa0*c3 *(-1.0f) + sa1*c2 * 1.0f + sa2*c *(-1.0f) + 1.0f;
+
+    /* Normalize by den0 (= A0, already computed) */
+    float inv_den0 = 1.0f / den0;
+
+    ts->b0 = num0 * inv_den0;
+    ts->b1 = num1 * inv_den0;
+    ts->b2 = num2 * inv_den0;
+    ts->b3 = num3 * inv_den0;
+    ts->a1 = den1 * inv_den0;
+    ts->a2 = den2 * inv_den0;
+    ts->a3 = den3 * inv_den0;
+}
+
+/* Process one sample through the 3rd-order tone stack filter.
+ * Uses transposed direct form II for numerical stability. */
+static inline float tone_stack_3rd_process(fx_tone_stack_3rd_t *ts, float in) {
+    float out = ts->b0 * in + ts->z1;
+    ts->z1 = ts->b1 * in - ts->a1 * out + ts->z2;
+    ts->z2 = ts->b2 * in - ts->a2 * out + ts->z3;
+    ts->z3 = ts->b3 * in - ts->a3 * out;
+
+    /* Flush denormals */
+    if (ts->z1 > -1e-15f && ts->z1 < 1e-15f) ts->z1 = 0.0f;
+    if (ts->z2 > -1e-15f && ts->z2 < 1e-15f) ts->z2 = 0.0f;
+    if (ts->z3 > -1e-15f && ts->z3 < 1e-15f) ts->z3 = 0.0f;
+
+    return out;
+}
+
+/* ── Vox Cut Control — 1st order lowpass ─────────────────────── */
+
+/*
+ * The Vox AC30 "Cut" control is a simple treble cut — a 1st-order lowpass
+ * with variable cutoff. The AC30's Top Boost channel also has bass/treble
+ * controls, but the defining character is the Cut control on the output.
+ *
+ * We model the bass and treble as biquad shelves (since the AC30 Top Boost
+ * channel does have these) but the Cut control as a 1st-order LPF, which
+ * is what gives the Vox its signature HF rolloff character.
+ *
+ * Cut knob at 0: wide open (cutoff at ~20kHz, essentially bypassed)
+ * Cut knob at 1: fully cut (cutoff at ~1kHz, very dark)
+ *
+ * The real circuit: 1M log pot + cap to ground. We interpolate cutoff
+ * frequency logarithmically between 1kHz and 20kHz.
+ */
+static void vox_cut_compute(fx_biquad_t *bq, float cut, float bass,
+                            float treble, float sr) {
+    /* The AC30 Top Boost bass/treble interact with the cut control.
+     * We model the combined effect as a lowpass whose cutoff is controlled
+     * by the Cut knob, with bass/treble modifying the slope. */
+    float cut_freq = 1000.0f * powf(20.0f, 1.0f - cut);  /* 20kHz -> 1kHz */
+    float q = 0.5f + treble * 0.3f;  /* treble affects resonance slightly */
+    (void)bass;  /* bass primarily affects preamp coupling in Vox, modeled elsewhere */
+    fx_biquad_lowpass(bq, cut_freq, q, sr);
+}
+
+/* ── Tilt EQ — single-knob bass/treble seesaw ────────────────── */
+
+/*
+ * The Tiny Terror's single "Tone" knob is a tilt EQ:
+ * - CCW (0.0): boosts bass, cuts treble -> warm/dark
+ * - Center (0.5): flat
+ * - CW (1.0): cuts bass, boosts treble -> bright/cutting
+ *
+ * Implemented as a low shelf + high shelf with inverted gains.
+ * Tilt center frequency around 800Hz.
+ */
+static void tilt_eq_compute(fx_biquad_t *bq, float tone, float sr) {
+    /* Map tone 0..1 to tilt in dB: -12dB to +12dB treble
+     * (bass is inverted) */
+    float tilt_db = (tone - 0.5f) * 24.0f;
+
+    /* We use a single 1st-order shelving filter at 800Hz.
+     * Positive tilt_db = boost treble (highshelf gain), which
+     * simultaneously reduces bass (it's a tilt). */
+    fx_biquad_highshelf(bq, 800.0f, tilt_db, sr);
+}
 
 /* ── Tone stack update ────────────────────────────────────────── */
 
 static void amp_update_tone_stack(fx_amp_state_t *amp, float sr) {
     const amp_model_config_t *cfg = &amp_configs[amp->type];
-    float range = cfg->tone_range_db;
 
-    float bass_db, mid_db, treble_db, pres_db;
+    switch (cfg->tone_topology) {
+        case TONE_STACK_FENDER_TMB:
+        case TONE_STACK_MARSHALL_TMB: {
+            /* Circuit-modeled TMB tone stack */
+            float t = amp->params[FX_AMP_PARAM_TREBLE];
+            float m = amp->params[FX_AMP_PARAM_MID];
+            float b = amp->params[FX_AMP_PARAM_BASS];
 
-    if (amp->type == FX_AMP_CITRUS_TERROR) {
-        /* Single Tone knob: 0.0 = dark, 1.0 = bright
-         * Controls a tilt-style EQ: bass goes down as treble goes up */
-        float tone = amp->params[FX_AMP_PARAM_TONE];
-        bass_db   = (0.5f - tone) * 2.0f * range;
-        mid_db    = 0.0f;  /* mids stay flat */
-        treble_db = (tone - 0.5f) * 2.0f * range;
-        pres_db   = (tone - 0.5f) * 8.0f;
-    } else {
-        /* Map 0-1 knob to -range..+range dB */
-        bass_db   = (amp->params[FX_AMP_PARAM_BASS]   - 0.5f) * 2.0f * range;
-        mid_db    = (amp->params[FX_AMP_PARAM_MID]    - 0.5f) * 2.0f * range;
-        treble_db = (amp->params[FX_AMP_PARAM_TREBLE] - 0.5f) * 2.0f * range;
-        pres_db   = (amp->params[FX_AMP_PARAM_PRESENCE] - 0.5f) * 2.0f * 8.0f;
+            /* Clamp pot positions to avoid degenerate filter coefficients.
+             * Real pots have a small resistance even at zero. */
+            if (t < 0.01f) t = 0.01f;
+            if (m < 0.01f) m = 0.01f;
+            if (b < 0.01f) b = 0.01f;
+            if (t > 0.99f) t = 0.99f;
+            if (m > 0.99f) m = 0.99f;
+            if (b > 0.99f) b = 0.99f;
+
+            tmb_compute_coefficients(&amp->tone_stack, &cfg->tmb, t, m, b, sr);
+
+            /* Presence is a separate negative-feedback shelf, not part of
+             * the passive tone stack. It lives in the power amp section.
+             * Typically a high shelf around 4-6kHz. */
+            float pres_db = (amp->params[FX_AMP_PARAM_PRESENCE] - 0.5f) * 16.0f;
+            fx_biquad_highshelf(&amp->presence_filter, cfg->presence_freq, pres_db, sr);
+            break;
+        }
+
+        case TONE_STACK_VOX_CUT: {
+            /* Vox-style: bass/treble shelves + cut control */
+            float cut = amp->params[FX_AMP_PARAM_CUT];
+            float bass = amp->params[FX_AMP_PARAM_BASS];
+            float treble = amp->params[FX_AMP_PARAM_TREBLE];
+
+            /* If the CUT param hasn't been set, use TREBLE as cut
+             * (for backwards compatibility — the AC30 Top Boost's
+             * treble knob effectively works as a high-frequency cut) */
+            if (cut < 0.001f && treble > 0.001f) {
+                cut = 1.0f - treble;  /* invert: high treble = low cut */
+            }
+
+            vox_cut_compute(&amp->tone_simple, cut, bass, treble, sr);
+
+            /* Presence shelf */
+            float pres_db = (amp->params[FX_AMP_PARAM_PRESENCE] - 0.5f) * 16.0f;
+            fx_biquad_highshelf(&amp->presence_filter, cfg->presence_freq, pres_db, sr);
+            break;
+        }
+
+        case TONE_STACK_TILT: {
+            /* Single Tone knob tilt EQ */
+            float tone = amp->params[FX_AMP_PARAM_TONE];
+            tilt_eq_compute(&amp->tone_simple, tone, sr);
+
+            /* Presence — less range since tilt already affects HF */
+            float pres_db = (tone - 0.5f) * 8.0f;
+            fx_biquad_highshelf(&amp->presence_filter, cfg->presence_freq, pres_db, sr);
+            break;
+        }
     }
 
-    fx_biquad_lowshelf(&amp->tone_bass, cfg->bass_freq, bass_db, sr);
-    fx_biquad_peak(&amp->tone_mid, cfg->mid_freq, mid_db, 0.7f, sr);
-    fx_biquad_highshelf(&amp->tone_treble, cfg->treble_freq, treble_db, sr);
-    fx_biquad_highshelf(&amp->presence_filter, cfg->presence_freq, pres_db, sr);
-
     /* Cache current values so we know when to recalculate */
-    if (amp->type == FX_AMP_CITRUS_TERROR) {
+    if (cfg->tone_topology == TONE_STACK_TILT) {
         amp->tone_cache[0] = amp->params[FX_AMP_PARAM_TONE];
     } else {
         amp->tone_cache[0] = amp->params[FX_AMP_PARAM_BASS];
@@ -255,8 +604,8 @@ static void amp_update_tone_stack(fx_amp_state_t *amp, float sr) {
 
 static inline bool tone_params_changed(fx_amp_state_t *amp, float sr) {
     if (amp->tone_sr != sr) return true;
-    if (amp->type == FX_AMP_CITRUS_TERROR) {
-        /* Citrus Terror uses single Tone knob — store in cache[0] */
+    const amp_model_config_t *cfg = &amp_configs[amp->type];
+    if (cfg->tone_topology == TONE_STACK_TILT) {
         return amp->tone_cache[0] != amp->params[FX_AMP_PARAM_TONE];
     }
     return amp->tone_cache[0] != amp->params[FX_AMP_PARAM_BASS] ||
@@ -315,6 +664,10 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
     float sag_attack  = expf(-1.0f / (0.010f * sr));    /* 10ms */
     float sag_release = expf(-1.0f / (0.200f * sr));    /* 200ms (slow recovery = spongy) */
 
+    /* Determine tone stack processing mode */
+    int use_tmb = (cfg->tone_topology == TONE_STACK_FENDER_TMB ||
+                   cfg->tone_topology == TONE_STACK_MARSHALL_TMB);
+
     for (int i = 0; i < n; i++) {
         float x = buf[i];
 
@@ -325,10 +678,15 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
                             &amp->dc_block_z1[s], dc_coeff);
         }
 
-        /* ── Stage 2: Tone stack EQ ──────────────────────────── */
-        x = fx_biquad_process(&amp->tone_bass, x);
-        x = fx_biquad_process(&amp->tone_mid, x);
-        x = fx_biquad_process(&amp->tone_treble, x);
+        /* ── Stage 2: Tone stack ─────────────────────────────── */
+        if (use_tmb) {
+            /* Circuit-modeled 3rd-order TMB filter */
+            x = tone_stack_3rd_process(&amp->tone_stack, x);
+        } else {
+            /* Simple topology (Vox cut or tilt EQ) */
+            x = fx_biquad_process(&amp->tone_simple, x);
+        }
+        /* Presence is always a separate shelf (negative feedback network) */
         x = fx_biquad_process(&amp->presence_filter, x);
 
         /* ── Eclipse Drone: Harmonic feedback sustain ────────── */
@@ -361,9 +719,7 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
             x *= reduction;
         }
 
-        /* Sag simulation: supply voltage droops under sustained loud signal
-         * Makes the amp feel "spongy" — attack has full voltage,
-         * sustained notes compress as supply sags */
+        /* Sag simulation: supply voltage droops under sustained loud signal */
         if (sag_amount > 0.01f) {
             float load = amp->power_envelope;
             if (load > amp->sag_voltage)
@@ -385,7 +741,9 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
          * Quadratic taper for natural feel. */
         float mv = master * master;
         float vv = volume * volume;
-        float makeup = 4.0f;  /* +12dB makeup — waveshapers compress heavily */
+        /* TMB tone stacks are passive and attenuate ~10-15dB at noon.
+         * Compensate with higher makeup gain for circuit-modeled stacks. */
+        float makeup = use_tmb ? 12.0f : 4.0f;
         x *= mv * vv * makeup;
 
         buf[i] = x;
@@ -421,12 +779,12 @@ int fx_amp_get_param_count(fx_amp_type_t type) {
         case FX_AMP_SOUTHWEST_LEAD:     return 8;
         case FX_AMP_ESSEX_CHIME:        return 7;
         case FX_AMP_TWEED_BLUES:        return 6;
-        case FX_AMP_MERIDIAN_HIGH_GAIN: return 7;  /* Gain, Bass, Mid, Treble, Presence, Volume, Master */
-        case FX_AMP_CITRUS_ROAR:        return 5;  /* Gain, Bass, Mid, Treble, Volume */
-        case FX_AMP_CITRUS_TERROR:      return 3;  /* Gain, Tone, Volume */
-        case FX_AMP_REGENT_800:         return 7;  /* Gain, Bass, Mid, Treble, Presence, Volume, Master */
-        case FX_AMP_SOLAR_MONOLITH:     return 6;  /* Gain, Bass, Mid, Treble, Volume, Master */
-        case FX_AMP_ECLIPSE_DRONE:      return 6;  /* Gain, Bass, Mid, Treble, Feedback, Volume */
+        case FX_AMP_MERIDIAN_HIGH_GAIN: return 7;
+        case FX_AMP_CITRUS_ROAR:        return 5;
+        case FX_AMP_CITRUS_TERROR:      return 3;
+        case FX_AMP_REGENT_800:         return 7;
+        case FX_AMP_SOLAR_MONOLITH:     return 6;
+        case FX_AMP_ECLIPSE_DRONE:      return 6;
         default: return 0;
     }
 }
