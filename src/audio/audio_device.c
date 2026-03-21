@@ -57,10 +57,10 @@ static void audio_callback(ma_device *device, void *output,
     fx_engine_process(mgr->engine, (const float *)input,
                       (float *)output, (int)frame_count);
 
-    /* Debug recorder: capture raw input + processed output */
+    /* Audio recorder: capture processed output */
     {
-        extern void fx_debug_record_feed(const float *, const float *, int);
-        fx_debug_record_feed((const float *)input, (const float *)output, (int)frame_count);
+        extern void fx_recorder_feed(const float *, int);
+        fx_recorder_feed((const float *)output, (int)frame_count);
     }
 }
 

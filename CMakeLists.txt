@@ -27,6 +27,25 @@ if(UNIX AND NOT APPLE)
 endif()
 set_target_properties(fx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# ── Shine MP3 encoder library ────────────────────────────────
+add_library(shine STATIC
+    deps/shine/bitstream.c
+    deps/shine/huffman.c
+    deps/shine/l3bitstream.c
+    deps/shine/l3loop.c
+    deps/shine/l3mdct.c
+    deps/shine/l3subband.c
+    deps/shine/layer3.c
+    deps/shine/reservoir.c
+    deps/shine/tables.c
+)
+target_include_directories(shine PUBLIC ${CMAKE_SOURCE_DIR}/deps/shine)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(shine PRIVATE -w)
+endif()
+target_link_libraries(shine PRIVATE m)
+set_target_properties(shine PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # ── Engine library (no platform deps, pure C99) ──────────────
 add_library(fx_engine STATIC
     src/engine/internal/engine.c
@@ -103,13 +122,13 @@ add_executable(0xfx_standalone
     src/standalone/main.c
     src/audio/audio_device.c
     src/audio/midi_input.c
-    src/audio/debug_recorder.c
+    src/audio/recorder.c
 )
 target_include_directories(0xfx_standalone PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/deps
 )
-target_link_libraries(0xfx_standalone PRIVATE fx_engine fx_core m)
+target_link_libraries(0xfx_standalone PRIVATE fx_engine fx_core shine m)
 
 # Platform-specific audio deps
 if(UNIX AND NOT APPLE)
@@ -138,7 +157,7 @@ if(HAS_GUI)
         src/gui/texture.c
         src/audio/audio_device.c
         src/audio/midi_input.c
-        src/audio/debug_recorder.c
+        src/audio/recorder.c
         ${GUI_RC}
     )
     target_include_directories(0xfx_gui PRIVATE
@@ -147,7 +166,7 @@ if(HAS_GUI)
         ${CMAKE_SOURCE_DIR}/deps/imgui
         ${CMAKE_SOURCE_DIR}/deps/imgui/backends
     )
-    target_link_libraries(0xfx_gui PRIVATE fx_engine fx_core imgui m)
+    target_link_libraries(0xfx_gui PRIVATE fx_engine fx_core imgui shine m)
     if(SDL2_FOUND)
         target_link_libraries(0xfx_gui PRIVATE ${SDL2_LIBRARIES})
     else()

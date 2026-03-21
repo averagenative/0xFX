@@ -2558,7 +2558,7 @@
     "title": "Sync plugin GUI renderer with standalone \u2014 full visual parity",
     "domain": "frontend",
     "phase": 6,
-    "status": "queued",
+    "status": "done",
     "claimedBy": null,
     "depends": [
       "TASK-337"

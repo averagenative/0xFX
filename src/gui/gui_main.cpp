@@ -26,7 +26,7 @@
 extern "C" {
 #include "../engine/fx_engine.h"
 #include "../audio/audio_device.h"
-#include "../audio/debug_recorder.h"
+#include "../audio/recorder.h"
 #include "../audio/midi_input.h"
 #include "../core/log.h"
 #include "../core/crash.h"
@@ -1028,9 +1028,32 @@ int main(int argc, char *argv[]) {
 
             ImGui::SameLine();
 
-            /* Debug record button */
+            /* Record button + format selector */
             {
-                bool recording = fx_debug_record_active();
+                static int rec_format_idx = 0; /* index into fx_record_format_t */
+                bool recording = fx_recorder_active();
+
+                /* Format dropdown (disabled while recording) */
+                if (!recording) {
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.12f, 0.10f, 0.09f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.65f, 0.55f, 1.0f));
+                    ImGui::PushItemWidth(100.0f);
+                    const char *fmt_names[] = {
+                        "WAV 16-bit", "WAV 24-bit",
+                        "MP3 192k", "MP3 320k",
+                        "FLAC 16-bit", "FLAC 24-bit"
+                    };
+                    ImGui::Combo("##rec_fmt", &rec_format_idx, fmt_names, FX_RECORD_FORMAT_COUNT);
+                    ImGui::PopItemWidth();
+                    ImGui::PopStyleColor(2);
+                    ImGui::PopStyleVar();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Recording format");
+                    ImGui::SameLine();
+                }
+
+                /* REC button */
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
                 if (recording) {
                     float t = (float)ImGui::GetTime();
@@ -1043,19 +1066,40 @@ int main(int argc, char *argv[]) {
                 }
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.12f, 0.10f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.50f, 0.15f, 0.12f, 1.0f));
-                if (ImGui::Button(recording ? "REC" : "REC", ImVec2(48.0f, 32.0f))) {
+
+                /* Show duration while recording */
+                char rec_label[32];
+                if (recording) {
+                    float dur = fx_recorder_duration();
+                    int mins = (int)(dur / 60.0f);
+                    int secs = (int)dur % 60;
+                    snprintf(rec_label, sizeof(rec_label), "%d:%02d", mins, secs);
+                } else {
+                    snprintf(rec_label, sizeof(rec_label), "REC");
+                }
+
+                if (ImGui::Button(rec_label, ImVec2(recording ? 56.0f : 48.0f, 32.0f))) {
                     if (recording) {
-                        fx_debug_record_stop();
+                        fx_recorder_stop();
                     } else {
-                        fx_debug_record_start("debug_recording.wav", 44100.0f);
+                        /* Build filename from format */
+                        const char *exts[] = { ".wav", ".wav", ".mp3", ".mp3", ".flac", ".flac" };
+                        char rec_path[256];
+                        snprintf(rec_path, sizeof(rec_path), "recording%s", exts[rec_format_idx]);
+                        fx_recorder_start(rec_path, (fx_record_format_t)rec_format_idx, 44100.0f);
                     }
                 }
                 ImGui::PopStyleColor(4);
                 ImGui::PopStyleVar();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(recording
-                        ? "Stop recording (saves debug_recording.wav)"
-                        : "Record input+output to WAV for debugging");
+                if (ImGui::IsItemHovered()) {
+                    if (recording) {
+                        float dur = fx_recorder_duration();
+                        ImGui::SetTooltip("Stop recording (%.1f sec)", dur);
+                    } else {
+                        ImGui::SetTooltip("Record processed output (%s)",
+                            fx_recorder_format_name((fx_record_format_t)rec_format_idx));
+                    }
+                }
             }
 
             ImGui::SameLine();

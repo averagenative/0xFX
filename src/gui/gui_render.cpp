@@ -1190,11 +1190,20 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 }
 
                 ImGui::Dummy(ImVec2(0.0f, 4.0f));
-
-                /* Model selector */
                 {
+                    ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                    ImGui::GetWindowDrawList()->AddLine(
+                        sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                        IM_COL32(180, 130, 40, 100), 1.0f);
+                    ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                }
+
+                /* Model selector — "Model | [dropdown]" centered */
+                {
+                    float label_w = ImGui::CalcTextSize("Model").x;
                     float combo_w = 200.0f;
-                    float combo_off = (avail_w - combo_w - 60.0f) * 0.5f;
+                    float total_w = label_w + 8.0f + combo_w;
+                    float combo_off = (avail_w - total_w) * 0.5f;
                     if (combo_off > 0.0f)
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + combo_off);
                     ImGui::AlignTextToFramePadding();
@@ -1206,47 +1215,218 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     if (ImGui::Combo(model_label, &current_amp, amp_names, FX_AMP_COUNT)) {
                         fx_amp_set_model(engine, amp_chain, (fx_amp_type_t)current_amp);
                     }
+                    /* Scroll wheel to cycle through amp models when hovered */
+                    if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
+                        float wheel = ImGui::GetIO().MouseWheel;
+                        if (wheel != 0.0f) {
+                            int next = current_amp + (wheel < 0.0f ? 1 : -1);
+                            if (next < 0) next = FX_AMP_COUNT - 1;
+                            if (next >= FX_AMP_COUNT) next = 0;
+                            current_amp = next;
+                            fx_amp_set_model(engine, amp_chain, (fx_amp_type_t)current_amp);
+                        }
+                    }
+                    /* Amp model tooltips/descriptions */
+                    if (ImGui::IsItemHovered()) {
+                        static const char *amp_descs[] = {
+                            "Clean, chimey American tone \xe2\x80\x94 silver panel era",
+                            "Classic British crunch \xe2\x80\x94 plexi-era overdrive",
+                            "High-gain American lead \xe2\x80\x94 tight, aggressive",
+                            "British chime and jangle \xe2\x80\x94 Class A character",
+                            "Warm vintage blues \xe2\x80\x94 tweed era breakup",
+                            "Brutal modern metal \xe2\x80\x94 scooped, crushing gain",
+                            "Thick British roar \xe2\x80\x94 EL34 warmth and fuzz",
+                            "Small but fierce \xe2\x80\x94 Class A lunchbox grit",
+                            "Classic British rock \xe2\x80\x94 single-channel aggression",
+                            "Massive doom \xe2\x80\x94 thunderous clean into crushing fuzz",
+                            "Extreme drone \xe2\x80\x94 subsonic doom with feedback sustain",
+                        };
+                        if (current_amp >= 0 && current_amp < FX_AMP_COUNT)
+                            ImGui::SetTooltip("%s", amp_descs[current_amp]);
+                    }
                 }
 
                 ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
-                /* Amp face image with overlay knobs */
+                /* Amp face image with interactive overlay knobs */
+                int param_count = fx_amp_get_param_count(amp_type);
+                auto has_param = [&](fx_amp_param_t p) -> bool {
+                    if ((int)p < param_count) return true;
+                    if (amp_type == FX_AMP_CITRUS_TERROR && p == FX_AMP_PARAM_TONE)
+                        return true;
+                    if (amp_type == FX_AMP_ECLIPSE_DRONE && p == FX_AMP_PARAM_FEEDBACK)
+                        return true;
+                    return false;
+                };
+
                 {
                     const char *aname = fx_amp_get_type_name(amp_type);
                     uintptr_t face_tex = load_amp_face_texture(aname);
+
                     float img_w = 500.0f;
                     float img_h = img_w * 0.65f;
                     if (face_tex) {
                         int tw = 0, th = 0;
-                        if (fx_texture_get_size(face_tex, &tw, &th) && th > 0)
-                            img_h = img_w / ((float)tw / (float)th);
+                        if (fx_texture_get_size(face_tex, &tw, &th) && th > 0) {
+                            float aspect = (float)tw / (float)th;
+                            img_h = img_w / aspect;
+                        }
                     }
                     float img_x = (avail_w - img_w) * 0.5f;
                     if (img_x < 0.0f) img_x = 0.0f;
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + img_x);
+
                     ImVec2 img_pos = ImGui::GetCursorScreenPos();
-                    (void)img_pos; /* used by overlay knob maps in gui_main.cpp */
 
-                    if (face_tex)
-                        ImGui::Image((ImTextureID)face_tex, ImVec2(img_w, img_h));
-                    else
+                    if (face_tex) {
+                        ImGui::Image((ImTextureID)face_tex, ImVec2(img_w, img_h),
+                                     ImVec2(0, 0), ImVec2(1, 1),
+                                     ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    } else {
                         ImGui::Dummy(ImVec2(img_w, img_h));
+                    }
 
-                    /* Overlay knobs — simplified: show knobs using knob_float
-                     * below the image. Full overlay map rendering is in gui_main.cpp
-                     * and will be migrated incrementally. */
-                    int param_count = fx_amp_get_param_count(amp_type);
-                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
-                    for (int p = 0; p < param_count && p < 10; p++) {
-                        fx_amp_param_t ap = (fx_amp_param_t)p;
-                        const char *pname = fx_amp_get_param_name(amp_type, ap);
-                        float val = fx_amp_get_param(engine, amp_chain, ap);
-                        float pmax = (ap == FX_AMP_PARAM_SAG || ap == FX_AMP_PARAM_BRIGHT)
-                                     ? 1.0f : 10.0f;
-                        if (knob_float(pname, &val, 0.0f, pmax,
-                                       pmax * 0.5f, 0.01f))
-                            fx_amp_set_param(engine, amp_chain, ap, val);
-                        if (p < param_count - 1) ImGui::SameLine();
+                    /* Per-amp knob position maps — normalized (x,y) on the amp face image */
+                    struct AmpKnobPos {
+                        fx_amp_param_t param;
+                        float nx, ny;
+                    };
+
+                    const float OVERLAY_KNOB_SZ = 34.0f;
+                    const char *knob_tex = "resources/knobs/knob_dome_silver_nobg.png";
+                    const int DUMMY = -1;
+
+                    static const AmpKnobPos fullerton_knobs[] = {
+                        { FX_AMP_PARAM_VOLUME,   0.299f, 0.476f },
+                        { FX_AMP_PARAM_TREBLE,   0.375f, 0.475f },
+                        { FX_AMP_PARAM_MID,      0.451f, 0.477f },
+                        { FX_AMP_PARAM_BASS,     0.527f, 0.476f },
+                        { FX_AMP_PARAM_PRESENCE, 0.603f, 0.477f },
+                        { FX_AMP_PARAM_GAIN,     0.678f, 0.476f },
+                        { FX_AMP_PARAM_SAG,      0.753f, 0.476f },
+                    };
+                    static const AmpKnobPos brit_crunch_knobs[] = {
+                        { FX_AMP_PARAM_PRESENCE, 0.341f, 0.536f },
+                        { FX_AMP_PARAM_BASS,     0.419f, 0.538f },
+                        { FX_AMP_PARAM_MID,      0.496f, 0.541f },
+                        { FX_AMP_PARAM_TREBLE,   0.574f, 0.539f },
+                        { FX_AMP_PARAM_VOLUME,   0.653f, 0.538f },
+                        { FX_AMP_PARAM_GAIN,     0.730f, 0.538f },
+                        { FX_AMP_PARAM_MASTER,   0.808f, 0.538f },
+                    };
+                    static const AmpKnobPos southwest_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.343f, 0.651f },
+                        { FX_AMP_PARAM_BASS,     0.439f, 0.650f },
+                        { FX_AMP_PARAM_MID,      0.533f, 0.652f },
+                        { FX_AMP_PARAM_TREBLE,   0.630f, 0.652f },
+                        { FX_AMP_PARAM_PRESENCE, 0.727f, 0.652f },
+                        { FX_AMP_PARAM_MASTER,   0.822f, 0.651f },
+                    };
+                    static const AmpKnobPos essex_knobs[] = {
+                        { FX_AMP_PARAM_VOLUME,   0.288f, 0.378f },
+                        { FX_AMP_PARAM_BASS,     0.369f, 0.378f },
+                        { FX_AMP_PARAM_TREBLE,   0.450f, 0.379f },
+                        { FX_AMP_PARAM_CUT,      0.530f, 0.379f },
+                        { FX_AMP_PARAM_PRESENCE, 0.610f, 0.378f },
+                        { FX_AMP_PARAM_GAIN,     0.688f, 0.378f },
+                        { (fx_amp_param_t)DUMMY,  0.769f, 0.378f },
+                    };
+                    static const AmpKnobPos tweed_knobs[] = {
+                        { FX_AMP_PARAM_VOLUME,   0.344f, 0.575f },
+                        { FX_AMP_PARAM_BASS,     0.438f, 0.575f },
+                        { FX_AMP_PARAM_TREBLE,   0.532f, 0.573f },
+                        { FX_AMP_PARAM_GAIN,     0.625f, 0.573f },
+                        { FX_AMP_PARAM_MASTER,   0.718f, 0.574f },
+                    };
+                    static const AmpKnobPos meridian_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.323f, 0.600f },
+                        { FX_AMP_PARAM_BASS,     0.411f, 0.601f },
+                        { FX_AMP_PARAM_MID,      0.498f, 0.600f },
+                        { FX_AMP_PARAM_TREBLE,   0.583f, 0.600f },
+                        { FX_AMP_PARAM_PRESENCE, 0.668f, 0.601f },
+                        { FX_AMP_PARAM_VOLUME,   0.753f, 0.601f },
+                        { FX_AMP_PARAM_MASTER,   0.838f, 0.600f },
+                    };
+                    static const AmpKnobPos citrus_roar_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.348f, 0.546f },
+                        { FX_AMP_PARAM_BASS,     0.415f, 0.550f },
+                        { FX_AMP_PARAM_MID,      0.484f, 0.559f },
+                        { FX_AMP_PARAM_TREBLE,   0.554f, 0.567f },
+                        { FX_AMP_PARAM_VOLUME,   0.625f, 0.573f },
+                    };
+                    static const AmpKnobPos citrus_terror_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.299f, 0.528f },
+                        { FX_AMP_PARAM_TONE,     0.423f, 0.527f },
+                        { FX_AMP_PARAM_VOLUME,   0.541f, 0.527f },
+                    };
+                    static const AmpKnobPos regent_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.404f, 0.601f },
+                        { FX_AMP_PARAM_BASS,     0.472f, 0.602f },
+                        { FX_AMP_PARAM_MID,      0.539f, 0.601f },
+                        { FX_AMP_PARAM_TREBLE,   0.607f, 0.602f },
+                        { FX_AMP_PARAM_PRESENCE, 0.675f, 0.602f },
+                        { FX_AMP_PARAM_VOLUME,   0.743f, 0.600f },
+                        { FX_AMP_PARAM_MASTER,   0.810f, 0.600f },
+                    };
+                    static const AmpKnobPos solar_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.231f, 0.513f },
+                        { FX_AMP_PARAM_BASS,     0.328f, 0.514f },
+                        { FX_AMP_PARAM_MID,      0.425f, 0.513f },
+                        { FX_AMP_PARAM_TREBLE,   0.524f, 0.515f },
+                        { FX_AMP_PARAM_VOLUME,   0.619f, 0.513f },
+                        { FX_AMP_PARAM_MASTER,   0.718f, 0.514f },
+                    };
+                    static const AmpKnobPos eclipse_knobs[] = {
+                        { FX_AMP_PARAM_GAIN,     0.136f, 0.507f },
+                        { FX_AMP_PARAM_BASS,     0.241f, 0.507f },
+                        { FX_AMP_PARAM_MID,      0.347f, 0.506f },
+                        { FX_AMP_PARAM_TREBLE,   0.454f, 0.507f },
+                        { FX_AMP_PARAM_FEEDBACK, 0.557f, 0.505f },
+                        { FX_AMP_PARAM_VOLUME,   0.662f, 0.507f },
+                    };
+
+                    const AmpKnobPos *knob_map = nullptr;
+                    int knob_map_count = 0;
+                    switch (amp_type) {
+                        case FX_AMP_FULLERTON_CLEAN:    knob_map = fullerton_knobs;     knob_map_count = 7; break;
+                        case FX_AMP_BRIT_CRUNCH:        knob_map = brit_crunch_knobs;    knob_map_count = 7; break;
+                        case FX_AMP_SOUTHWEST_LEAD:     knob_map = southwest_knobs;     knob_map_count = 6; break;
+                        case FX_AMP_ESSEX_CHIME:        knob_map = essex_knobs;         knob_map_count = 7; break;
+                        case FX_AMP_TWEED_BLUES:        knob_map = tweed_knobs;         knob_map_count = 5; break;
+                        case FX_AMP_MERIDIAN_HIGH_GAIN: knob_map = meridian_knobs;      knob_map_count = 7; break;
+                        case FX_AMP_CITRUS_ROAR:        knob_map = citrus_roar_knobs;   knob_map_count = 5; break;
+                        case FX_AMP_CITRUS_TERROR:      knob_map = citrus_terror_knobs; knob_map_count = 3; break;
+                        case FX_AMP_REGENT_800:         knob_map = regent_knobs;        knob_map_count = 7; break;
+                        case FX_AMP_SOLAR_MONOLITH:     knob_map = solar_knobs;         knob_map_count = 6; break;
+                        case FX_AMP_ECLIPSE_DRONE:      knob_map = eclipse_knobs;       knob_map_count = 6; break;
+                        default: break;
+                    }
+
+                    /* Render overlay knobs on the amp face */
+                    if (knob_map) {
+                        for (int ki = 0; ki < knob_map_count; ki++) {
+                            const AmpKnobPos &kp = knob_map[ki];
+                            float kx = img_pos.x + kp.nx * img_w - OVERLAY_KNOB_SZ * 0.5f;
+                            float ky = img_pos.y + kp.ny * img_h - OVERLAY_KNOB_SZ * 0.5f;
+
+                            if ((int)kp.param == DUMMY || !has_param(kp.param)) {
+                                float dummy = 0.5f;
+                                char did[32];
+                                snprintf(did, sizeof(did), "##amp_dummy_%d_%d", (int)amp_chain, ki);
+                                knob_overlay(did, &dummy, 0.0f, 1.0f, 0.5f, 0.0f,
+                                             kx, ky, OVERLAY_KNOB_SZ, knob_tex);
+                            } else {
+                                const char *pname = fx_amp_get_param_name(amp_type, kp.param);
+                                float val = fx_amp_get_param(engine, amp_chain, kp.param);
+                                char kid[48];
+                                snprintf(kid, sizeof(kid), "%s##amp_ov_%d_%d",
+                                         pname, (int)amp_chain, ki);
+                                if (knob_overlay(kid, &val, 0.0f, 1.0f, 0.5f, 0.01f,
+                                                 kx, ky, OVERLAY_KNOB_SZ, knob_tex)) {
+                                    fx_amp_set_param(engine, amp_chain, kp.param, val);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1255,45 +1435,69 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 int &cab_type_ref = (sel.chain_id == 0) ? gui->cab_type : gui->cab_type_b;
                 float avail_w = ImGui::GetContentRegionAvail().x;
 
-                const char *title = is_dual ? (sel.chain_id == 0 ? "Cabinet A" : "Cabinet B") : "Cabinet";
-                ImGui::SetWindowFontScale(1.35f);
-                ImVec2 ts = ImGui::CalcTextSize(title);
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
-                ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
-                ImGui::SetWindowFontScale(1.0f);
-
-                ImGui::Dummy(ImVec2(0.0f, 8.0f));
-
-                /* Cab type selector */
+                /* Title with cab type name subtitle */
                 {
-                    float combo_off = (avail_w - 280.0f) * 0.5f;
-                    if (combo_off > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + combo_off);
+                    const char *title = is_dual ? (sel.chain_id == 0 ? "Cabinet A" : "Cabinet B") : "Cabinet";
+                    ImGui::SetWindowFontScale(1.35f);
+                    ImVec2 ts = ImGui::CalcTextSize(title);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                    ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
+                    ImGui::SetWindowFontScale(1.0f);
+                    /* Subtitle: "Cabinet -- 4x12 Straight" style */
+                    const char *cab_name = (cab_type_ref >= 0 && cab_type_ref < FX_CAB_TYPE_COUNT)
+                        ? s_cab_type_names[cab_type_ref] : "Unknown";
+                    char sub[64];
+                    snprintf(sub, sizeof(sub), "Cabinet \xe2\x80\x94 %s", cab_name);
+                    ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                    ImGui::TextDisabled("%s", sub);
+                }
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                {
+                    ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                    ImGui::GetWindowDrawList()->AddLine(
+                        sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                        IM_COL32(180, 130, 40, 100), 1.0f);
+                    ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                }
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                /* Cab type selector — "Cab Type | [dropdown]" centered */
+                {
+                    float label_w = ImGui::CalcTextSize("Cab Type").x;
+                    float combo_w = 200.0f;
+                    float total_w = label_w + 8.0f + combo_w;
+                    float combo_off = (avail_w - total_w) * 0.5f;
+                    if (combo_off > 0.0f)
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + combo_off);
                     ImGui::AlignTextToFramePadding();
                     ImGui::TextDisabled("Cab Type");
                     ImGui::SameLine(0, 8);
-                    ImGui::SetNextItemWidth(200);
-                    if (ImGui::Combo("##cab_type_sel", &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
-                        fx_cab_params_t params;
-                        params.cab_type = (fx_cab_type_t)cab_type_ref;
-                        params.mic_pos  = FX_MIC_ON_AXIS;
-                        params.speaker_fs = 80.0f;
-                        params.brightness = 0.5f;
-                        params.resonance  = 0.5f;
-                        fx_cab_generate_ir(engine, cab_chain, &params);
-                    }
+                }
+                ImGui::SetNextItemWidth(200);
+                if (ImGui::Combo("##cab_type_sel", &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
+                    fx_cab_params_t params;
+                    params.cab_type = (fx_cab_type_t)cab_type_ref;
+                    params.mic_pos  = FX_MIC_ON_AXIS;
+                    params.speaker_fs = 80.0f;
+                    params.brightness = 0.5f;
+                    params.resonance  = 0.5f;
+                    fx_cab_generate_ir(engine, cab_chain, &params);
                 }
 
                 ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
-                /* Cab image */
+                /* Cabinet image — centered */
                 {
                     uintptr_t cab_tex = load_cab_texture(cab_type_ref);
                     if (cab_tex) {
                         int cw = 0, ch = 0;
                         float imgh = 220.0f;
                         float imgw = imgh;
-                        if (fx_texture_get_size(cab_tex, &cw, &ch) && ch > 0)
-                            imgw = imgh * ((float)cw / (float)ch);
+                        if (fx_texture_get_size(cab_tex, &cw, &ch) && ch > 0) {
+                            float aspect = (float)cw / (float)ch;
+                            imgw = imgh * aspect;
+                        }
                         float imgx = (avail_w - imgw) * 0.5f;
                         if (imgx > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + imgx);
                         ImGui::Image((ImTextureID)cab_tex, ImVec2(imgw, imgh));
@@ -1330,99 +1534,359 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     bool bypassed = fx_pedal_get_bypass(engine, pid);
                     float avail_w = ImGui::GetContentRegionAvail().x;
 
-                    /* Title */
-                    ImGui::SetWindowFontScale(1.35f);
-                    ImVec2 ts = ImGui::CalcTextSize(pname);
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
-                    if (bypassed)
-                        ImGui::TextDisabled("%s", pname);
-                    else
-                        ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", pname);
-                    ImGui::SetWindowFontScale(1.0f);
+                    /* Look up category for subtitle */
+                    const char *pedal_category = nullptr;
+                    for (int ci = 0; ci < s_pedal_category_count && !pedal_category; ci++) {
+                        for (int pi = 0; pi < s_pedal_categories[ci].count; pi++) {
+                            if (s_pedal_categories[ci].pedals[pi].type == pt) {
+                                pedal_category = s_pedal_categories[ci].label;
+                                break;
+                            }
+                        }
+                    }
 
-                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
-
-                    /* Pedal image */
+                    /* Title — large name + subtitle */
                     {
+                        ImGui::SetWindowFontScale(1.35f);
+                        ImVec2 ts = ImGui::CalcTextSize(pname);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
+                        if (bypassed)
+                            ImGui::TextDisabled("%s", pname);
+                        else
+                            ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", pname);
+                        ImGui::SetWindowFontScale(1.0f);
+                        if (pedal_category) {
+                            char sub[64];
+                            snprintf(sub, sizeof(sub), "%s \xe2\x80\x94 %s",
+                                     pname, pedal_category);
+                            ImVec2 sub_sz = ImGui::CalcTextSize(sub);
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
+                            ImGui::TextDisabled("%s", sub);
+                        }
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    {
+                        ImVec2 sep_p0 = ImGui::GetCursorScreenPos();
+                        ImGui::GetWindowDrawList()->AddLine(
+                            sep_p0, ImVec2(sep_p0.x + avail_w, sep_p0.y),
+                            IM_COL32(180, 130, 40, 100), 1.0f);
+                        ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                    }
+
+                    /* Pedal body image with overlay knobs + LED */
+                    {
+                        /* Convert display name to filename for lookups */
+                        char pedal_fname[128];
+                        type_to_filename(pname, pedal_fname, sizeof(pedal_fname));
+                        if (strcmp(pedal_fname, "orange_distortion") == 0)
+                            strcpy(pedal_fname, "orange_dist");
+
                         uintptr_t pedal_tex = load_pedal_texture(pname);
-                        float imgh = 220.0f;
-                        float imgw = imgh;
+                        float img_h = 220.0f;
+                        float img_w = img_h;
                         if (pedal_tex) {
                             int pw = 0, ph = 0;
-                            if (fx_texture_get_size(pedal_tex, &pw, &ph) && ph > 0)
-                                imgw = imgh * ((float)pw / (float)ph);
+                            if (fx_texture_get_size(pedal_tex, &pw, &ph) && ph > 0) {
+                                float aspect = (float)pw / (float)ph;
+                                img_w = img_h * aspect;
+                            }
                         }
-                        float imgx = (avail_w - imgw) * 0.5f;
+                        float imgx = (avail_w - img_w) * 0.5f;
                         if (imgx < 0.0f) imgx = 0.0f;
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + imgx);
+
+                        ImVec2 img_pos = ImGui::GetCursorScreenPos();
+                        float cursor_after_img_y = 0;
+
                         if (pedal_tex) {
-                            ImVec4 tint = bypassed ? ImVec4(0.6f,0.6f,0.6f,0.8f) : ImVec4(1,1,1,1);
-                            ImGui::Image((ImTextureID)pedal_tex, ImVec2(imgw, imgh),
-                                ImVec2(0,0), ImVec2(1,1), tint);
+                            ImVec4 tint = bypassed
+                                ? ImVec4(0.6f, 0.6f, 0.6f, 0.8f)
+                                : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                            ImGui::Image((ImTextureID)pedal_tex,
+                                ImVec2(img_w, img_h),
+                                ImVec2(0, 0), ImVec2(1, 1), tint);
                         } else {
-                            ImGui::Dummy(ImVec2(imgw, imgh));
+                            ImGui::Dummy(ImVec2(img_w, img_h));
                         }
-                    }
+                        cursor_after_img_y = ImGui::GetCursorPosY();
 
-                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                        /* LED indicator on pedal image */
+                        {
+                            static const struct { const char *name; float x, y; } s_led_pos[] = {
+                                {"amp_box",0.502f,0.451f}, {"blues_grit",0.496f,0.605f},
+                                {"carbon_delay",0.496f,0.641f}, {"chaos_fuzz",0.369f,0.729f},
+                                {"cloud_verb",0.502f,0.213f}, {"drift_vibrato",0.500f,0.547f},
+                                {"drip_verb",0.506f,0.615f}, {"echo_delay",0.496f,0.582f},
+                                {"glass_comp",0.494f,0.588f}, {"gold_drive",0.502f,0.373f},
+                                {"grit_crush",0.498f,0.565f}, {"hall_verb",0.498f,0.600f},
+                                {"howl_wah",0.635f,0.576f}, {"jade_drive",0.490f,0.576f},
+                                {"jet_flanger",0.322f,0.693f}, {"liquid_chorus",0.502f,0.330f},
+                                {"mammoth_fuzz",0.336f,0.711f}, {"memory_echo",0.348f,0.703f},
+                                {"metal_zone",0.498f,0.599f}, {"noise_gate",0.494f,0.525f},
+                                {"orange_dist",0.498f,0.537f}, {"phase_sweep",0.508f,0.445f},
+                                {"plate_verb",0.496f,0.488f}, {"pulse_trem",0.320f,0.816f},
+                                {"punch_comp",0.502f,0.545f}, {"quack_filter",0.494f,0.451f},
+                                {"ring_tone",0.497f,0.578f}, {"rodent",0.500f,0.562f},
+                                {"round_fuzz",0.645f,0.398f}, {"shimmer_verb",0.498f,0.674f},
+                                {"squeeze_box",0.359f,0.578f}, {"tape_machine",0.498f,0.600f},
+                                {"tone_sculptor",0.500f,0.621f}, {"warm_tape",0.342f,0.721f},
+                                {"wraith_fuzz",0.498f,0.525f},
+                            };
+                            for (int li = 0; li < 35; li++) {
+                                if (strcmp(s_led_pos[li].name, pedal_fname) == 0) {
+                                    float led_cx = img_pos.x + s_led_pos[li].x * img_w;
+                                    float led_cy = img_pos.y + s_led_pos[li].y * img_h;
+                                    ImDrawList *ldl = ImGui::GetWindowDrawList();
+                                    if (!bypassed) {
+                                        ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 6.0f,
+                                            IM_COL32(40, 220, 40, 200), 12);
+                                        ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 10.0f,
+                                            IM_COL32(40, 200, 40, 60), 12);
+                                        ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 16.0f,
+                                            IM_COL32(40, 180, 40, 25), 12);
+                                    } else {
+                                        ldl->AddCircleFilled(ImVec2(led_cx, led_cy), 4.0f,
+                                            IM_COL32(180, 40, 30, 150), 12);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
 
-                    /* Knobs */
-                    {
-                        const float KNOB_W = 66.0f;
-                        const float KNOB_PAD = 8.0f;
-                        float row_w = nparam * KNOB_W + (nparam > 1 ? (nparam-1)*KNOB_PAD : 0);
-                        float knob_off = (avail_w - row_w) * 0.5f;
-                        if (knob_off < 0.0f) knob_off = 0.0f;
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + knob_off);
-                    }
-                    for (int k = 0; k < nparam; k++) {
-                        const char *kname = fx_pedal_get_param_name(pt, k);
-                        float kval = fx_pedal_get_param(engine, pid, k);
-                        ImGui::Dummy(ImVec2(8.0f, 0.0f)); ImGui::SameLine();
-                        if (knob_float(kname, &kval, 0.0f, 1.0f, 0.5f, 0.01f))
-                            fx_pedal_set_param(engine, pid, k, kval);
-                        if (k < nparam - 1) ImGui::SameLine();
+                        /* Per-pedal knob position maps */
+                        struct PedalKnobMap { const char *name; int count; float pos[8][2]; };
+                        static const PedalKnobMap s_pedal_knob_maps[] = {
+                            { "amp_box", 6, { {0.324f,0.162f},{0.330f,0.328f},{0.504f,0.336f},{0.506f,0.158f},{0.678f,0.162f},{0.686f,0.332f} } },
+                            { "blues_grit", 3, { {0.334f,0.212f},{0.502f,0.216f},{0.666f,0.218f} } },
+                            { "carbon_delay", 4, { {0.363f,0.163f},{0.363f,0.339f},{0.647f,0.335f},{0.649f,0.161f} } },
+                            { "chaos_fuzz", 4, { {0.357f,0.197f},{0.625f,0.195f},{0.355f,0.381f},{0.633f,0.379f} } },
+                            { "cloud_verb", 5, { {0.352f,0.214f},{0.352f,0.360f},{0.498f,0.364f},{0.648f,0.212f},{0.648f,0.360f} } },
+                            { "drift_vibrato", 2, { {0.381f,0.209f},{0.615f,0.207f} } },
+                            { "drip_verb", 3, { {0.350f,0.202f},{0.504f,0.206f},{0.664f,0.206f} } },
+                            { "echo_delay", 4, { {0.360f,0.346f},{0.362f,0.164f},{0.638f,0.158f},{0.638f,0.342f} } },
+                            { "glass_comp", 4, { {0.344f,0.145f},{0.350f,0.346f},{0.650f,0.145f},{0.652f,0.346f} } },
+                            { "gold_drive", 3, { {0.354f,0.182f},{0.500f,0.186f},{0.648f,0.182f} } },
+                            { "grit_crush", 2, { {0.371f,0.321f},{0.623f,0.325f} } },
+                            { "hall_verb", 3, { {0.327f,0.229f},{0.497f,0.225f},{0.669f,0.231f} } },
+                            { "howl_wah", 2, { {0.599f,0.307f},{0.705f,0.305f} } },
+                            { "jade_drive", 6, { {0.337f,0.161f},{0.347f,0.329f},{0.489f,0.167f},{0.497f,0.325f},{0.643f,0.323f},{0.659f,0.163f} } },
+                            { "jet_flanger", 4, { {0.359f,0.181f},{0.365f,0.362f},{0.635f,0.179f},{0.635f,0.363f} } },
+                            { "liquid_chorus", 3, { {0.345f,0.203f},{0.503f,0.203f},{0.661f,0.201f} } },
+                            { "mammoth_fuzz", 3, { {0.335f,0.213f},{0.495f,0.217f},{0.657f,0.213f} } },
+                            { "memory_echo", 6, { {0.323f,0.333f},{0.325f,0.163f},{0.503f,0.165f},{0.503f,0.331f},{0.677f,0.329f},{0.679f,0.163f} } },
+                            { "metal_zone", 6, { {0.327f,0.171f},{0.333f,0.333f},{0.499f,0.333f},{0.501f,0.171f},{0.663f,0.173f},{0.671f,0.331f} } },
+                            { "noise_gate", 4, { {0.381f,0.263f},{0.621f,0.263f},{0.377f,0.409f},{0.621f,0.407f} } },
+                            { "orange_dist", 3, { {0.321f,0.201f},{0.507f,0.201f},{0.681f,0.203f} } },
+                            { "phase_sweep", 4, { {0.377f,0.373f},{0.389f,0.203f},{0.679f,0.229f},{0.655f,0.393f} } },
+                            { "plate_verb", 3, { {0.343f,0.229f},{0.499f,0.227f},{0.656f,0.229f} } },
+                            { "pulse_trem", 6, { {0.326f,0.193f},{0.510f,0.193f},{0.693f,0.193f},{0.334f,0.391f},{0.505f,0.391f},{0.677f,0.393f} } },
+                            { "punch_comp", 4, { {0.392f,0.290f},{0.609f,0.290f},{0.393f,0.442f},{0.609f,0.441f} } },
+                            { "quack_filter", 4, { {0.378f,0.301f},{0.672f,0.344f},{0.352f,0.445f},{0.641f,0.483f} } },
+                            { "ring_tone", 3, { {0.341f,0.228f},{0.501f,0.228f},{0.657f,0.226f} } },
+                            { "rodent", 4, { {0.355f,0.247f},{0.500f,0.333f},{0.503f,0.162f},{0.648f,0.249f} } },
+                            { "round_fuzz", 2, { {0.331f,0.250f},{0.670f,0.253f} } },
+                            { "shimmer_verb", 4, { {0.357f,0.168f},{0.357f,0.359f},{0.647f,0.167f},{0.649f,0.356f} } },
+                            { "squeeze_box", 2, { {0.378f,0.237f},{0.623f,0.236f} } },
+                            { "tape_machine", 6, { {0.320f,0.180f},{0.322f,0.344f},{0.496f,0.179f},{0.498f,0.346f},{0.679f,0.182f},{0.679f,0.346f} } },
+                            { "tone_sculptor", 3, { {0.318f,0.208f},{0.498f,0.209f},{0.680f,0.209f} } },
+                            { "warm_tape", 3, { {0.344f,0.252f},{0.502f,0.252f},{0.659f,0.251f} } },
+                            { "wraith_fuzz", 6, { {0.348f,0.214f},{0.351f,0.349f},{0.501f,0.214f},{0.501f,0.350f},{0.657f,0.345f},{0.664f,0.211f} } },
+                        };
+                        static const int s_pedal_knob_map_count = 35;
+
+                        const float PEDAL_KNOB_SZ = 32.0f;
+                        const char *knob_tex = "resources/knobs/knob_pointer_black_nobg.png";
+
+                        const PedalKnobMap *pmap = nullptr;
+                        for (int mi = 0; mi < s_pedal_knob_map_count; mi++) {
+                            if (strcmp(s_pedal_knob_maps[mi].name, pedal_fname) == 0) {
+                                pmap = &s_pedal_knob_maps[mi];
+                                break;
+                            }
+                        }
+
+                        /* Render knobs: interactive for params, static dummies for extra holes */
+                        int total_holes = pmap ? pmap->count : nparam;
+                        for (int k = 0; k < total_holes; k++) {
+                            float kx, ky;
+                            if (pmap && k < pmap->count) {
+                                kx = img_pos.x + pmap->pos[k][0] * img_w - PEDAL_KNOB_SZ * 0.5f;
+                                ky = img_pos.y + pmap->pos[k][1] * img_h - PEDAL_KNOB_SZ * 0.5f;
+                            } else {
+                                float margin = img_w * 0.15f;
+                                float usable = img_w - 2.0f * margin;
+                                float sp = (nparam > 1) ? usable / (float)(nparam - 1) : 0.0f;
+                                kx = img_pos.x + margin + k * sp - PEDAL_KNOB_SZ * 0.5f;
+                                ky = img_pos.y + img_h * 0.35f - PEDAL_KNOB_SZ * 0.5f;
+                            }
+
+                            if (k < nparam) {
+                                const char *kname = fx_pedal_get_param_name(pt, k);
+                                float kval = fx_pedal_get_param(engine, pid, k);
+                                char kid[48];
+                                snprintf(kid, sizeof(kid), "%s##ped_ov_%d_%d",
+                                         kname, (int)pid, k);
+                                if (knob_overlay(kid, &kval, 0.0f, 1.0f, 0.5f, 0.01f,
+                                                 kx, ky, PEDAL_KNOB_SZ, knob_tex)) {
+                                    fx_pedal_set_param(engine, pid, k, kval);
+                                }
+                            } else {
+                                float dummy = 0.5f;
+                                char did[32];
+                                snprintf(did, sizeof(did), "##dummy_%d_%d", (int)pid, k);
+                                knob_overlay(did, &dummy, 0.0f, 1.0f, 0.5f, 0.0f,
+                                             kx, ky, PEDAL_KNOB_SZ, knob_tex);
+                            }
+                        }
+
+                        /* Restore cursor to below the image */
+                        ImGui::SetCursorPosY(cursor_after_img_y);
                     }
 
                     ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
-                    /* Bypass + Remove buttons */
+                    /* Bottom row: textured buttons — bypass, reorder, remove */
                     {
-                        float row_w = 120 + 16 + 80;
+                        const float BTN_SZ = 36.0f;
+                        const float ARR_SZ = 30.0f;
+                        float row_w = BTN_SZ + 12 + ARR_SZ + 4 + ARR_SZ + 16 + BTN_SZ;
                         float row_off = (avail_w - row_w) * 0.5f;
-                        if (row_off > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row_off);
+                        if (row_off > 0.0f)
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row_off);
 
-                        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
-                        ImGui::PushStyleColor(ImGuiCol_Button,
-                            bypassed ? ImVec4(0.30f,0.10f,0.08f,0.9f) : ImVec4(0.10f,0.28f,0.10f,0.9f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                            bypassed ? ImVec4(0.42f,0.14f,0.10f,1.0f) : ImVec4(0.14f,0.40f,0.14f,1.0f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                            bypassed ? ImVec4(0.55f,0.18f,0.12f,1.0f) : ImVec4(0.18f,0.52f,0.18f,1.0f));
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.78f,0.65f,1.0f));
-                        if (ImGui::Button(bypassed ? "BYPASSED##ped" : "ACTIVE##ped", ImVec2(120, 28)))
-                            fx_pedal_set_bypass(engine, pid, !bypassed);
-                        ImGui::PopStyleColor(4);
-                        ImGui::PopStyleVar();
+                        /* Active/Bypass stomp switch image button */
+                        {
+                            const char *btn_path = bypassed
+                                ? "resources/buttons/btn_active_off_nobg.png"
+                                : "resources/buttons/btn_active_on_nobg.png";
+                            uintptr_t btn_tex = fx_texture_load(btn_path);
+                            if (btn_tex) {
+                                ImGui::PushID("##stomp_bp");
+                                ImVec2 btn_pos = ImGui::GetCursorScreenPos();
+                                if (ImGui::InvisibleButton("##stomp_bp_click", ImVec2(BTN_SZ, BTN_SZ)))
+                                    fx_pedal_set_bypass(engine, pid, !bypassed);
+                                ImDrawList *bdl = ImGui::GetWindowDrawList();
+                                bdl->AddImage((ImTextureID)btn_tex,
+                                    btn_pos, ImVec2(btn_pos.x + BTN_SZ, btn_pos.y + BTN_SZ));
+                                if (!bypassed) {
+                                    float gcx = btn_pos.x + BTN_SZ * 0.5f;
+                                    float gcy = btn_pos.y + BTN_SZ * 0.5f;
+                                    bdl->AddCircleFilled(ImVec2(gcx, gcy), BTN_SZ * 0.6f,
+                                        IM_COL32(60, 200, 60, 30), 16);
+                                    bdl->AddCircle(ImVec2(gcx, gcy), BTN_SZ * 0.55f,
+                                        IM_COL32(60, 200, 60, 60), 16, 1.5f);
+                                }
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip(bypassed ? "Click to activate" : "Click to bypass");
+                                ImGui::PopID();
+                            } else {
+                                if (ImGui::Button(bypassed ? "OFF##bp" : "ON##bp", ImVec2(BTN_SZ, BTN_SZ)))
+                                    fx_pedal_set_bypass(engine, pid, !bypassed);
+                            }
+                        }
+
+                        ImGui::SameLine(0, 12);
+
+                        /* Reorder arrows — textured */
+                        fx_chain_pos_t pos = (sel.kind == NODE_PEDAL_PRE)
+                                              ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
+                        fx_pedal_id *ids = (pos == FX_CHAIN_POS_PRE) ? gui->pre_ids : gui->post_ids;
+                        int *id_count = (pos == FX_CHAIN_POS_PRE) ? &gui->pre_id_count : &gui->post_id_count;
+                        int pi = sel.slot;
+
+                        /* Left arrow */
+                        {
+                            uintptr_t arr_tex = fx_texture_load("resources/buttons/btn_arrow_left_nobg.png");
+                            bool can_left = (pi > 0);
+                            ImVec4 tint = can_left ? ImVec4(1,1,1,1) : ImVec4(0.4f,0.4f,0.4f,0.5f);
+                            if (arr_tex) {
+                                ImGui::PushID("##arr_l");
+                                ImVec2 ap = ImGui::GetCursorScreenPos();
+                                if (ImGui::InvisibleButton("##arr_l_click", ImVec2(ARR_SZ, ARR_SZ)) && can_left) {
+                                    fx_pedal_id tmp = ids[pi - 1];
+                                    ids[pi - 1] = ids[pi]; ids[pi] = tmp;
+                                    fx_chain_move_pedal(engine, pid, pos, pi - 1);
+                                    gui->selected_node--;
+                                }
+                                ImGui::GetWindowDrawList()->AddImage((ImTextureID)arr_tex,
+                                    ap, ImVec2(ap.x + ARR_SZ, ap.y + ARR_SZ),
+                                    ImVec2(1,0), ImVec2(0,1),
+                                    ImGui::GetColorU32(tint));
+                                if (ImGui::IsItemHovered() && can_left)
+                                    ImGui::SetTooltip("Move left");
+                                ImGui::PopID();
+                            } else {
+                                if (ImGui::Button("<##fl", ImVec2(ARR_SZ, ARR_SZ)) && can_left) {
+                                    fx_pedal_id tmp = ids[pi - 1];
+                                    ids[pi - 1] = ids[pi]; ids[pi] = tmp;
+                                    fx_chain_move_pedal(engine, pid, pos, pi - 1);
+                                    gui->selected_node--;
+                                }
+                            }
+                        }
+                        ImGui::SameLine(0, 4);
+
+                        /* Right arrow */
+                        {
+                            uintptr_t arr_tex = fx_texture_load("resources/buttons/btn_arrow_right_nobg.png");
+                            bool can_right = (pi < *id_count - 1);
+                            ImVec4 tint = can_right ? ImVec4(1,1,1,1) : ImVec4(0.4f,0.4f,0.4f,0.5f);
+                            if (arr_tex) {
+                                ImGui::PushID("##arr_r");
+                                ImVec2 ap = ImGui::GetCursorScreenPos();
+                                if (ImGui::InvisibleButton("##arr_r_click", ImVec2(ARR_SZ, ARR_SZ)) && can_right) {
+                                    fx_pedal_id tmp = ids[pi + 1];
+                                    ids[pi + 1] = ids[pi]; ids[pi] = tmp;
+                                    fx_chain_move_pedal(engine, pid, pos, pi + 1);
+                                    gui->selected_node++;
+                                }
+                                ImGui::GetWindowDrawList()->AddImage((ImTextureID)arr_tex,
+                                    ap, ImVec2(ap.x + ARR_SZ, ap.y + ARR_SZ),
+                                    ImVec2(0,0), ImVec2(1,1),
+                                    ImGui::GetColorU32(tint));
+                                if (ImGui::IsItemHovered() && can_right)
+                                    ImGui::SetTooltip("Move right");
+                                ImGui::PopID();
+                            } else {
+                                if (ImGui::Button(">##fr", ImVec2(ARR_SZ, ARR_SZ)) && can_right) {
+                                    fx_pedal_id tmp = ids[pi + 1];
+                                    ids[pi + 1] = ids[pi]; ids[pi] = tmp;
+                                    fx_chain_move_pedal(engine, pid, pos, pi + 1);
+                                    gui->selected_node++;
+                                }
+                            }
+                        }
 
                         ImGui::SameLine(0, 16);
 
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f,0.10f,0.08f,0.8f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f,0.14f,0.10f,1.0f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.65f,0.18f,0.12f,1.0f));
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.70f,0.60f,1.0f));
-                        if (ImGui::Button("Remove##rm_ped", ImVec2(80, 28))) {
-                            fx_chain_remove_pedal(engine, pid);
-                            fx_chain_pos_t pos = (sel.kind == NODE_PEDAL_PRE) ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
-                            fx_pedal_id *ids = (pos == FX_CHAIN_POS_PRE) ? gui->pre_ids : gui->post_ids;
-                            int *id_count = (pos == FX_CHAIN_POS_PRE) ? &gui->pre_id_count : &gui->post_id_count;
-                            int pi = sel.slot;
-                            for (int j = pi; j < *id_count - 1; j++)
-                                ids[j] = ids[j + 1];
-                            (*id_count)--;
-                            gui->selected_node = -1;
+                        /* Remove button — textured */
+                        {
+                            uintptr_t rm_tex = fx_texture_load("resources/buttons/btn_remove_nobg.png");
+                            if (rm_tex) {
+                                ImGui::PushID("##rm_btn");
+                                ImVec2 rp = ImGui::GetCursorScreenPos();
+                                if (ImGui::InvisibleButton("##rm_click", ImVec2(BTN_SZ, BTN_SZ))) {
+                                    fx_chain_remove_pedal(engine, pid);
+                                    for (int j = pi; j < *id_count - 1; j++)
+                                        ids[j] = ids[j + 1];
+                                    (*id_count)--;
+                                    gui->selected_node = -1;
+                                }
+                                ImGui::GetWindowDrawList()->AddImage((ImTextureID)rm_tex,
+                                    rp, ImVec2(rp.x + BTN_SZ, rp.y + BTN_SZ));
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("Remove pedal");
+                                ImGui::PopID();
+                            } else {
+                                if (ImGui::Button("X##rm", ImVec2(BTN_SZ, BTN_SZ))) {
+                                    fx_chain_remove_pedal(engine, pid);
+                                    for (int j = pi; j < *id_count - 1; j++)
+                                        ids[j] = ids[j + 1];
+                                    (*id_count)--;
+                                    gui->selected_node = -1;
+                                }
+                            }
                         }
-                        ImGui::PopStyleColor(4);
                     }
                 }
             }
