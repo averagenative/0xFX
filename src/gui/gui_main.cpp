@@ -3001,9 +3001,15 @@ int main(int argc, char *argv[]) {
                                     {"squeeze_box",0.359f,0.578f}, {"tape_machine",0.498f,0.600f},
                                     {"tone_sculptor",0.500f,0.621f}, {"warm_tape",0.342f,0.721f},
                                     {"wraith_fuzz",0.498f,0.525f},
+                                    {"grain_cloud",0.496f,0.559f},
+                                    {"infinite_hold",0.506f,0.506f},
+                                    {"precision_eq",0.498f,0.541f},
+                                    {"pitch_warp",0.500f,0.516f},
+                                    {"octave_engine",0.498f,0.521f},
+                                    {"loop_station",0.496f,0.523f},
                                 };
                                 /* Look up LED position for this pedal */
-                                for (int li = 0; li < 35; li++) {
+                                for (int li = 0; li < 41; li++) {
                                     if (strcmp(s_led_pos[li].name, pedal_fname) == 0) {
                                         float led_cx = img_pos.x + s_led_pos[li].x * img_w;
                                         float led_cy = img_pos.y + s_led_pos[li].y * img_h;
@@ -3047,8 +3053,14 @@ int main(int argc, char *argv[]) {
                                     {"squeeze_box",0.391f,0.617f,0.617f,0.789f},{"tape_machine",0.398f,0.648f,0.605f,0.812f},
                                     {"tone_sculptor",0.406f,0.684f,0.605f,0.844f},{"warm_tape",0.398f,0.629f,0.598f,0.805f},
                                     {"wraith_fuzz",0.414f,0.602f,0.594f,0.742f},
+                                    {"grain_cloud",0.387f,0.609f,0.609f,0.773f},
+                                    {"infinite_hold",0.414f,0.594f,0.598f,0.738f},
+                                    {"precision_eq",0.414f,0.613f,0.586f,0.762f},
+                                    {"pitch_warp",0.402f,0.609f,0.594f,0.766f},
+                                    {"octave_engine",0.410f,0.578f,0.590f,0.727f},
+                                    {"loop_station",0.398f,0.594f,0.598f,0.773f},
                                 };
-                                for (int si = 0; si < 35; si++) {
+                                for (int si = 0; si < 41; si++) {
                                     if (strcmp(s_stomp[si].name, pedal_fname) == 0) {
                                         float sx0 = img_pos.x + s_stomp[si].x0 * img_w;
                                         float sy0 = img_pos.y + s_stomp[si].y0 * img_h;
@@ -3112,8 +3124,14 @@ int main(int argc, char *argv[]) {
                                 { "tone_sculptor", 3, { {0.318f,0.208f},{0.498f,0.209f},{0.680f,0.209f} } },
                                 { "warm_tape", 3, { {0.344f,0.252f},{0.502f,0.252f},{0.659f,0.251f} } },
                                 { "wraith_fuzz", 6, { {0.348f,0.214f},{0.351f,0.349f},{0.501f,0.214f},{0.501f,0.350f},{0.657f,0.345f},{0.664f,0.211f} } },
+                                { "grain_cloud", 4, { {0.379f,0.242f},{0.625f,0.242f},{0.379f,0.422f},{0.621f,0.422f} } },
+                                { "infinite_hold", 3, { {0.363f,0.230f},{0.508f,0.230f},{0.656f,0.230f} } },
+                                { "precision_eq", 5, { {0.350f,0.193f},{0.350f,0.354f},{0.502f,0.193f},{0.502f,0.350f},{0.646f,0.197f} } },
+                                { "pitch_warp", 3, { {0.361f,0.225f},{0.506f,0.225f},{0.650f,0.225f} } },
+                                { "octave_engine", 4, { {0.377f,0.178f},{0.377f,0.330f},{0.623f,0.178f},{0.623f,0.330f} } },
+                                { "loop_station", 2, { {0.387f,0.238f},{0.609f,0.238f} } },
                             };
-                            static const int s_pedal_knob_map_count = 35;
+                            static const int s_pedal_knob_map_count = 41;
 
                             const float PEDAL_KNOB_SZ = 32.0f;
                             const char *knob_tex = "resources/knobs/knob_pointer_black_nobg.png";

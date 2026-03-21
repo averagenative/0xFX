@@ -138,5 +138,29 @@
   "wraith_fuzz": [
     0.498,
     0.525
+  ],
+  "grain_cloud": [
+    0.496,
+    0.559
+  ],
+  "infinite_hold": [
+    0.506,
+    0.506
+  ],
+  "precision_eq": [
+    0.498,
+    0.541
+  ],
+  "pitch_warp": [
+    0.5,
+    0.516
+  ],
+  "octave_engine": [
+    0.498,
+    0.521
+  ],
+  "loop_station": [
+    0.496,
+    0.523
   ]
 }
