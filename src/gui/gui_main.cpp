@@ -2827,6 +2827,23 @@ int main(int argc, char *argv[]) {
                         params.resonance  = 0.5f;
                         fx_cab_generate_ir(engine, cab_chain, &params);
                     }
+                    /* Scroll wheel to cycle cab types */
+                    if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
+                        float wheel = ImGui::GetIO().MouseWheel;
+                        if (wheel != 0.0f) {
+                            int next = cab_type_ref + (wheel < 0.0f ? 1 : -1);
+                            if (next < 0) next = FX_CAB_TYPE_COUNT - 1;
+                            if (next >= FX_CAB_TYPE_COUNT) next = 0;
+                            cab_type_ref = next;
+                            fx_cab_params_t params;
+                            params.cab_type = (fx_cab_type_t)cab_type_ref;
+                            params.mic_pos  = FX_MIC_ON_AXIS;
+                            params.speaker_fs = 80.0f;
+                            params.brightness = 0.5f;
+                            params.resonance  = 0.5f;
+                            fx_cab_generate_ir(engine, cab_chain, &params);
+                        }
+                    }
 
                     ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
@@ -2869,7 +2886,7 @@ int main(int argc, char *argv[]) {
                         cab_bypassed ? ImVec4(0.55f, 0.18f, 0.12f, 1.0f)
                                      : ImVec4(0.18f, 0.52f, 0.18f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.65f, 1.0f));
-                    if (ImGui::Button(cab_bypassed ? "BYPASSED##cab" : "ACTIVE##cab",
+                    if (ImGui::Button(cab_bypassed ? "BYPASSED##cab" : "ON (Active)##cab",
                                       ImVec2(120, 28))) {
                         fx_cab_set_bypass(engine, cab_chain, !cab_bypassed);
                     }
@@ -3153,49 +3170,14 @@ int main(int argc, char *argv[]) {
 
                         ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
-                        /* Bottom row: textured buttons — bypass, reorder, remove */
+                        /* Bottom row: reorder + remove (bypass is on the stomp switch) */
                         {
                             const float BTN_SZ = 36.0f;
                             const float ARR_SZ = 30.0f;
-                            float row_w = BTN_SZ + 12 + ARR_SZ + 4 + ARR_SZ + 16 + BTN_SZ;
+                            float row_w = ARR_SZ + 4 + ARR_SZ + 16 + BTN_SZ;
                             float row_off = (avail_w - row_w) * 0.5f;
                             if (row_off > 0.0f)
                                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row_off);
-
-                            /* Active/Bypass stomp switch image button */
-                            {
-                                const char *btn_path = bypassed
-                                    ? "resources/buttons/btn_active_off_nobg.png"
-                                    : "resources/buttons/btn_active_on_nobg.png";
-                                uintptr_t btn_tex = fx_texture_load(btn_path);
-                                if (btn_tex) {
-                                    ImGui::PushID("##stomp_bp");
-                                    ImVec2 btn_pos = ImGui::GetCursorScreenPos();
-                                    if (ImGui::InvisibleButton("##stomp_bp_click", ImVec2(BTN_SZ, BTN_SZ)))
-                                        fx_pedal_set_bypass(engine, pid, !bypassed);
-                                    ImDrawList *bdl = ImGui::GetWindowDrawList();
-                                    bdl->AddImage((ImTextureID)btn_tex,
-                                        btn_pos, ImVec2(btn_pos.x + BTN_SZ, btn_pos.y + BTN_SZ));
-                                    /* Glow when active */
-                                    if (!bypassed) {
-                                        float gcx = btn_pos.x + BTN_SZ * 0.5f;
-                                        float gcy = btn_pos.y + BTN_SZ * 0.5f;
-                                        bdl->AddCircleFilled(ImVec2(gcx, gcy), BTN_SZ * 0.6f,
-                                            IM_COL32(60, 200, 60, 30), 16);
-                                        bdl->AddCircle(ImVec2(gcx, gcy), BTN_SZ * 0.55f,
-                                            IM_COL32(60, 200, 60, 60), 16, 1.5f);
-                                    }
-                                    if (ImGui::IsItemHovered())
-                                        ImGui::SetTooltip(bypassed ? "Click to activate" : "Click to bypass");
-                                    ImGui::PopID();
-                                } else {
-                                    /* Fallback text button */
-                                    if (ImGui::Button(bypassed ? "OFF##bp" : "ON##bp", ImVec2(BTN_SZ, BTN_SZ)))
-                                        fx_pedal_set_bypass(engine, pid, !bypassed);
-                                }
-                            }
-
-                            ImGui::SameLine(0, 12);
 
                             /* Reorder arrows — textured */
                             fx_chain_pos_t pos = (sel.kind == NODE_PEDAL_PRE)
@@ -3204,98 +3186,107 @@ int main(int argc, char *argv[]) {
                             int *id_count = (pos == FX_CHAIN_POS_PRE) ? &s_pre_id_count : &s_post_id_count;
                             int pi = sel.slot;
 
-                            /* Left arrow (flip the right-pointing asset) */
+                            /* Left arrow — programmatic */
                             {
-                                uintptr_t arr_tex = fx_texture_load("resources/buttons/btn_arrow_left_nobg.png");
                                 bool can_left = (pi > 0);
-                                ImVec4 tint = can_left ? ImVec4(1,1,1,1) : ImVec4(0.4f,0.4f,0.4f,0.5f);
-                                if (arr_tex) {
-                                    ImGui::PushID("##arr_l");
-                                    ImVec2 ap = ImGui::GetCursorScreenPos();
-                                    if (ImGui::InvisibleButton("##arr_l_click", ImVec2(ARR_SZ, ARR_SZ)) && can_left) {
-                                        fx_pedal_id tmp = ids[pi - 1];
-                                        ids[pi - 1] = ids[pi]; ids[pi] = tmp;
-                                        fx_chain_move_pedal(engine, pid, pos, pi - 1);
-                                        s_selected_node--;
-                                    }
-                                    ImGui::GetWindowDrawList()->AddImage((ImTextureID)arr_tex,
-                                        ap, ImVec2(ap.x + ARR_SZ, ap.y + ARR_SZ),
-                                        ImVec2(1,0), ImVec2(0,1),  /* flip horizontally */
-                                        ImGui::GetColorU32(tint));
-                                    if (ImGui::IsItemHovered() && can_left)
-                                        ImGui::SetTooltip("Move left");
-                                    ImGui::PopID();
-                                } else {
-                                    if (ImGui::Button("<##fl", ImVec2(ARR_SZ, ARR_SZ)) && can_left) {
-                                        fx_pedal_id tmp = ids[pi - 1];
-                                        ids[pi - 1] = ids[pi]; ids[pi] = tmp;
-                                        fx_chain_move_pedal(engine, pid, pos, pi - 1);
-                                        s_selected_node--;
-                                    }
+                                ImGui::PushID("##arr_l");
+                                ImVec2 ap = ImGui::GetCursorScreenPos();
+                                bool l_clicked = ImGui::InvisibleButton("##arr_l_click", ImVec2(ARR_SZ, ARR_SZ));
+                                bool l_hovered = ImGui::IsItemHovered();
+                                ImDrawList *adl = ImGui::GetWindowDrawList();
+                                float acx = ap.x + ARR_SZ * 0.5f;
+                                float acy = ap.y + ARR_SZ * 0.5f;
+                                float ar = ARR_SZ * 0.42f;
+                                ImU32 abg = (l_hovered && can_left) ? IM_COL32(60, 50, 35, 240) : IM_COL32(40, 35, 25, 200);
+                                ImU32 aedge = can_left ? IM_COL32(180, 150, 80, 180) : IM_COL32(80, 70, 50, 100);
+                                ImU32 afg = can_left ? IM_COL32(230, 200, 140, 240) : IM_COL32(80, 70, 50, 120);
+                                adl->AddCircleFilled(ImVec2(acx, acy), ar, abg, 16);
+                                adl->AddCircle(ImVec2(acx, acy), ar, aedge, 16, 1.5f);
+                                /* Left arrow triangle */
+                                float ta = ARR_SZ * 0.22f;
+                                adl->AddTriangleFilled(
+                                    ImVec2(acx - ta, acy),
+                                    ImVec2(acx + ta * 0.6f, acy - ta),
+                                    ImVec2(acx + ta * 0.6f, acy + ta), afg);
+                                if (l_hovered && can_left) ImGui::SetTooltip("Move left");
+                                if (l_clicked && can_left) {
+                                    fx_pedal_id tmp = ids[pi - 1];
+                                    ids[pi - 1] = ids[pi]; ids[pi] = tmp;
+                                    fx_chain_move_pedal(engine, pid, pos, pi - 1);
+                                    s_selected_node--;
                                 }
+                                ImGui::PopID();
                             }
                             ImGui::SameLine(0, 4);
 
-                            /* Right arrow */
+                            /* Right arrow — programmatic */
                             {
-                                uintptr_t arr_tex = fx_texture_load("resources/buttons/btn_arrow_right_nobg.png");
                                 bool can_right = (pi < *id_count - 1);
-                                ImVec4 tint = can_right ? ImVec4(1,1,1,1) : ImVec4(0.4f,0.4f,0.4f,0.5f);
-                                if (arr_tex) {
-                                    ImGui::PushID("##arr_r");
-                                    ImVec2 ap = ImGui::GetCursorScreenPos();
-                                    if (ImGui::InvisibleButton("##arr_r_click", ImVec2(ARR_SZ, ARR_SZ)) && can_right) {
-                                        fx_pedal_id tmp = ids[pi + 1];
-                                        ids[pi + 1] = ids[pi]; ids[pi] = tmp;
-                                        fx_chain_move_pedal(engine, pid, pos, pi + 1);
-                                        s_selected_node++;
-                                    }
-                                    ImGui::GetWindowDrawList()->AddImage((ImTextureID)arr_tex,
-                                        ap, ImVec2(ap.x + ARR_SZ, ap.y + ARR_SZ),
-                                        ImVec2(0,0), ImVec2(1,1),
-                                        ImGui::GetColorU32(tint));
-                                    if (ImGui::IsItemHovered() && can_right)
-                                        ImGui::SetTooltip("Move right");
-                                    ImGui::PopID();
-                                } else {
-                                    if (ImGui::Button(">##fr", ImVec2(ARR_SZ, ARR_SZ)) && can_right) {
-                                        fx_pedal_id tmp = ids[pi + 1];
-                                        ids[pi + 1] = ids[pi]; ids[pi] = tmp;
-                                        fx_chain_move_pedal(engine, pid, pos, pi + 1);
-                                        s_selected_node++;
-                                    }
+                                ImGui::PushID("##arr_r");
+                                ImVec2 ap = ImGui::GetCursorScreenPos();
+                                bool r_clicked = ImGui::InvisibleButton("##arr_r_click", ImVec2(ARR_SZ, ARR_SZ));
+                                bool r_hovered = ImGui::IsItemHovered();
+                                ImDrawList *adl = ImGui::GetWindowDrawList();
+                                float acx = ap.x + ARR_SZ * 0.5f;
+                                float acy = ap.y + ARR_SZ * 0.5f;
+                                float ar = ARR_SZ * 0.42f;
+                                ImU32 abg = (r_hovered && can_right) ? IM_COL32(60, 50, 35, 240) : IM_COL32(40, 35, 25, 200);
+                                ImU32 aedge = can_right ? IM_COL32(180, 150, 80, 180) : IM_COL32(80, 70, 50, 100);
+                                ImU32 afg = can_right ? IM_COL32(230, 200, 140, 240) : IM_COL32(80, 70, 50, 120);
+                                adl->AddCircleFilled(ImVec2(acx, acy), ar, abg, 16);
+                                adl->AddCircle(ImVec2(acx, acy), ar, aedge, 16, 1.5f);
+                                /* Right arrow triangle */
+                                float ta = ARR_SZ * 0.22f;
+                                adl->AddTriangleFilled(
+                                    ImVec2(acx + ta, acy),
+                                    ImVec2(acx - ta * 0.6f, acy - ta),
+                                    ImVec2(acx - ta * 0.6f, acy + ta), afg);
+                                if (r_hovered && can_right) ImGui::SetTooltip("Move right");
+                                if (r_clicked && can_right) {
+                                    fx_pedal_id tmp = ids[pi + 1];
+                                    ids[pi + 1] = ids[pi]; ids[pi] = tmp;
+                                    fx_chain_move_pedal(engine, pid, pos, pi + 1);
+                                    s_selected_node++;
                                 }
+                                ImGui::PopID();
                             }
 
                             ImGui::SameLine(0, 16);
 
-                            /* Remove button — textured */
+                            /* Remove button — drawn X with dark red background */
                             {
-                                uintptr_t rm_tex = fx_texture_load("resources/buttons/btn_remove_nobg.png");
-                                if (rm_tex) {
-                                    ImGui::PushID("##rm_btn");
-                                    ImVec2 rp = ImGui::GetCursorScreenPos();
-                                    if (ImGui::InvisibleButton("##rm_click", ImVec2(BTN_SZ, BTN_SZ))) {
-                                        fx_chain_remove_pedal(engine, pid);
-                                        for (int j = pi; j < *id_count - 1; j++)
-                                            ids[j] = ids[j + 1];
-                                        (*id_count)--;
-                                        s_selected_node = -1;
-                                    }
-                                    ImGui::GetWindowDrawList()->AddImage((ImTextureID)rm_tex,
-                                        rp, ImVec2(rp.x + BTN_SZ, rp.y + BTN_SZ));
-                                    if (ImGui::IsItemHovered())
-                                        ImGui::SetTooltip("Remove pedal");
-                                    ImGui::PopID();
-                                } else {
-                                    if (ImGui::Button("X##rm", ImVec2(BTN_SZ, BTN_SZ))) {
-                                        fx_chain_remove_pedal(engine, pid);
-                                        for (int j = pi; j < *id_count - 1; j++)
-                                            ids[j] = ids[j + 1];
-                                        (*id_count)--;
-                                        s_selected_node = -1;
-                                    }
+                                ImGui::PushID("##rm_btn");
+                                ImVec2 rp = ImGui::GetCursorScreenPos();
+                                bool rm_clicked = ImGui::InvisibleButton("##rm_click", ImVec2(BTN_SZ, BTN_SZ));
+                                bool rm_hovered = ImGui::IsItemHovered();
+                                ImDrawList *rdl = ImGui::GetWindowDrawList();
+
+                                /* Background circle */
+                                float rcx = rp.x + BTN_SZ * 0.5f;
+                                float rcy = rp.y + BTN_SZ * 0.5f;
+                                float rr = BTN_SZ * 0.42f;
+                                rdl->AddCircleFilled(ImVec2(rcx, rcy), rr,
+                                    rm_hovered ? IM_COL32(180, 40, 30, 240) : IM_COL32(120, 30, 20, 200), 16);
+                                rdl->AddCircle(ImVec2(rcx, rcy), rr,
+                                    IM_COL32(220, 60, 40, 180), 16, 1.5f);
+
+                                /* Bold X */
+                                float xarm = rr * 0.5f;
+                                ImU32 xcol = IM_COL32(255, 220, 200, 240);
+                                rdl->AddLine(ImVec2(rcx - xarm, rcy - xarm), ImVec2(rcx + xarm, rcy + xarm), xcol, 3.0f);
+                                rdl->AddLine(ImVec2(rcx + xarm, rcy - xarm), ImVec2(rcx - xarm, rcy + xarm), xcol, 3.0f);
+
+                                if (rm_hovered)
+                                    ImGui::SetTooltip("Remove pedal");
+
+                                if (rm_clicked) {
+                                    fx_chain_remove_pedal(engine, pid);
+                                    for (int j = pi; j < *id_count - 1; j++)
+                                        ids[j] = ids[j + 1];
+                                    (*id_count)--;
+                                    s_selected_node = -1;
                                 }
+                                ImGui::PopID();
                             }
                         }
                     }
@@ -3425,12 +3416,12 @@ int main(int argc, char *argv[]) {
                             }
                         }
 
-                        ImGui::Dummy(ImVec2(0.0f, 12.0f));
+                        ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
                         /* Bypass + remove */
                         {
                             const float BTN_H = 28.0f;
-                            float row_w = 100 + 16 + 80;
+                            float row_w = 120 + 16 + 80;
                             float row_off = (avail_w - row_w) * 0.5f;
                             if (row_off > 0.0f)
                                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row_off);
@@ -3448,8 +3439,8 @@ int main(int argc, char *argv[]) {
                             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
                             char bp_id[48];
                             snprintf(bp_id, sizeof(bp_id), "%s##studio_bp",
-                                     bypassed ? "BYPASS" : "ACTIVE");
-                            if (ImGui::Button(bp_id, ImVec2(100, BTN_H)))
+                                     bypassed ? "BYPASSED" : "ON (Active)");
+                            if (ImGui::Button(bp_id, ImVec2(120, BTN_H)))
                                 fx_studio_set_bypass(engine, sid, !bypassed);
                             ImGui::PopStyleColor(4);
                             ImGui::PopStyleVar();
