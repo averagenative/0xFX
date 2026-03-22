@@ -493,6 +493,16 @@ static inline float tone_stack_3rd_process(fx_tone_stack_3rd_t *ts, float in) {
     ts->z2 = ts->b2 * in - ts->a2 * out + ts->z3;
     ts->z3 = ts->b3 * in - ts->a3 * out;
 
+    /* Stability protection: clamp state variables to prevent runaway.
+     * If any state exceeds ±100, the filter is unstable — reset it. */
+    if (ts->z1 > 100.0f || ts->z1 < -100.0f ||
+        ts->z2 > 100.0f || ts->z2 < -100.0f ||
+        ts->z3 > 100.0f || ts->z3 < -100.0f ||
+        out != out) {  /* NaN check */
+        ts->z1 = ts->z2 = ts->z3 = 0.0f;
+        return 0.0f;
+    }
+
     /* Flush denormals */
     if (ts->z1 > -1e-15f && ts->z1 < 1e-15f) ts->z1 = 0.0f;
     if (ts->z2 > -1e-15f && ts->z2 < 1e-15f) ts->z2 = 0.0f;
@@ -704,6 +714,10 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
                             &amp->dc_block_z1[s], dc_coeff);
         }
 
+        /* Safety clamp after preamp — prevent runaway before tone stack */
+        if (x > 4.0f) x = 4.0f;
+        if (x < -4.0f) x = -4.0f;
+
         /* ── Stage 2: Tone stack ─────────────────────────────── */
         if (use_tmb) {
             /* Circuit-modeled 3rd-order TMB filter */
@@ -712,6 +726,10 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
             /* Simple topology (Vox cut or tilt EQ) */
             x = fx_biquad_process(&amp->tone_simple, x);
         }
+
+        /* Safety clamp after tone stack */
+        if (x > 10.0f) x = 10.0f;
+        if (x < -10.0f) x = -10.0f;
         /* Presence is always a separate shelf (negative feedback network) */
         x = fx_biquad_process(&amp->presence_filter, x);
 
