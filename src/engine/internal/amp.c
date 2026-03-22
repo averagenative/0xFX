@@ -148,16 +148,19 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
     /* Southwest Lead — inspired by American high-gain amps (Dual Rectifier)
      * Modified Fender TMB with tighter bass and deeper mid scoop
      * Added mid-shift cap creates the "V-curve" character */
+    /* Southwest Lead — Mesa Boogie Dual Rectifier (from schematic RF-1F)
+     * Fender-derived TMB with tighter bass, deeper mid scoop.
+     * 4 gain stages (V1A, V1B, V2A, V2B), hard clipping. */
     [FX_AMP_SOUTHWEST_LEAD] = {
         .num_stages = 4,
         .stage_gains = { 5.0f, 4.0f, 3.5f, 3.0f },
         .shaper = waveshape_hard,
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
-            .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble, 250pF */
-            .R2 = 1e6f,    .C2 = 68e-9f,      /* 1M bass, 0.068uF (tighter bass) */
-            .R3 = 25e3f,   .C3 = 33e-9f,      /* 25k mid, 0.033uF (deeper scoop) */
-            .R4 = 39e3f,                        /* 39k slope (Recto value) */
+            .R1 = 250e3f,  .C1 = 500e-12f,    /* 250k treble, 500pF (from schematic) */
+            .R2 = 1e6f,    .C2 = 22e-9f,       /* 1M bass, 0.022uF (from schematic — tight bass) */
+            .R3 = 25e3f,   .C3 = 22e-9f,       /* 25k mid, 0.022uF (from schematic) */
+            .R4 = 39e3f,                         /* 39k slope (from schematic) */
         },
         .presence_freq = 6000.0f,
         .power_threshold = 0.70f,
@@ -231,14 +234,18 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
     /* Citrus Terror — inspired by British low-wattage Class A amps (Tiny Terror)
      * Single "Tone" knob — tilt EQ: dark <-> bright
      * NOT a TMB stack — simple tilt filter */
+    /* Citrus Terror — Orange Tiny Terror (from schematic REV 1.1, 2008)
+     * 12AX7 preamp, 2x EL84 power (Class A, 7W/15W switchable)
+     * Single Tone knob: RC network with 4.7nF HP + 47nF LP through 68k
+     * CW=bright, CCW=dark. Modeled as tilt EQ. */
     [FX_AMP_CITRUS_TERROR] = {
         .num_stages = 2,
         .stage_gains = { 4.0f, 3.5f, 0, 0 },
-        .shaper = waveshape_asym,
+        .shaper = waveshape_asym,  /* Class A asymmetric clipping */
         .tone_topology = TONE_STACK_TILT,
-        .tmb = { 0 },  /* not used — single tone knob */
+        .tmb = { 0 },
         .presence_freq = 5000.0f,
-        .power_threshold = 0.78f,
+        .power_threshold = 0.72f,  /* EL84 Class A — breaks up early */
     },
     /* Regent 800 — inspired by classic British rock/metal amps (JCM800)
      * Marshall TMB with slightly brighter voicing than Plexi
@@ -308,19 +315,22 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
      * - Drive channel adds hard clipping (asymmetric) for gritty breakup
      * - 3 gain stages: clean 12AX7 + clipped 12AX7 + recovery stage
      * - The "grit" on the gain comes from diode/MOSFET clipping between stages */
+    /* Emerald Ratrod Deluxe — Fender Hot Rod Deluxe III (from schematic Rev B)
+     * 12AX7 preamp + MOSFET/diode clipping on drive channel
+     * 2x 6L6GC power tubes, 40W. TMB tone stack. */
     [FX_AMP_EMERALD_DELUXE] = {
         .num_stages = 3,
         .stage_gains = { 3.5f, 4.0f, 2.0f, 0 },
-        .shaper = waveshape_hard,  /* drive channel has hard clipping diodes */
+        .shaper = waveshape_hard,
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
-            .R1 = 250e3f,  .C1 = 250e-12f,   /* 250k treble pot, 250pF */
-            .R2 = 1e6f,    .C2 = 100e-9f,     /* 1M bass pot, 0.1uF */
-            .R3 = 25e3f,   .C3 = 47e-9f,      /* 25k mid pot, 0.047uF */
-            .R4 = 56e3f,                        /* 56k slope resistor */
+            .R1 = 250e3f,  .C1 = 250e-12f,    /* 250k treble, 250pF (from schematic) */
+            .R2 = 1e6f,    .C2 = 100e-9f,      /* 1M bass, 0.1uF (from schematic) */
+            .R3 = 25e3f,   .C3 = 22e-9f,       /* 25k mid, 0.022uF (from schematic — NOT 0.047) */
+            .R4 = 56e3f,                         /* 56k slope (from schematic) */
         },
         .presence_freq = 4500.0f,
-        .power_threshold = 0.70f,  /* 6L6 power section, moderate headroom */
+        .power_threshold = 0.70f,
     },
 };
 
