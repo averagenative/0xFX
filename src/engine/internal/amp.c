@@ -279,17 +279,17 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
      * Extended bass, compressed mids for sustained drone tones */
     [FX_AMP_ECLIPSE_DRONE] = {
         .num_stages = 2,
-        .stage_gains = { 4.5f, 4.0f, 0, 0 },
+        .stage_gains = { 3.0f, 2.5f, 0, 0 },   /* reduced from 4.5/4.0 — was self-oscillating */
         .shaper = waveshape_tanh,
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
-            .R1 = 250e3f,  .C1 = 680e-12f,   /* 250k treble, 680pF (very dark treble) */
-            .R2 = 1e6f,    .C2 = 330e-9f,     /* 1M bass, 0.33uF (extreme bass) */
-            .R3 = 25e3f,   .C3 = 150e-9f,     /* 25k mid, 0.15uF (compressed mids) */
-            .R4 = 82e3f,                        /* 82k slope (extended bass response) */
+            .R1 = 250e3f,  .C1 = 500e-12f,    /* 250k treble, 500pF (dark but not extreme) */
+            .R2 = 1e6f,    .C2 = 220e-9f,     /* 1M bass, 0.22uF (heavy bass, not insane) */
+            .R3 = 25e3f,   .C3 = 100e-9f,     /* 25k mid, 0.1uF (warm mids) */
+            .R4 = 68e3f,                        /* 68k slope (extended bass) */
         },
         .presence_freq = 3500.0f,
-        .power_threshold = 0.88f,
+        .power_threshold = 0.85f,
     },
     /* Emerald Ratrod Deluxe — inspired by Fender Hot Rod Deluxe (PR246)
      * Modern Fender circuit (1990s), NOT a vintage Deluxe Reverb:
