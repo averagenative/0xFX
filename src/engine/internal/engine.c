@@ -161,10 +161,11 @@ void fx_engine_process(fx_engine_t *engine,
         fx_studio_process_dsp(&engine->studio[i], buf, num_frames, sr);
     }
 
-    /* ── Output cleanup ─────────────────────────────────────── */
+    /* ── Output cleanup: NaN/Inf protection + denormal flush ── */
     for (int i = 0; i < num_frames; i++) {
         float s = buf[i];
-        /* Kill denormals that cause biquad filter self-oscillation */
+        /* Kill NaN and infinity — prevents engine crash from feedback runaway */
+        if (s != s || s > 1e6f || s < -1e6f) { buf[i] = 0.0f; continue; }
         if (s > -1e-20f && s < 1e-20f) s = 0.0f;
         /* Hard clip safety */
         if (s > 1.0f) s = 1.0f;

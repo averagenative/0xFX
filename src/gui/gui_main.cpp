@@ -447,9 +447,20 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
     };
     int n_post_types = (int)(sizeof(post_types) / sizeof(post_types[0]));
 
-    int n_post = rand() % 5; /* 0-4 post pedals */
+    int n_post = rand() % 3; /* 0-2 post pedals (was 0-4 — too many) */
+    fx_pedal_type_t used_post[8] = {(fx_pedal_type_t)-1};
+    int n_used_post = 0;
     for (int i = 0; i < n_post; i++) {
-        fx_pedal_type_t pt = post_types[rand() % n_post_types];
+        fx_pedal_type_t pt;
+        int attempts = 0;
+        do {
+            pt = post_types[rand() % n_post_types];
+            /* Don't add duplicate types */
+            bool dup = false;
+            for (int u = 0; u < n_used_post; u++) { if (used_post[u] == pt) { dup = true; break; } }
+            if (!dup) break;
+        } while (++attempts < 10);
+        used_post[n_used_post++] = pt;
         fx_pedal_id pid = fx_chain_add_pedal(engine, pt, FX_CHAIN_POS_POST);
         int pc = fx_pedal_get_param_count(pt);
         for (int p = 0; p < pc; p++) {

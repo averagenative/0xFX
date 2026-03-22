@@ -719,9 +719,13 @@ void fx_amp_process(fx_amp_state_t *amp, float *buf, int n, float sr) {
         if (amp->type == FX_AMP_ECLIPSE_DRONE) {
             float fb = amp->params[FX_AMP_PARAM_FEEDBACK];
             if (fb > 0.01f) {
-                /* Feed back a saturated version of previous output */
-                x += amp->feedback_z1 * fb * 0.6f;
-                amp->feedback_z1 = tanhf(x);  /* soft-limit feedback */
+                /* Feed back a heavily limited version of previous output.
+                 * Use low feedback gain to prevent runaway oscillation.
+                 * The tanh on both input and output keeps it bounded. */
+                float fb_signal = tanhf(amp->feedback_z1) * fb * 0.25f;
+                x += fb_signal;
+                x = tanhf(x);  /* hard limit the result */
+                amp->feedback_z1 = x * 0.9f;  /* decay feedback to prevent buildup */
             }
         }
 
