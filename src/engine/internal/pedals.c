@@ -1371,29 +1371,33 @@ static void chaos_fuzz_process(fx_pedal_instance_t *p, float *buf, int n, float 
     (void)sr;
 
     float volume   = p->params[0];
-    float gate_thr = p->params[1] * 0.03f;           /* threshold 0-0.03 — very subtle gate for sputtery character */
-    float drive    = 1.0f + p->params[2] * 29.0f;  /* 1x-30x */
+    float gate      = p->params[1];                   /* gate sensitivity — higher = more gated decay */
+    float drive    = 1.0f + p->params[2] * 9.0f;     /* 1x-10x (was 1-30x — way too hot) */
     float stab     = p->params[3];
-    /* Low stab = strong feedback (oscillation) */
-    float fb_amount = (1.0f - stab) * 0.6f;
+    /* Low stab = strong feedback (self-oscillation) */
+    float fb_amount = (1.0f - stab) * 0.4f;
 
     for (int i = 0; i < n; i++) {
         /* Inject feedback from previous output (oscillation) */
         float x = buf[i] + s->feedback_z1 * fb_amount;
 
-        /* Drive */
+        /* Drive with soft clipping (tanh — sounds like transistor saturation) */
         x *= drive;
+        x = tanhf(x);
 
-        /* Hard clip */
-        if      (x >  1.0f) x =  1.0f;
-        else if (x < -1.0f) x = -1.0f;
+        /* Envelope-dependent gate: signal decays naturally then cuts
+         * This creates the "sputtery dying battery" fuzz character
+         * without the hard pellet-like clicking */
+        float env = fabsf(x);
+        if (env < gate * 0.05f) {
+            /* Soft gate: fade to zero instead of hard cut */
+            float fade = env / (gate * 0.05f + 1e-8f);
+            x *= fade * fade;  /* quadratic fade for smooth cutoff */
+        }
 
-        /* Gate: below threshold → silence (sputtery decay) */
-        if (fabsf(x) < gate_thr) x = 0.0f;
+        s->feedback_z1 = x * 0.95f;  /* slight decay on feedback to prevent runaway */
 
-        s->feedback_z1 = x;
-
-        /* Volume as output gain: 0=silent, 0.5=unity, 1.0=3x boost */
+        /* Volume as output gain */
         buf[i] = x * (0.5f + volume * 2.5f);
     }
 }
