@@ -2681,8 +2681,8 @@
     "title": "Sync all standalone features to plugin renderer",
     "domain": "frontend",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [
       "TASK-346"
     ],
