@@ -260,16 +260,19 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
     /* Solar Monolith — inspired by massive clean-to-doom amps (Sunn Model T)
      * Fender-derived TMB with massive low end and extended bass response
      * Huge iron transformers, extreme clean headroom */
+    /* Solar Monolith — also based on Sunn Model T schematic
+     * Same tone stack as Eclipse Drone but with atan waveshaper
+     * for a slightly different saturation character (smoother) */
     [FX_AMP_SOLAR_MONOLITH] = {
         .num_stages = 2,
         .stage_gains = { 3.0f, 2.5f, 0, 0 },
         .shaper = waveshape_atan,
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
-            .R1 = 250e3f,  .C1 = 500e-12f,   /* 250k treble, 500pF (darker treble) */
-            .R2 = 1e6f,    .C2 = 220e-9f,     /* 1M bass, 0.22uF (massive bass) */
-            .R3 = 25e3f,   .C3 = 100e-9f,     /* 25k mid, 0.1uF (warm mids) */
-            .R4 = 68e3f,                        /* 68k slope (Sunn value) */
+            .R1 = 250e3f,  .C1 = 250e-12f,    /* from Sunn Model T schematic */
+            .R2 = 1e6f,    .C2 = 100e-9f,
+            .R3 = 10e3f,   .C3 = 47e-9f,
+            .R4 = 56e3f,
         },
         .presence_freq = 4000.0f,
         .power_threshold = 0.90f,
@@ -277,19 +280,24 @@ static const amp_model_config_t amp_configs[FX_AMP_COUNT] = {
     /* Eclipse Drone — inspired by extreme low-end drone amps
      * Sunn-derived with subsonic emphasis and feedback sustain
      * Extended bass, compressed mids for sustained drone tones */
+    /* Eclipse Drone — Sunn Model T schematic (A-6264-1, D-0029)
+     * Fender-derived TMB tone stack, 4x 6550 power tubes
+     * Actual schematic values: standard Fender Bassman-derived circuit
+     * The massive doom character comes from the huge power section,
+     * not from exotic tone stack values */
     [FX_AMP_ECLIPSE_DRONE] = {
         .num_stages = 2,
-        .stage_gains = { 3.0f, 2.5f, 0, 0 },   /* reduced from 4.5/4.0 — was self-oscillating */
+        .stage_gains = { 3.0f, 2.5f, 0, 0 },
         .shaper = waveshape_tanh,
         .tone_topology = TONE_STACK_FENDER_TMB,
         .tmb = {
-            .R1 = 250e3f,  .C1 = 500e-12f,    /* 250k treble, 500pF (dark but not extreme) */
-            .R2 = 1e6f,    .C2 = 220e-9f,     /* 1M bass, 0.22uF (heavy bass, not insane) */
-            .R3 = 25e3f,   .C3 = 100e-9f,     /* 25k mid, 0.1uF (warm mids) */
-            .R4 = 68e3f,                        /* 68k slope (extended bass) */
+            .R1 = 250e3f,  .C1 = 250e-12f,    /* 250k treble, 250pF (from schematic) */
+            .R2 = 1e6f,    .C2 = 100e-9f,      /* 1M bass, 0.1uF (from schematic) */
+            .R3 = 10e3f,   .C3 = 47e-9f,       /* 10k mid, 0.047uF (from schematic) */
+            .R4 = 56e3f,                         /* 56k slope (from schematic) */
         },
         .presence_freq = 3500.0f,
-        .power_threshold = 0.85f,
+        .power_threshold = 0.88f,  /* 4x6550 = massive headroom */
     },
     /* Emerald Ratrod Deluxe — inspired by Fender Hot Rod Deluxe (PR246)
      * Modern Fender circuit (1990s), NOT a vintage Deluxe Reverb:
