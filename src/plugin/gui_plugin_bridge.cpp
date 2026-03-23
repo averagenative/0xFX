@@ -92,6 +92,8 @@ static int render_thread_func(void *data)
 
     /* Disable imgui.ini — DAW working dirs are unpredictable */
     ImGui::GetIO().IniFilename = NULL;
+    /* Suppress ID conflict popups in plugin — they're non-fatal */
+    ImGui::GetIO().ConfigDebugHighlightIdConflicts = false;
 
     /* Apply the shared 0xFX "worn grime" theme */
     fx_gui_setup_theme();

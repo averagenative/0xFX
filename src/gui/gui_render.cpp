@@ -971,6 +971,20 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
         /* Preset browser popup */
         if (ImGui::BeginPopup("preset_browser_popup")) {
+            if (is_plugin) {
+                /* Plugin mode: preset loading from render thread is unsafe.
+                 * Show message directing users to host preset mechanism. */
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+                ImGui::Text("Preset Library");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                ImGui::Spacing();
+                ImGui::TextWrapped("Use your DAW's preset browser to load presets.");
+                ImGui::TextWrapped("Factory presets are available in the host's preset list.");
+                ImGui::Spacing();
+                ImGui::TextDisabled("Full preset browser available in standalone mode.");
+                ImGui::EndPopup();
+            } else {
             if (s_browser_needs_scan) preset_browser_scan();
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
@@ -1139,6 +1153,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             }
 
             ImGui::EndPopup();
+            } /* end standalone else block */
         }
 
         ImGui::SameLine(0, 10);
