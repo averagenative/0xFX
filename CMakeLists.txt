@@ -263,6 +263,9 @@ endif()
         SUFFIX ".clap"
         C_VISIBILITY_PRESET hidden
     )
+    if(MINGW)
+        target_link_options(0xfx_clap PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
     target_link_libraries(0xfx_clap PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_clap PRIVATE pthread dl)
@@ -312,6 +315,9 @@ endif()
         SUFFIX ".vst3"
         C_VISIBILITY_PRESET hidden
     )
+    if(MINGW)
+        target_link_options(0xfx_vst3 PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
     target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_vst3 PRIVATE pthread dl)
