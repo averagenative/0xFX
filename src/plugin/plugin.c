@@ -1821,132 +1821,79 @@ int oxfx_plugin_get_cc_mapping(void *user_plugin, int cc_number)
 
 #ifdef OXFX_PLUGIN_HAS_GUI
 
-#include "../gui/gui_render.h"
-
 /*
- * PluginGUI — per-instance GUI state for the embedded ImGui window.
+ * Plugin GUI — SDL2 window embedded inside DAW host window.
  *
- * The host provides a parent HWND/NSView in cplug_setParent(). We create an
- * SDL window from it, set up OpenGL + ImGui, and drive rendering via a
- * platform timer (WM_TIMER on Windows, X11 idle on Linux).
+ * The actual implementation lives in gui_plugin_bridge.cpp which manages:
+ * - SDL2 window creation + OpenGL context
+ * - Win32 reparenting (SetParent + WS_CHILD) / Linux X11
+ * - Dedicated render thread running ImGui + fx_gui_render_frame()
+ * - WndProc subclass for keyboard/mouse capture on Windows
  *
- * NOTE: SDL_CreateWindowFrom() is used to embed into the host window.
- * On Linux/X11 this works; on Wayland it may not. CLAP hosts generally
- * provide an X11 window even under Wayland for plugin embedding.
+ * These C-callable functions are the bridge API:
  */
-
-/* Forward declarations for ImGui C++ init/shutdown — implemented in
- * gui_render.cpp's translation unit. We call them via thin wrappers. */
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* Thin C wrappers for ImGui init/shutdown — defined at bottom of this file
- * or in a separate .cpp helper. Since plugin.c is compiled as C, we need
- * these wrappers in a .cpp TU that the plugin links against. */
-void oxfx_plugin_gui_init_imgui(void *sdl_window, void *gl_ctx);
-void oxfx_plugin_gui_shutdown_imgui(void);
-void oxfx_plugin_gui_new_frame(void);
-void oxfx_plugin_gui_render(void);
-void oxfx_plugin_gui_setup_theme(void);
-
-#ifdef __cplusplus
-}
-#endif
+void *oxfx_gui_create(void *engine);
+void  oxfx_gui_destroy(void *gui);
+void  oxfx_gui_attach(void *gui, void *parent_hwnd);
+void  oxfx_gui_detach(void *gui);
+void  oxfx_gui_set_visible(void *gui, bool visible);
+void  oxfx_gui_get_size(void *gui, uint32_t *w, uint32_t *h);
+bool  oxfx_gui_set_size(void *gui, uint32_t w, uint32_t h);
 
 typedef struct {
-    OxFXPlugin      *plugin;
-    fx_gui_state_t  *gui_state;
-    void            *sdl_window;   /* SDL_Window* */
-    void            *gl_ctx;       /* SDL_GLContext */
-    uint32_t         width;
-    uint32_t         height;
-    float            scale_factor;
-    bool             visible;
-} PluginGUI;
+    OxFXPlugin *plugin;
+    void       *bridge_gui;  /* PluginGUI* from gui_plugin_bridge.cpp */
+} PluginGUIWrapper;
 
 void *cplug_createGUI(void *user_plugin)
 {
-    PluginGUI *gui = (PluginGUI *)calloc(1, sizeof(PluginGUI));
-    if (!gui) return NULL;
-    gui->plugin = (OxFXPlugin *)user_plugin;
-    gui->width  = 1200;
-    gui->height = 700;
-    gui->scale_factor = 1.0f;
-    gui->visible = false;
-    /* Don't create SDL window yet — parent comes in setParent */
-    return gui;
+    OxFXPlugin *plugin = (OxFXPlugin *)user_plugin;
+    PluginGUIWrapper *wrap = (PluginGUIWrapper *)calloc(1, sizeof(PluginGUIWrapper));
+    if (!wrap) return NULL;
+    wrap->plugin = plugin;
+    wrap->bridge_gui = oxfx_gui_create(plugin->engine);
+    return wrap;
 }
 
 void cplug_destroyGUI(void *user_gui)
 {
     if (!user_gui) return;
-    PluginGUI *gui = (PluginGUI *)user_gui;
-
-    if (gui->gui_state) {
-        fx_gui_destroy(gui->gui_state);
-        gui->gui_state = NULL;
-    }
-
-    /* SDL + ImGui cleanup happens in setParent(NULL) */
-    free(gui);
+    PluginGUIWrapper *wrap = (PluginGUIWrapper *)user_gui;
+    oxfx_gui_destroy(wrap->bridge_gui);
+    free(wrap);
 }
 
 void cplug_setParent(void *user_gui, void *parent)
 {
     if (!user_gui) return;
-    PluginGUI *gui = (PluginGUI *)user_gui;
+    PluginGUIWrapper *wrap = (PluginGUIWrapper *)user_gui;
 
-    if (gui->sdl_window && !parent) {
-        /* Detach from parent — tear down graphics */
-        if (gui->gui_state) {
-            fx_gui_destroy(gui->gui_state);
-            gui->gui_state = NULL;
-        }
-        oxfx_plugin_gui_shutdown_imgui();
-
-        /* SDL cleanup (cast through void* since this is C) */
-        /* Note: SDL functions are C-linkage, safe to call directly */
-        /* We store pointers as void* — the actual SDL calls happen in
-         * the C++ wrapper TU via gui_plugin_bridge.cpp */
-        gui->sdl_window = NULL;
-        gui->gl_ctx     = NULL;
-        return;
-    }
-
-    if (parent && !gui->sdl_window) {
-        /* Attach to parent — create SDL window + OpenGL + ImGui.
-         * This is handled by the C++ bridge since SDL/ImGui init
-         * requires C++ for ImGui. The actual embedding uses
-         * SDL_CreateWindowFrom(parent). */
-
-        /* For now, store parent and defer init to the timer/render
-         * callback. The C bridge functions handle SDL init. */
-        /* Placeholder: the actual SDL_CreateWindowFrom + ImGui init
-         * happens in gui_plugin_bridge.cpp */
+    if (parent) {
+        oxfx_gui_attach(wrap->bridge_gui, parent);
+    } else {
+        oxfx_gui_detach(wrap->bridge_gui);
     }
 }
 
 void cplug_setVisible(void *user_gui, bool visible)
 {
     if (!user_gui) return;
-    PluginGUI *gui = (PluginGUI *)user_gui;
-    gui->visible = visible;
+    PluginGUIWrapper *wrap = (PluginGUIWrapper *)user_gui;
+    oxfx_gui_set_visible(wrap->bridge_gui, visible);
 }
 
 void cplug_setScaleFactor(void *user_gui, float scale)
 {
-    if (!user_gui) return;
-    PluginGUI *gui = (PluginGUI *)user_gui;
-    gui->scale_factor = scale;
+    (void)user_gui;
+    (void)scale;
+    /* Scale factor support — future enhancement */
 }
 
 void cplug_getSize(void *user_gui, uint32_t *w, uint32_t *h)
 {
     if (!user_gui) { *w = 1200; *h = 700; return; }
-    PluginGUI *gui = (PluginGUI *)user_gui;
-    *w = gui->width;
-    *h = gui->height;
+    PluginGUIWrapper *wrap = (PluginGUIWrapper *)user_gui;
+    oxfx_gui_get_size(wrap->bridge_gui, w, h);
 }
 
 void cplug_checkSize(void *user_gui, uint32_t *w, uint32_t *h)
@@ -1963,10 +1910,8 @@ void cplug_checkSize(void *user_gui, uint32_t *w, uint32_t *h)
 bool cplug_setSize(void *user_gui, uint32_t w, uint32_t h)
 {
     if (!user_gui) return false;
-    PluginGUI *gui = (PluginGUI *)user_gui;
-    gui->width  = w;
-    gui->height = h;
-    return true;
+    PluginGUIWrapper *wrap = (PluginGUIWrapper *)user_gui;
+    return oxfx_gui_set_size(wrap->bridge_gui, w, h);
 }
 
 #else /* !OXFX_PLUGIN_HAS_GUI */
