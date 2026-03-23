@@ -1,0 +1,15 @@
+/* Auto-generated — do not edit */
+#ifndef FX_EMBEDDED_ASSETS_H
+#define FX_EMBEDDED_ASSETS_H
+
+#include <stddef.h>
+
+typedef struct { const char *path; const unsigned char *data; size_t size; } fx_embedded_asset_t;
+
+extern const fx_embedded_asset_t fx_embedded_assets[158];
+extern const int fx_embedded_asset_count;
+
+/* Look up an embedded asset by path. Returns NULL if not found. */
+const fx_embedded_asset_t *fx_embedded_find(const char *path);
+
+#endif

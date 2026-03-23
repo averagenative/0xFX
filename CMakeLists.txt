@@ -155,6 +155,7 @@ if(HAS_GUI)
         src/gui/gui_render.cpp
         src/gui/knobs.cpp
         src/gui/texture.c
+        src/gui/embedded_assets.c
         src/audio/audio_device.c
         src/audio/midi_input.c
         src/audio/recorder.c
@@ -212,6 +213,7 @@ if(HAS_GUI)
         src/gui/gui_render.cpp
         src/gui/knobs.cpp
         src/gui/texture.c
+        src/gui/embedded_assets.c
     )
     set(PLUGIN_GUI_INCLUDES
         ${CMAKE_SOURCE_DIR}/src

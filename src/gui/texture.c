@@ -20,6 +20,7 @@
 #endif
 
 #include "texture.h"
+#include "embedded_assets.h"
 #include "../core/log.h"
 
 #include <stdbool.h>
@@ -59,9 +60,17 @@ uintptr_t fx_texture_load(const char *path)
         return 0;
     }
 
-    /* Load image with stb_image */
+    /* Try embedded assets first (for plugin builds where no filesystem) */
     int w, h, channels;
-    unsigned char *data = stbi_load(path, &w, &h, &channels, 4); /* force RGBA */
+    unsigned char *data = NULL;
+    const fx_embedded_asset_t *embedded = fx_embedded_find(path);
+    if (embedded) {
+        data = stbi_load_from_memory(embedded->data, (int)embedded->size, &w, &h, &channels, 4);
+    }
+    /* Fall back to disk */
+    if (!data) {
+        data = stbi_load(path, &w, &h, &channels, 4);
+    }
     if (!data) {
         /* Don't cache failures — the file might appear later (asset deploy).
          * Use a simple "already warned" check to avoid log spam. */

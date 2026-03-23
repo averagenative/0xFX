@@ -30,3 +30,4 @@ resources/icon/*.png
 .DS_Store
 Thumbs.db
 troubleshooting/
+src/gui/embedded_assets.c
