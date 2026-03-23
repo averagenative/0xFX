@@ -991,12 +991,14 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::PushStyleColor(ImGuiCol_Text, rainbow);
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
 
-                if (ImGui::Button("Mystery Rig", ImVec2(ImGui::GetContentRegionAvail().x, 36.0f))) {
-                    surprise_me_generate(engine, gui->preset_name, sizeof(gui->preset_name));
-                    gui->preset_modified = false;
-                    /* Immediate sync */
-                    fx_gui_sync_from_engine(gui);
-                    gui->selected_node = -1;
+                if (ImGui::Button(is_plugin ? "Mystery Rig (standalone only)" : "Mystery Rig",
+                                  ImVec2(ImGui::GetContentRegionAvail().x, 36.0f))) {
+                    if (!is_plugin) {
+                        surprise_me_generate(engine, gui->preset_name, sizeof(gui->preset_name));
+                        gui->preset_modified = false;
+                        fx_gui_sync_from_engine(gui);
+                        gui->selected_node = -1;
+                    }
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::PopStyleVar();
@@ -1075,16 +1077,23 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.82f, 0.65f, 1.0f));
                 if (ImGui::Selectable(pe->name, false, ImGuiSelectableFlags_None, ImVec2(440, 0))) {
-                    bool ok = fx_preset_load(engine, pe->path);
-                    if (ok) {
-                        snprintf(gui->preset_name, sizeof(gui->preset_name), "%s", pe->name);
-                        gui->preset_modified = false;
-                        /* Immediate sync */
-                        fx_gui_sync_from_engine(gui);
-                        gui->selected_node = -1;
-                        FX_INFO("Loaded preset: %s (%d pre, %d post)", pe->name, gui->pre_id_count, gui->post_id_count);
+                    if (!is_plugin) {
+                        /* Only load presets from standalone — plugin preset loading
+                         * from render thread is a race condition with audio thread */
+                        bool ok = fx_preset_load(engine, pe->path);
+                        if (ok) {
+                            snprintf(gui->preset_name, sizeof(gui->preset_name), "%s", pe->name);
+                            gui->preset_modified = false;
+                            fx_gui_sync_from_engine(gui);
+                            gui->selected_node = -1;
+                            FX_INFO("Loaded preset: %s", pe->name);
+                        } else {
+                            FX_ERROR("Failed to load preset: %s", pe->path);
+                        }
                     } else {
-                        FX_ERROR("Failed to load preset: %s", pe->path);
+                        /* In plugin mode, just show the name — preset loading
+                         * should go through the host's preset mechanism */
+                        snprintf(gui->preset_name, sizeof(gui->preset_name), "%s", pe->name);
                     }
                     ImGui::CloseCurrentPopup();
                 }
