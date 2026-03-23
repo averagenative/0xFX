@@ -458,12 +458,23 @@ static void preset_browser_scan(void) {
 
     const char *factory_cats[] = { "classic", "80s", "90s", "modern", "heavy", "experimental" };
     const char *cat_labels[]   = { "Classic", "80s", "90s", "Modern", "Heavy", "Experimental" };
+
+    /* Search multiple base paths — CWD varies between standalone and plugin */
+    const char *base_paths[] = {
+        "presets/factory",
+        "../presets/factory",
+#ifdef _WIN32
+        "C:/Users/Dan Michael/Desktop/0xFX-test/presets/factory",
+#endif
+    };
+    int n_bases = sizeof(base_paths) / sizeof(base_paths[0]);
+
     for (int i = 0; i < 6; i++) {
-        char dirpath[600];
-        snprintf(dirpath, sizeof(dirpath), "presets/factory/%s", factory_cats[i]);
-        preset_scan_dir(dirpath, true, cat_labels[i]);
-        snprintf(dirpath, sizeof(dirpath), "../presets/factory/%s", factory_cats[i]);
-        preset_scan_dir(dirpath, true, cat_labels[i]);
+        for (int b = 0; b < n_bases; b++) {
+            char dirpath[600];
+            snprintf(dirpath, sizeof(dirpath), "%s/%s", base_paths[b], factory_cats[i]);
+            preset_scan_dir(dirpath, true, cat_labels[i]);
+        }
     }
 
     const char *user_dirs[] = { "presets", "../presets" };
@@ -971,20 +982,6 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
         /* Preset browser popup */
         if (ImGui::BeginPopup("preset_browser_popup")) {
-            if (is_plugin) {
-                /* Plugin mode: preset loading from render thread is unsafe.
-                 * Show message directing users to host preset mechanism. */
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
-                ImGui::Text("Preset Library");
-                ImGui::PopStyleColor();
-                ImGui::Separator();
-                ImGui::Spacing();
-                ImGui::TextWrapped("Use your DAW's preset browser to load presets.");
-                ImGui::TextWrapped("Factory presets are available in the host's preset list.");
-                ImGui::Spacing();
-                ImGui::TextDisabled("Full preset browser available in standalone mode.");
-                ImGui::EndPopup();
-            } else {
             if (s_browser_needs_scan) preset_browser_scan();
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
@@ -1091,23 +1088,15 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.82f, 0.65f, 1.0f));
                 if (ImGui::Selectable(pe->name, false, ImGuiSelectableFlags_None, ImVec2(440, 0))) {
-                    if (!is_plugin) {
-                        /* Only load presets from standalone — plugin preset loading
-                         * from render thread is a race condition with audio thread */
-                        bool ok = fx_preset_load(engine, pe->path);
-                        if (ok) {
-                            snprintf(gui->preset_name, sizeof(gui->preset_name), "%s", pe->name);
-                            gui->preset_modified = false;
-                            fx_gui_sync_from_engine(gui);
-                            gui->selected_node = -1;
-                            FX_INFO("Loaded preset: %s", pe->name);
-                        } else {
-                            FX_ERROR("Failed to load preset: %s", pe->path);
-                        }
-                    } else {
-                        /* In plugin mode, just show the name — preset loading
-                         * should go through the host's preset mechanism */
+                    bool ok = fx_preset_load(engine, pe->path);
+                    if (ok) {
                         snprintf(gui->preset_name, sizeof(gui->preset_name), "%s", pe->name);
+                        gui->preset_modified = false;
+                        fx_gui_sync_from_engine(gui);
+                        gui->selected_node = -1;
+                        FX_INFO("Loaded preset: %s", pe->name);
+                    } else {
+                        FX_ERROR("Failed to load preset: %s", pe->path);
                     }
                     ImGui::CloseCurrentPopup();
                 }
@@ -1153,7 +1142,6 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             }
 
             ImGui::EndPopup();
-            } /* end standalone else block */
         }
 
         ImGui::SameLine(0, 10);
