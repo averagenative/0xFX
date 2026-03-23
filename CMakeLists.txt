@@ -258,6 +258,7 @@ endif()
         -Wno-pedantic
     )
     set_target_properties(0xfx_clap PROPERTIES
+        OUTPUT_NAME "0xFX"
         PREFIX ""
         SUFFIX ".clap"
         C_VISIBILITY_PRESET hidden
@@ -306,8 +307,9 @@ endif()
         -Wno-pedantic
     )
     set_target_properties(0xfx_vst3 PROPERTIES
+        OUTPUT_NAME "0xFX"
         PREFIX ""
-        SUFFIX ".so"
+        SUFFIX ".vst3"
         C_VISIBILITY_PRESET hidden
     )
     target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
@@ -316,4 +318,19 @@ endif()
     elseif(WIN32 OR MINGW)
         target_link_libraries(0xfx_vst3 PRIVATE ole32 winmm opengl32)
     endif()
+
+    # VST3 bundle structure (required by Reaper and most hosts)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR MINGW)
+        set(VST3_ARCH "x86_64-win")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(VST3_ARCH "MacOS")
+    else()
+        set(VST3_ARCH "x86_64-linux")
+    endif()
+    set(VST3_BUNDLE_DIR "${CMAKE_BINARY_DIR}/0xFX.vst3.bundle/Contents/${VST3_ARCH}")
+    add_custom_command(TARGET 0xfx_vst3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${VST3_BUNDLE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:0xfx_vst3>" "${VST3_BUNDLE_DIR}/0xFX.vst3"
+        COMMENT "Creating VST3 bundle: 0xFX.vst3.bundle"
+    )
     message(STATUS "VST3 plugin target enabled")
