@@ -355,9 +355,60 @@ struct PresetEntry {
 };
 
 #define MAX_BROWSER_PRESETS 128
-static PresetEntry s_browser_presets[MAX_BROWSER_PRESETS];
-static int s_browser_preset_count = 0;
-static bool s_browser_needs_scan = true;
+/* Mutable preset browser state moved into fx_gui_state struct.
+ * The helper functions below take explicit pointers instead of
+ * using file-scope statics, making them safe for multi-instance use. */
+
+/* ── GUI state struct ──────────────────────────────────────── */
+/* All mutable per-instance rendering state lives here. Static const data
+ * (knob maps, pedal tables, etc.) stays file-scope — it's read-only and
+ * safe to share across instances. */
+
+struct fx_gui_state {
+    fx_engine_t *engine;
+
+    /* Pedal ID registries */
+    fx_pedal_id  pre_ids[32];
+    int          pre_id_count;
+    fx_pedal_id  post_ids[32];
+    int          post_id_count;
+
+    /* Studio processor IDs */
+    fx_studio_id studio_ids[8];
+    int          studio_id_count;
+
+    /* Signal chain selection */
+    int          selected_node;
+    int          cab_type;
+    int          cab_type_b;
+
+    /* Dual-chain (Y-split) */
+    fx_chain_id  chain_b;
+
+    /* Preset name */
+    char         preset_name[128];
+    bool         preset_modified;
+
+    /* Theme textures (loaded once per instance) */
+    uintptr_t    tex_pedalboard;
+    uintptr_t    tex_tolex;
+    bool         theme_tex_tried;
+
+    /* Logo texture */
+    uintptr_t    logo_tex;
+    bool         logo_tried;
+    float        logo_aspect;
+
+    /* Save-As state */
+    bool         save_as_open;
+    char         save_as_name[128];
+
+    /* Preset browser state (per-instance, was file-scope static) */
+    PresetEntry  browser_presets[MAX_BROWSER_PRESETS];
+    int          browser_preset_count;
+    bool         browser_needs_scan;
+    int          selected_cat;
+};
 
 static const char *s_preset_categories[] = {
     "Classic", "80s", "90s", "Modern", "Heavy", "Experimental", "User"
@@ -407,7 +458,8 @@ static bool preset_scan_file(const char *path, PresetEntry *entry, bool is_facto
     return true;
 }
 
-static void preset_scan_dir(const char *dirpath, bool is_factory, const char *category_override) {
+static void preset_scan_dir(const char *dirpath, bool is_factory, const char *category_override,
+                            PresetEntry *browser_presets, int *browser_preset_count) {
 #ifdef _WIN32
     char pattern[600];
     snprintf(pattern, sizeof(pattern), "%s\\*.0xfx", dirpath);
@@ -416,14 +468,14 @@ static void preset_scan_dir(const char *dirpath, bool is_factory, const char *ca
     if (h == INVALID_HANDLE_VALUE) return;
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+        if (*browser_preset_count >= MAX_BROWSER_PRESETS) break;
         char fullpath[600];
         snprintf(fullpath, sizeof(fullpath), "%s\\%s", dirpath, fd.cFileName);
-        PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+        PresetEntry *e = &browser_presets[*browser_preset_count];
         if (preset_scan_file(fullpath, e, is_factory)) {
             if (category_override && category_override[0])
                 snprintf(e->category, sizeof(e->category), "%s", category_override);
-            s_browser_preset_count++;
+            (*browser_preset_count)++;
         }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
@@ -432,25 +484,25 @@ static void preset_scan_dir(const char *dirpath, bool is_factory, const char *ca
     if (!d) return;
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
-        if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+        if (*browser_preset_count >= MAX_BROWSER_PRESETS) break;
         const char *name = ent->d_name;
         size_t len = strlen(name);
         if (len < 5 || strcmp(name + len - 5, ".0xfx") != 0) continue;
         char fullpath[600];
         snprintf(fullpath, sizeof(fullpath), "%s/%s", dirpath, name);
-        PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+        PresetEntry *e = &browser_presets[*browser_preset_count];
         if (preset_scan_file(fullpath, e, is_factory)) {
             if (category_override && category_override[0])
                 snprintf(e->category, sizeof(e->category), "%s", category_override);
-            s_browser_preset_count++;
+            (*browser_preset_count)++;
         }
     }
     closedir(d);
 #endif
 }
 
-static void preset_browser_scan(void) {
-    s_browser_preset_count = 0;
+static void preset_browser_scan(fx_gui_state_t *gui) {
+    gui->browser_preset_count = 0;
 
     const char *factory_cats[] = { "classic", "80s", "90s", "modern", "heavy", "experimental" };
     const char *cat_labels[]   = { "Classic", "80s", "90s", "Modern", "Heavy", "Experimental" };
@@ -469,7 +521,8 @@ static void preset_browser_scan(void) {
         for (int b = 0; b < n_bases; b++) {
             char dirpath[600];
             snprintf(dirpath, sizeof(dirpath), "%s/%s", base_paths[b], factory_cats[i]);
-            preset_scan_dir(dirpath, true, cat_labels[i]);
+            preset_scan_dir(dirpath, true, cat_labels[i],
+                            gui->browser_presets, &gui->browser_preset_count);
         }
     }
 
@@ -483,24 +536,24 @@ static void preset_browser_scan(void) {
         if (h == INVALID_HANDLE_VALUE) continue;
         do {
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-            if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+            if (gui->browser_preset_count >= MAX_BROWSER_PRESETS) break;
             if (strstr(fd.cFileName, "last_session") != NULL) continue;
             char fullpath[600];
             snprintf(fullpath, sizeof(fullpath), "%s\\%s", user_dirs[d], fd.cFileName);
             bool dup = false;
-            for (int k = 0; k < s_browser_preset_count; k++) {
-                const char *existing = strrchr(s_browser_presets[k].path, '\\');
-                if (!existing) existing = strrchr(s_browser_presets[k].path, '/');
-                if (!existing) existing = s_browser_presets[k].path;
+            for (int k = 0; k < gui->browser_preset_count; k++) {
+                const char *existing = strrchr(gui->browser_presets[k].path, '\\');
+                if (!existing) existing = strrchr(gui->browser_presets[k].path, '/');
+                if (!existing) existing = gui->browser_presets[k].path;
                 else existing++;
                 if (strcmp(existing, fd.cFileName) == 0) { dup = true; break; }
             }
             if (dup) continue;
-            PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+            PresetEntry *e = &gui->browser_presets[gui->browser_preset_count];
             if (preset_scan_file(fullpath, e, false)) {
                 if (e->category[0] == '\0' || strcmp(e->category, "User") == 0)
                     snprintf(e->category, sizeof(e->category), "User");
-                s_browser_preset_count++;
+                gui->browser_preset_count++;
             }
         } while (FindNextFileA(h, &fd));
         FindClose(h);
@@ -509,7 +562,7 @@ static void preset_browser_scan(void) {
         if (!dd) continue;
         struct dirent *ent;
         while ((ent = readdir(dd)) != NULL) {
-            if (s_browser_preset_count >= MAX_BROWSER_PRESETS) break;
+            if (gui->browser_preset_count >= MAX_BROWSER_PRESETS) break;
             const char *name = ent->d_name;
             size_t len = strlen(name);
             if (len < 5 || strcmp(name + len - 5, ".0xfx") != 0) continue;
@@ -517,26 +570,26 @@ static void preset_browser_scan(void) {
             char fullpath[600];
             snprintf(fullpath, sizeof(fullpath), "%s/%s", user_dirs[d], name);
             bool dup = false;
-            for (int k = 0; k < s_browser_preset_count; k++) {
-                const char *existing = strrchr(s_browser_presets[k].path, '/');
-                if (!existing) existing = s_browser_presets[k].path;
+            for (int k = 0; k < gui->browser_preset_count; k++) {
+                const char *existing = strrchr(gui->browser_presets[k].path, '/');
+                if (!existing) existing = gui->browser_presets[k].path;
                 else existing++;
                 if (strcmp(existing, name) == 0) { dup = true; break; }
             }
             if (dup) continue;
-            PresetEntry *e = &s_browser_presets[s_browser_preset_count];
+            PresetEntry *e = &gui->browser_presets[gui->browser_preset_count];
             if (preset_scan_file(fullpath, e, false)) {
                 if (e->category[0] == '\0' || strcmp(e->category, "User") == 0)
                     snprintf(e->category, sizeof(e->category), "User");
-                s_browser_preset_count++;
+                gui->browser_preset_count++;
             }
         }
         closedir(dd);
 #endif
     }
 
-    s_browser_needs_scan = false;
-    FX_INFO("Preset browser: scanned %d presets", s_browser_preset_count);
+    gui->browser_needs_scan = false;
+    FX_INFO("Preset browser: scanned %d presets", gui->browser_preset_count);
 }
 
 /* ── Surprise Me — random preset generator ──────────────────── */
@@ -656,48 +709,6 @@ static ImVec4 hsv_to_rgb(float h, float s, float v) {
     return ImVec4(r, g, b, 1.0f);
 }
 
-/* ── GUI state struct ──────────────────────────────────────── */
-
-struct fx_gui_state {
-    fx_engine_t *engine;
-
-    /* Pedal ID registries */
-    fx_pedal_id  pre_ids[32];
-    int          pre_id_count;
-    fx_pedal_id  post_ids[32];
-    int          post_id_count;
-
-    /* Studio processor IDs */
-    fx_studio_id studio_ids[8];
-    int          studio_id_count;
-
-    /* Signal chain selection */
-    int          selected_node;
-    int          cab_type;
-    int          cab_type_b;
-
-    /* Dual-chain (Y-split) */
-    fx_chain_id  chain_b;
-
-    /* Preset name */
-    char         preset_name[128];
-    bool         preset_modified;
-
-    /* Theme textures (loaded once) */
-    uintptr_t    tex_pedalboard;
-    uintptr_t    tex_tolex;
-    bool         theme_tex_tried;
-
-    /* Logo texture */
-    uintptr_t    logo_tex;
-    bool         logo_tried;
-    float        logo_aspect;
-
-    /* Save-As state */
-    bool         save_as_open;
-    char         save_as_name[128];
-};
-
 /* ── Theme setup ───────────────────────────────────────────── */
 
 extern "C" void fx_gui_setup_theme(void) {
@@ -750,6 +761,9 @@ extern "C" fx_gui_state_t *fx_gui_create(fx_engine_t *engine) {
     g->cab_type = 0;
     g->cab_type_b = 0;
     g->logo_aspect = 1.96f;
+    g->browser_needs_scan = true;
+    g->browser_preset_count = 0;
+    g->selected_cat = 0;
     snprintf(g->preset_name, sizeof(g->preset_name), "Untitled");
 
     /* Sync pedal/studio IDs from engine */
@@ -967,7 +981,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.65f, 0.45f, 1.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
             if (ImGui::Button("Presets", ImVec2(70.0f, 32.0f))) {
-                if (s_browser_needs_scan) preset_browser_scan();
+                if (gui->browser_needs_scan) preset_browser_scan(gui);
                 ImGui::OpenPopup("preset_browser_popup");
             }
             ImGui::PopStyleVar();
@@ -978,7 +992,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
         /* Preset browser popup */
         if (ImGui::BeginPopup("preset_browser_popup")) {
-            if (s_browser_needs_scan) preset_browser_scan();
+            if (gui->browser_needs_scan) preset_browser_scan(gui);
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
             ImGui::Text("Preset Library");
@@ -1032,18 +1046,17 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             }
 
             /* Category tabs */
-            static int s_selected_cat = 0;
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 2));
             for (int c = 0; c < s_preset_category_count; c++) {
                 int cat_count = 0;
-                for (int p = 0; p < s_browser_preset_count; p++) {
-                    if (strcmp(s_browser_presets[p].category, s_preset_categories[c]) == 0)
+                for (int p = 0; p < gui->browser_preset_count; p++) {
+                    if (strcmp(gui->browser_presets[p].category, s_preset_categories[c]) == 0)
                         cat_count++;
                 }
                 if (cat_count == 0) continue;
 
                 if (c > 0) ImGui::SameLine();
-                bool selected = (s_selected_cat == c);
+                bool selected = (gui->selected_cat == c);
                 if (selected) {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.25f, 0.15f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.85f, 0.6f, 1.0f));
@@ -1054,7 +1067,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 char tab_label[64];
                 snprintf(tab_label, sizeof(tab_label), "%s (%d)", s_preset_categories[c], cat_count);
                 if (ImGui::Button(tab_label)) {
-                    s_selected_cat = c;
+                    gui->selected_cat = c;
                 }
                 ImGui::PopStyleColor(2);
             }
@@ -1065,9 +1078,9 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             /* Preset list for selected category */
             ImGui::BeginChild("preset_list", ImVec2(480, 320), true);
 
-            const char *sel_cat = s_preset_categories[s_selected_cat];
-            for (int p = 0; p < s_browser_preset_count; p++) {
-                PresetEntry *pe = &s_browser_presets[p];
+            const char *sel_cat = s_preset_categories[gui->selected_cat];
+            for (int p = 0; p < gui->browser_preset_count; p++) {
+                PresetEntry *pe = &gui->browser_presets[p];
                 if (strcmp(pe->category, sel_cat) != 0) continue;
 
                 ImGui::PushID(p);
@@ -1128,8 +1141,8 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Refresh", ImVec2(80, 0))) {
-                    s_browser_needs_scan = true;
-                    preset_browser_scan();
+                    gui->browser_needs_scan = true;
+                    preset_browser_scan(gui);
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Rescan preset directories");

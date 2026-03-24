@@ -524,25 +524,15 @@ void oxfx_gui_destroy(void *gui_ptr)
     delete gui;
 }
 
-/* ─── Single-instance GUI guard ────────────────────────────────────────── */
-/* Only one plugin GUI can be open at a time — gui_render.cpp has shared
- * static state that isn't thread-safe for concurrent rendering.
- * This matches industry practice (Neural DSP, Positive Grid, etc.) */
-static PluginGUI *s_active_gui = NULL;
-
 /* ─── Attach (create window + start render thread) ─────────────────────── */
+/* Multi-instance safe: all mutable GUI state lives in the per-instance
+ * fx_gui_state_t struct. No single-instance guard needed. */
 
 void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
 {
     if (!gui_ptr) return;
     PluginGUI *gui = (PluginGUI *)gui_ptr;
     if (gui->running) return;
-
-    /* Close any other instance's GUI first */
-    if (s_active_gui && s_active_gui != gui && s_active_gui->running) {
-        oxfx_gui_detach(s_active_gui);
-    }
-    s_active_gui = gui;
 
     gui->parent_handle = parent_hwnd;
 
@@ -706,7 +696,6 @@ void oxfx_gui_detach(void *gui_ptr)
     if (!gui->running) return;
 
     gui->running = false;
-    if (s_active_gui == gui) s_active_gui = NULL;
 
 #ifdef _WIN32
     if (gui->render_thread) {
