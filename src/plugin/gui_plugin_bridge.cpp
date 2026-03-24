@@ -752,9 +752,13 @@ void oxfx_gui_detach(void *gui_ptr)
     gui_dbg("gui_detach gui=%p", gui_ptr);
     if (!gui_ptr) return;
     PluginGUI *gui = (PluginGUI *)gui_ptr;
-    if (!gui->running) return;
+    if (!gui->running) {
+        gui_dbg("gui_detach SKIPPED (not running)");
+        return;
+    }
 
     gui->running = false;
+    gui_dbg("gui_detach stopping render thread...");
 
 #ifdef _WIN32
     if (gui->render_thread) {
