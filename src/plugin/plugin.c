@@ -978,35 +978,35 @@ static void sync_params_from_engine(OxFXPlugin *p)
 
 /* ── Library load/unload ────────────────────────────────────────── */
 
+static HMODULE g_sdl2_preloaded = NULL;
+
 void cplug_libraryLoad(void) {
 #ifdef _WIN32
-    /* Debug log to file so we can see what's happening */
-    FILE *dbg = fopen("C:\\Users\\Dan Michael\\Desktop\\0xfx_plugin_debug.log", "a");
-    if (dbg) {
-        fprintf(dbg, "=== 0xFX plugin libraryLoad ===\n");
-        /* Log our own DLL path */
-        char path[512] = {0};
+    /* Pre-load SDL2.dll from the plugin's own directory.
+     * Windows doesn't search the plugin DLL's directory for deps,
+     * so we must LoadLibrary with the full path. Once loaded,
+     * implicit imports resolve from the in-memory module. */
+    if (!g_sdl2_preloaded) {
+        char dllPath[512] = {0};
         HMODULE hm = NULL;
         if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                (LPCSTR)cplug_libraryLoad, &hm)) {
-            GetModuleFileNameA(hm, path, sizeof(path));
-            fprintf(dbg, "Plugin DLL path: %s\n", path);
+            GetModuleFileNameA(hm, dllPath, sizeof(dllPath));
+            /* Strip filename to get directory */
+            char *sep = strrchr(dllPath, '\\');
+            if (!sep) sep = strrchr(dllPath, '/');
+            if (sep) sep[1] = '\0';
+            /* Also check parent dir for VST3 bundles (Contents/x86_64-win/) */
+            char sdl2Path[512];
+            snprintf(sdl2Path, sizeof(sdl2Path), "%sSDL2.dll", dllPath);
+            g_sdl2_preloaded = LoadLibraryA(sdl2Path);
+            if (!g_sdl2_preloaded) {
+                /* Try parent directories (VST3 bundle: go up 2 levels) */
+                snprintf(sdl2Path, sizeof(sdl2Path), "%s..\\..\\..\\SDL2.dll", dllPath);
+                g_sdl2_preloaded = LoadLibraryA(sdl2Path);
+            }
         }
-        /* Log working directory */
-        char cwd[512] = {0};
-        GetCurrentDirectoryA(sizeof(cwd), cwd);
-        fprintf(dbg, "Working directory: %s\n", cwd);
-        /* Check if SDL2.dll is loadable */
-        HMODULE sdl = GetModuleHandleA("SDL2.dll");
-        fprintf(dbg, "SDL2.dll already loaded: %s\n", sdl ? "YES" : "NO");
-        if (!sdl) {
-            sdl = LoadLibraryA("SDL2.dll");
-            fprintf(dbg, "LoadLibrary(SDL2.dll): %s (err=%lu)\n",
-                    sdl ? "OK" : "FAILED", sdl ? 0 : GetLastError());
-            if (sdl) FreeLibrary(sdl);
-        }
-        fclose(dbg);
     }
 #endif
 }
