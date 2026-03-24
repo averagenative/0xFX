@@ -1697,7 +1697,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::PopStyleVar();
                 ImGui::PopStyleColor(4);
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Add post-amp pedal or rack effect");
+                    ImGui::SetTooltip("Add rack effect");
             }
         }
 
