@@ -162,3 +162,7 @@ All names are original. References to commercial products in documentation are f
 ## License
 
 MIT
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/0xfx)
