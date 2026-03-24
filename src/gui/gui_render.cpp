@@ -9,11 +9,7 @@
  * data (pedal tables, amp knob maps, color tables, etc.) remain file-scope
  * const and are shared across instances.
  */
-#include <SDL.h>
-#include <SDL_opengl.h>
-
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
 
 #include "gui_render.h"

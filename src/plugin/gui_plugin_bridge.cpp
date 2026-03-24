@@ -1,19 +1,20 @@
 /*
- * gui_plugin_bridge.cpp — Plugin GUI: SDL2 window embedded inside DAW host
+ * gui_plugin_bridge.cpp — Plugin GUI: native platform window embedded in DAW
  *
- * Creates an SDL2+OpenGL window, reparents it into the host-provided parent
- * window, and drives rendering on a dedicated thread using the shared
+ * Creates a native child window (Win32 HWND / X11 Window), sets up an OpenGL
+ * context, and drives ImGui rendering on a dedicated thread using the shared
  * fx_gui_render_frame() from gui_render.h.
  *
- * Pattern copied from 0xSYNTH's plugin_gui.cpp (proven working).
+ * This replaces the SDL2-based implementation to eliminate the SDL2 dependency
+ * for plugins, solving multi-plugin coexistence issues in DAWs.
  *
- * Platform-specific embedding:
- * - Windows: SetParent(sdl_hwnd, host_hwnd) + WS_CHILD + WndProc subclass
- * - Linux: SDL_ShowWindow (X11 reparenting — future)
+ * Platform backends:
+ * - Windows: Win32 API + wglCreateContext + ImGui_ImplWin32
+ * - Linux:   X11 + glXCreateContext + manual event mapping
+ * - macOS:   stub (future: NSOpenGLView + Objective-C)
  */
 
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
 
 extern "C" {
@@ -22,69 +23,143 @@ extern "C" {
 #include "../engine/fx_engine.h"
 }
 
-#include <SDL.h>
-#include <SDL_opengl.h>
-#include <SDL_thread.h>
-#include <SDL_syswm.h>
-
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Windows implementation — Win32 + WGL + ImGui_ImplWin32
+ * ═══════════════════════════════════════════════════════════════════════════ */
 #ifdef _WIN32
-#include <windows.h>
 
-/* Win32 WndProc subclass to capture keyboard + mouse events
- * that the DAW host doesn't forward to the child SDL window */
-static WNDPROC s_orig_wndproc = NULL;
+#include "imgui_impl_win32.h"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <GL/gl.h>
+
+/* Forward declare ImGui Win32 WndProc handler */
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
+    HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+/* Custom window class name */
+static const wchar_t *OXFX_WND_CLASS = L"0xFX_PluginGUI";
+static bool s_wnd_class_registered = false;
+
+/* WGL function typedefs for creating modern GL context */
+typedef HGLRC (WINAPI *PFNWGLCREATECONTEXTATTRIBSARBPROC)(HDC, HGLRC, const int *);
+#define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB 0x2092
+#define WGL_CONTEXT_PROFILE_MASK_ARB  0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+#define WGL_CONTEXT_FLAGS_ARB         0x2094
+
+/* Pixel format attribute constants for wglChoosePixelFormatARB */
+typedef BOOL (WINAPI *PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC, const int *, const FLOAT *, UINT, int *, UINT *);
+#define WGL_DRAW_TO_WINDOW_ARB        0x2001
+#define WGL_SUPPORT_OPENGL_ARB        0x2010
+#define WGL_DOUBLE_BUFFER_ARB         0x2011
+#define WGL_PIXEL_TYPE_ARB            0x2013
+#define WGL_TYPE_RGBA_ARB             0x202B
+#define WGL_COLOR_BITS_ARB            0x2014
+#define WGL_DEPTH_BITS_ARB            0x2022
+#define WGL_STENCIL_BITS_ARB          0x2023
+#define WGL_ACCELERATION_ARB          0x2003
+#define WGL_FULL_ACCELERATION_ARB     0x2027
+
+struct PluginGUI {
+    fx_engine_t    *engine;
+    fx_gui_state_t *gui_state;
+    HWND            hwnd;
+    HDC             hdc;
+    HGLRC           hglrc;
+    HANDLE          render_thread;
+    volatile bool   running;
+    volatile bool   visible;
+    uint32_t        width;
+    uint32_t        height;
+    void           *parent_handle;
+    ImGuiContext   *imgui_ctx;
+};
+
+/* ─── WndProc ──────────────────────────────────────────────────────────── */
 
 static LRESULT CALLBACK PluginWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+    /* Let ImGui process the event first */
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
+        return 0;
+
     switch (msg) {
-    case WM_LBUTTONDOWN:
-    case WM_LBUTTONUP:
-    case WM_RBUTTONDOWN:
-    case WM_RBUTTONUP:
-    case WM_MBUTTONDOWN:
-    case WM_MBUTTONUP:
-        break; /* let SDL handle these normally */
     case WM_CHAR:
         return 0; /* consume — prevent Windows error beep */
-    case WM_KEYDOWN:
-    case WM_KEYUP:
-        return 0; /* consume — prevent DAW accelerator interference */
     case WM_SYSCHAR:
         return 0; /* consume Alt+key beeps */
+    case WM_ERASEBKGND:
+        return 1; /* we handle painting via OpenGL */
     default:
         break;
     }
-    return CallWindowProcW(s_orig_wndproc, hwnd, msg, wp, lp);
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
-#endif
 
-/* ─── Plugin GUI State ───────────────────────────────────────────────────── */
+/* ─── WGL helpers ──────────────────────────────────────────────────────── */
 
-struct PluginGUI {
-    fx_engine_t     *engine;
-    fx_gui_state_t  *gui_state;
-    SDL_Window      *window;
-    SDL_GLContext    gl_ctx;
-    SDL_Thread      *render_thread;
-    volatile bool    running;
-    volatile bool    visible;
-    uint32_t         width;
-    uint32_t         height;
-    void            *parent_handle;
-    ImGuiContext    *imgui_ctx;
-};
+static bool setup_pixel_format(HDC hdc)
+{
+    PIXELFORMATDESCRIPTOR pfd = {};
+    pfd.nSize        = sizeof(pfd);
+    pfd.nVersion     = 1;
+    pfd.dwFlags      = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType   = PFD_TYPE_RGBA;
+    pfd.cColorBits   = 32;
+    pfd.cDepthBits   = 24;
+    pfd.cStencilBits = 8;
+    pfd.iLayerType   = PFD_MAIN_PLANE;
 
-/* ─── Render Thread ──────────────────────────────────────────────────────── */
+    int pf = ChoosePixelFormat(hdc, &pfd);
+    if (!pf) return false;
+    return SetPixelFormat(hdc, pf, &pfd) != 0;
+}
 
-static int render_thread_func(void *data)
+static HGLRC create_gl33_context(HDC hdc)
+{
+    /* First create a legacy context to load wglCreateContextAttribsARB */
+    HGLRC legacy = wglCreateContext(hdc);
+    if (!legacy) return NULL;
+    wglMakeCurrent(hdc, legacy);
+
+    PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB =
+        (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+
+    if (!wglCreateContextAttribsARB) {
+        /* No ARB extension — fall back to legacy context */
+        return legacy;
+    }
+
+    int attribs[] = {
+        WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+        WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+        0
+    };
+
+    HGLRC modern = wglCreateContextAttribsARB(hdc, NULL, attribs);
+    wglMakeCurrent(NULL, NULL);
+    wglDeleteContext(legacy);
+
+    return modern;
+}
+
+/* ─── Render Thread ────────────────────────────────────────────────────── */
+
+static DWORD WINAPI render_thread_func(LPVOID data)
 {
     PluginGUI *gui = (PluginGUI *)data;
 
-    SDL_GL_MakeCurrent(gui->window, gui->gl_ctx);
+    wglMakeCurrent(gui->hdc, gui->hglrc);
 
     /* ImGui setup on render thread */
     IMGUI_CHECKVERSION();
@@ -99,7 +174,7 @@ static int render_thread_func(void *data)
     /* Apply the shared 0xFX "worn grime" theme */
     fx_gui_setup_theme();
 
-    ImGui_ImplSDL2_InitForOpenGL(gui->window, gui->gl_ctx);
+    ImGui_ImplWin32_InitForOpenGL(gui->hwnd);
     ImGui_ImplOpenGL3_Init("#version 330");
 
     /* Create the GUI rendering state (bound to the engine) */
@@ -107,125 +182,37 @@ static int render_thread_func(void *data)
 
     while (gui->running) {
         if (!gui->visible) {
-            SDL_Delay(50);
+            Sleep(50);
             continue;
         }
 
-        /* Process SDL events */
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-
-            /* Grab keyboard focus when mouse enters our window */
-            if (event.type == SDL_WINDOWEVENT &&
-                event.window.event == SDL_WINDOWEVENT_ENTER) {
-                SDL_SetWindowInputFocus(gui->window);
-            }
+        /* Process pending Win32 messages for our window */
+        MSG msg;
+        while (PeekMessageW(&msg, gui->hwnd, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
 
         /* Track host window resize */
-#ifdef _WIN32
         {
-            SDL_SysWMinfo wi;
-            SDL_VERSION(&wi.version);
-            if (SDL_GetWindowWMInfo(gui->window, &wi)) {
-                HWND parent = GetParent(wi.info.win.window);
-                if (parent) {
-                    RECT rc;
-                    GetClientRect(parent, &rc);
-                    int pw = rc.right - rc.left;
-                    int ph = rc.bottom - rc.top;
-                    if (pw > 0 && ph > 0 &&
-                        ((uint32_t)pw != gui->width || (uint32_t)ph != gui->height)) {
-                        gui->width = (uint32_t)pw;
-                        gui->height = (uint32_t)ph;
-                        SDL_SetWindowSize(gui->window, pw, ph);
-                        SetWindowPos(wi.info.win.window, NULL, 0, 0, pw, ph,
-                                     SWP_NOZORDER | SWP_NOMOVE);
-                    }
+            HWND parent = GetParent(gui->hwnd);
+            if (parent) {
+                RECT rc;
+                GetClientRect(parent, &rc);
+                int pw = rc.right - rc.left;
+                int ph = rc.bottom - rc.top;
+                if (pw > 0 && ph > 0 &&
+                    ((uint32_t)pw != gui->width || (uint32_t)ph != gui->height)) {
+                    gui->width = (uint32_t)pw;
+                    gui->height = (uint32_t)ph;
+                    SetWindowPos(gui->hwnd, NULL, 0, 0, pw, ph,
+                                 SWP_NOZORDER | SWP_NOMOVE);
                 }
             }
         }
-
-        /* Poll keyboard via GetAsyncKeyState — bypasses DAW accelerators */
-        {
-            ImGuiIO &io = ImGui::GetIO();
-            POINT cursor;
-            GetCursorPos(&cursor);
-            SDL_SysWMinfo wi;
-            SDL_VERSION(&wi.version);
-            HWND our_hwnd = NULL;
-            if (SDL_GetWindowWMInfo(gui->window, &wi))
-                our_hwnd = wi.info.win.window;
-
-            HWND under_cursor = WindowFromPoint(cursor);
-            bool we_have_focus = (under_cursor == our_hwnd ||
-                                  IsChild(our_hwnd, under_cursor));
-
-            static bool prev_state[256] = {};
-
-            if (we_have_focus && io.WantTextInput) {
-                /* Text input mode: poll printable keys and inject chars */
-                bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-
-                for (int vk = 'A'; vk <= 'Z'; vk++) {
-                    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                    if (down && !prev_state[vk]) {
-                        char c = shift ? (char)vk : (char)(vk + 32);
-                        io.AddInputCharacter((unsigned int)c);
-                    }
-                    prev_state[vk] = down;
-                }
-                for (int vk = '0'; vk <= '9'; vk++) {
-                    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                    if (down && !prev_state[vk]) {
-                        io.AddInputCharacter((unsigned int)vk);
-                    }
-                    prev_state[vk] = down;
-                }
-                /* Space */
-                {
-                    bool down = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-                    if (down && !prev_state[VK_SPACE])
-                        io.AddInputCharacter(' ');
-                    prev_state[VK_SPACE] = down;
-                }
-                /* Backspace */
-                {
-                    bool down = (GetAsyncKeyState(VK_BACK) & 0x8000) != 0;
-                    if (down && !prev_state[VK_BACK]) {
-                        io.AddKeyEvent(ImGuiKey_Backspace, true);
-                        io.AddKeyEvent(ImGuiKey_Backspace, false);
-                    }
-                    prev_state[VK_BACK] = down;
-                }
-                /* Enter */
-                {
-                    bool down = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                    if (down && !prev_state[VK_RETURN]) {
-                        io.AddKeyEvent(ImGuiKey_Enter, true);
-                        io.AddKeyEvent(ImGuiKey_Enter, false);
-                    }
-                    prev_state[VK_RETURN] = down;
-                }
-                /* Common punctuation */
-                static const struct { int vk; char normal; char shifted; } punct[] = {
-                    {VK_OEM_MINUS, '-', '_'}, {VK_OEM_PLUS, '=', '+'},
-                    {VK_OEM_PERIOD, '.', '>'}, {VK_OEM_COMMA, ',', '<'},
-                    {0, 0, 0}
-                };
-                for (int p = 0; punct[p].vk; p++) {
-                    bool down = (GetAsyncKeyState(punct[p].vk) & 0x8000) != 0;
-                    if (down && !prev_state[punct[p].vk])
-                        io.AddInputCharacter(shift ? punct[p].shifted : punct[p].normal);
-                    prev_state[punct[p].vk] = down;
-                }
-            }
-        }
-#endif
 
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
+        ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
         /* Render the full 0xFX GUI via the shared renderer */
@@ -239,9 +226,9 @@ static int render_thread_func(void *data)
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        SDL_GL_SwapWindow(gui->window);
+        SwapBuffers(gui->hdc);
 
-        SDL_Delay(16); /* ~60fps */
+        Sleep(16); /* ~60fps */
     }
 
     /* Cleanup on render thread */
@@ -254,18 +241,259 @@ static int render_thread_func(void *data)
     fx_texture_shutdown();
 
     ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext(gui->imgui_ctx);
     gui->imgui_ctx = NULL;
+
+    wglMakeCurrent(NULL, NULL);
 
     return 0;
 }
 
-/* ─── Public C API ───────────────────────────────────────────────────────── */
+/* ─── Window class registration ────────────────────────────────────────── */
+
+static void ensure_wnd_class(void)
+{
+    if (s_wnd_class_registered) return;
+
+    WNDCLASSEXW wc = {};
+    wc.cbSize        = sizeof(wc);
+    wc.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    wc.lpfnWndProc   = PluginWndProc;
+    wc.hInstance      = GetModuleHandleW(NULL);
+    wc.lpszClassName  = OXFX_WND_CLASS;
+    wc.hCursor        = LoadCursor(NULL, IDC_ARROW);
+
+    if (RegisterClassExW(&wc))
+        s_wnd_class_registered = true;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Linux implementation — X11 + GLX (stub with basic structure)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+#elif defined(__linux__)
+
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include <pthread.h>
+#include <unistd.h>
+
+struct PluginGUI {
+    fx_engine_t    *engine;
+    fx_gui_state_t *gui_state;
+    Display        *display;
+    Window          window;
+    GLXContext      gl_ctx;
+    Colormap        colormap;
+    pthread_t       render_thread;
+    volatile bool   running;
+    volatile bool   visible;
+    uint32_t        width;
+    uint32_t        height;
+    void           *parent_handle;
+    ImGuiContext   *imgui_ctx;
+    bool            thread_created;
+};
+
+/* Map X11 mouse button to ImGui mouse button index */
+static int x11_button_to_imgui(int button)
+{
+    switch (button) {
+    case 1: return 0; /* Left */
+    case 2: return 2; /* Middle */
+    case 3: return 1; /* Right */
+    default: return -1;
+    }
+}
+
+/* Map X11 KeySym to ImGuiKey */
+static ImGuiKey x11_keysym_to_imgui(KeySym ks)
+{
+    if (ks >= 'a' && ks <= 'z') return (ImGuiKey)(ImGuiKey_A + (ks - 'a'));
+    if (ks >= 'A' && ks <= 'Z') return (ImGuiKey)(ImGuiKey_A + (ks - 'A'));
+    if (ks >= '0' && ks <= '9') return (ImGuiKey)(ImGuiKey_0 + (ks - '0'));
+
+    switch (ks) {
+    case XK_Tab:       return ImGuiKey_Tab;
+    case XK_Left:      return ImGuiKey_LeftArrow;
+    case XK_Right:     return ImGuiKey_RightArrow;
+    case XK_Up:        return ImGuiKey_UpArrow;
+    case XK_Down:      return ImGuiKey_DownArrow;
+    case XK_Home:      return ImGuiKey_Home;
+    case XK_End:       return ImGuiKey_End;
+    case XK_Delete:    return ImGuiKey_Delete;
+    case XK_BackSpace: return ImGuiKey_Backspace;
+    case XK_Return:    return ImGuiKey_Enter;
+    case XK_Escape:    return ImGuiKey_Escape;
+    case XK_space:     return ImGuiKey_Space;
+    default:           return ImGuiKey_None;
+    }
+}
+
+static void process_x11_events(PluginGUI *gui)
+{
+    ImGuiIO &io = ImGui::GetIO();
+
+    while (XPending(gui->display)) {
+        XEvent ev;
+        XNextEvent(gui->display, &ev);
+
+        switch (ev.type) {
+        case MotionNotify:
+            io.AddMousePosEvent((float)ev.xmotion.x, (float)ev.xmotion.y);
+            break;
+
+        case ButtonPress: {
+            int btn = x11_button_to_imgui(ev.xbutton.button);
+            if (btn >= 0) io.AddMouseButtonEvent(btn, true);
+            /* Scroll wheel */
+            if (ev.xbutton.button == 4) io.AddMouseWheelEvent(0, 1.0f);
+            if (ev.xbutton.button == 5) io.AddMouseWheelEvent(0, -1.0f);
+            break;
+        }
+
+        case ButtonRelease: {
+            int btn = x11_button_to_imgui(ev.xbutton.button);
+            if (btn >= 0) io.AddMouseButtonEvent(btn, false);
+            break;
+        }
+
+        case KeyPress:
+        case KeyRelease: {
+            bool down = (ev.type == KeyPress);
+            KeySym ks = XLookupKeysym(&ev.xkey, 0);
+            ImGuiKey key = x11_keysym_to_imgui(ks);
+            if (key != ImGuiKey_None)
+                io.AddKeyEvent(key, down);
+
+            /* Text input on key press */
+            if (down) {
+                char buf[8] = {};
+                int len = XLookupString(&ev.xkey, buf, sizeof(buf) - 1, NULL, NULL);
+                for (int i = 0; i < len; i++) {
+                    if ((unsigned char)buf[i] >= 32)
+                        io.AddInputCharacter((unsigned int)(unsigned char)buf[i]);
+                }
+            }
+            break;
+        }
+
+        case ConfigureNotify:
+            if ((uint32_t)ev.xconfigure.width != gui->width ||
+                (uint32_t)ev.xconfigure.height != gui->height) {
+                gui->width = (uint32_t)ev.xconfigure.width;
+                gui->height = (uint32_t)ev.xconfigure.height;
+            }
+            break;
+
+        case FocusIn:
+            io.AddFocusEvent(true);
+            break;
+        case FocusOut:
+            io.AddFocusEvent(false);
+            break;
+
+        default:
+            break;
+        }
+    }
+}
+
+static void *render_thread_func(void *data)
+{
+    PluginGUI *gui = (PluginGUI *)data;
+
+    glXMakeCurrent(gui->display, gui->window, gui->gl_ctx);
+
+    /* ImGui setup on render thread */
+    IMGUI_CHECKVERSION();
+    gui->imgui_ctx = ImGui::CreateContext();
+    ImGui::SetCurrentContext(gui->imgui_ctx);
+
+    ImGuiIO &io = ImGui::GetIO();
+    io.IniFilename = NULL;
+    io.ConfigDebugHighlightIdConflicts = false;
+    io.DisplaySize = ImVec2((float)gui->width, (float)gui->height);
+
+    /* Apply the shared 0xFX "worn grime" theme */
+    fx_gui_setup_theme();
+
+    /* No ImGui_ImplX11 backend — we feed events manually */
+    ImGui_ImplOpenGL3_Init("#version 330");
+
+    gui->gui_state = fx_gui_create(gui->engine);
+
+    while (gui->running) {
+        if (!gui->visible) {
+            usleep(50000);
+            continue;
+        }
+
+        process_x11_events(gui);
+
+        /* Update display size */
+        io.DisplaySize = ImVec2((float)gui->width, (float)gui->height);
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui::NewFrame();
+
+        fx_gui_render_frame(gui->gui_state, (float)gui->width, (float)gui->height,
+                            true);
+
+        ImGui::Render();
+
+        glViewport(0, 0, (int)gui->width, (int)gui->height);
+        glClearColor(0.06f, 0.05f, 0.04f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glXSwapBuffers(gui->display, gui->window);
+
+        usleep(16000); /* ~60fps */
+    }
+
+    if (gui->gui_state) {
+        fx_gui_destroy(gui->gui_state);
+        gui->gui_state = NULL;
+    }
+
+    fx_texture_shutdown();
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui::DestroyContext(gui->imgui_ctx);
+    gui->imgui_ctx = NULL;
+
+    glXMakeCurrent(gui->display, None, NULL);
+
+    return NULL;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * macOS stub
+ * ═══════════════════════════════════════════════════════════════════════════ */
+#elif defined(__APPLE__)
+
+struct PluginGUI {
+    fx_engine_t    *engine;
+    fx_gui_state_t *gui_state;
+    volatile bool   running;
+    volatile bool   visible;
+    uint32_t        width;
+    uint32_t        height;
+    void           *parent_handle;
+    ImGuiContext   *imgui_ctx;
+};
+
+#endif /* platform */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Public C API — platform-dispatched
+ * ═══════════════════════════════════════════════════════════════════════════ */
 
 extern "C" {
 
-/* Forward declarations */
 void oxfx_gui_detach(void *gui_ptr);
 
 void *oxfx_gui_create(void *engine)
@@ -286,6 +514,8 @@ void oxfx_gui_destroy(void *gui_ptr)
     delete gui;
 }
 
+/* ─── Attach (create window + start render thread) ─────────────────────── */
+
 void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
 {
     if (!gui_ptr) return;
@@ -294,72 +524,155 @@ void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
 
     gui->parent_handle = parent_hwnd;
 
-    /* Only init SDL video if not already initialized (avoids conflict with 0x808/0xSYNTH) */
-    if (!(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) {
-        if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-            fprintf(stderr, "0xFX Plugin GUI: SDL_Init failed: %s\n", SDL_GetError());
-            return;
-        }
-    }
-
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
-    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
-
-    gui->window = SDL_CreateWindow(
-        "0xFX",
-        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        (int)gui->width, (int)gui->height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_HIDDEN
-    );
-    if (!gui->window) {
-        fprintf(stderr, "0xFX Plugin GUI: SDL_CreateWindow failed: %s\n", SDL_GetError());
-        return;
-    }
-
-    gui->gl_ctx = SDL_GL_CreateContext(gui->window);
-    if (!gui->gl_ctx) {
-        fprintf(stderr, "0xFX Plugin GUI: GL context failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(gui->window);
-        gui->window = NULL;
-        return;
-    }
-
-    /* Reparent into host window (platform-specific) */
 #ifdef _WIN32
-    {
-        SDL_SysWMinfo wm_info;
-        SDL_VERSION(&wm_info.version);
-        if (SDL_GetWindowWMInfo(gui->window, &wm_info)) {
-            HWND sdl_hwnd = wm_info.info.win.window;
-            HWND host_hwnd = (HWND)parent_hwnd;
-            SetParent(sdl_hwnd, host_hwnd);
-            LONG style = GetWindowLong(sdl_hwnd, GWL_STYLE);
-            style = (style & ~WS_POPUP) | WS_CHILD;
-            SetWindowLong(sdl_hwnd, GWL_STYLE, style);
-            SetWindowPos(sdl_hwnd, NULL, 0, 0, (int)gui->width, (int)gui->height,
-                         SWP_NOZORDER | SWP_FRAMECHANGED);
-            ShowWindow(sdl_hwnd, SW_SHOW);
+    /* Register our window class (once) */
+    ensure_wnd_class();
 
-            /* Install WndProc hook for keyboard/mouse capture */
-            s_orig_wndproc = (WNDPROC)SetWindowLongPtrW(
-                sdl_hwnd, GWLP_WNDPROC, (LONG_PTR)PluginWndProc);
-        }
+    /* Create child window inside the host's parent HWND */
+    gui->hwnd = CreateWindowExW(
+        0,
+        OXFX_WND_CLASS,
+        L"0xFX",
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        0, 0, (int)gui->width, (int)gui->height,
+        (HWND)parent_hwnd,
+        NULL,
+        GetModuleHandleW(NULL),
+        NULL
+    );
+    if (!gui->hwnd) {
+        fprintf(stderr, "0xFX Plugin GUI: CreateWindowExW failed (error %lu)\n",
+                GetLastError());
+        return;
     }
-#else
-    SDL_ShowWindow(gui->window);
-#endif
+
+    gui->hdc = GetDC(gui->hwnd);
+    if (!gui->hdc) {
+        fprintf(stderr, "0xFX Plugin GUI: GetDC failed\n");
+        DestroyWindow(gui->hwnd);
+        gui->hwnd = NULL;
+        return;
+    }
+
+    if (!setup_pixel_format(gui->hdc)) {
+        fprintf(stderr, "0xFX Plugin GUI: pixel format setup failed\n");
+        ReleaseDC(gui->hwnd, gui->hdc);
+        DestroyWindow(gui->hwnd);
+        gui->hwnd = NULL;
+        gui->hdc = NULL;
+        return;
+    }
+
+    gui->hglrc = create_gl33_context(gui->hdc);
+    if (!gui->hglrc) {
+        fprintf(stderr, "0xFX Plugin GUI: GL context creation failed\n");
+        ReleaseDC(gui->hwnd, gui->hdc);
+        DestroyWindow(gui->hwnd);
+        gui->hwnd = NULL;
+        gui->hdc = NULL;
+        return;
+    }
 
     /* Release GL context from this thread before starting render thread */
-    SDL_GL_MakeCurrent(gui->window, NULL);
+    wglMakeCurrent(NULL, NULL);
 
     gui->running = true;
     gui->visible = true;
-    gui->render_thread = SDL_CreateThread(render_thread_func, "oxfx_gui", gui);
+    gui->render_thread = CreateThread(NULL, 0, render_thread_func, gui, 0, NULL);
+
+#elif defined(__linux__)
+    /* Open a separate X display connection for this plugin instance.
+     * This avoids thread-safety issues with the host's Display*. */
+    gui->display = XOpenDisplay(NULL);
+    if (!gui->display) {
+        fprintf(stderr, "0xFX Plugin GUI: XOpenDisplay failed\n");
+        return;
+    }
+
+    int screen = DefaultScreen(gui->display);
+
+    /* Choose a visual with GLX */
+    int attribs[] = {
+        GLX_RGBA,
+        GLX_DOUBLEBUFFER,
+        GLX_RED_SIZE, 8,
+        GLX_GREEN_SIZE, 8,
+        GLX_BLUE_SIZE, 8,
+        GLX_DEPTH_SIZE, 24,
+        None
+    };
+    XVisualInfo *vi = glXChooseVisual(gui->display, screen, attribs);
+    if (!vi) {
+        fprintf(stderr, "0xFX Plugin GUI: glXChooseVisual failed\n");
+        XCloseDisplay(gui->display);
+        gui->display = NULL;
+        return;
+    }
+
+    /* Create colormap + window */
+    Window parent_win = parent_hwnd ? (Window)(uintptr_t)parent_hwnd
+                                    : RootWindow(gui->display, screen);
+    gui->colormap = XCreateColormap(gui->display, RootWindow(gui->display, screen),
+                                    vi->visual, AllocNone);
+
+    XSetWindowAttributes swa = {};
+    swa.colormap = gui->colormap;
+    swa.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask |
+                     ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
+                     StructureNotifyMask | FocusChangeMask | EnterWindowMask;
+
+    gui->window = XCreateWindow(
+        gui->display, parent_win,
+        0, 0, gui->width, gui->height,
+        0, vi->depth, InputOutput, vi->visual,
+        CWColormap | CWEventMask, &swa
+    );
+    XFree(vi);
+
+    if (!gui->window) {
+        fprintf(stderr, "0xFX Plugin GUI: XCreateWindow failed\n");
+        XFreeColormap(gui->display, gui->colormap);
+        XCloseDisplay(gui->display);
+        gui->display = NULL;
+        return;
+    }
+
+    /* If parent was provided and isn't the root, reparent */
+    if (parent_hwnd) {
+        XReparentWindow(gui->display, gui->window,
+                        (Window)(uintptr_t)parent_hwnd, 0, 0);
+    }
+    XMapWindow(gui->display, gui->window);
+    XSync(gui->display, False);
+
+    /* Create GLX context */
+    gui->gl_ctx = glXCreateContext(gui->display, glXChooseVisual(gui->display, screen,
+        attribs), NULL, GL_TRUE);
+    if (!gui->gl_ctx) {
+        fprintf(stderr, "0xFX Plugin GUI: glXCreateContext failed\n");
+        XDestroyWindow(gui->display, gui->window);
+        XFreeColormap(gui->display, gui->colormap);
+        XCloseDisplay(gui->display);
+        gui->display = NULL;
+        return;
+    }
+
+    /* Release GL context from this thread */
+    glXMakeCurrent(gui->display, None, NULL);
+
+    gui->running = true;
+    gui->visible = true;
+    gui->thread_created = true;
+    pthread_create(&gui->render_thread, NULL, render_thread_func, gui);
+
+#elif defined(__APPLE__)
+    /* macOS stub — not yet implemented */
+    fprintf(stderr, "0xFX Plugin GUI: macOS native GUI not yet implemented\n");
+    (void)parent_hwnd;
+#endif
 }
+
+/* ─── Detach (stop render thread + destroy window) ─────────────────────── */
 
 void oxfx_gui_detach(void *gui_ptr)
 {
@@ -368,31 +681,51 @@ void oxfx_gui_detach(void *gui_ptr)
     if (!gui->running) return;
 
     gui->running = false;
-    if (gui->render_thread) {
-        SDL_WaitThread(gui->render_thread, NULL);
-        gui->render_thread = NULL;
-    }
 
 #ifdef _WIN32
-    /* Restore original WndProc before destroying window */
-    if (gui->window && s_orig_wndproc) {
-        SDL_SysWMinfo wi;
-        SDL_VERSION(&wi.version);
-        if (SDL_GetWindowWMInfo(gui->window, &wi)) {
-            SetWindowLongPtrW(wi.info.win.window, GWLP_WNDPROC, (LONG_PTR)s_orig_wndproc);
-        }
-        s_orig_wndproc = NULL;
+    if (gui->render_thread) {
+        WaitForSingleObject(gui->render_thread, INFINITE);
+        CloseHandle(gui->render_thread);
+        gui->render_thread = NULL;
     }
-#endif
+    if (gui->hglrc) {
+        wglDeleteContext(gui->hglrc);
+        gui->hglrc = NULL;
+    }
+    if (gui->hdc && gui->hwnd) {
+        ReleaseDC(gui->hwnd, gui->hdc);
+        gui->hdc = NULL;
+    }
+    if (gui->hwnd) {
+        DestroyWindow(gui->hwnd);
+        gui->hwnd = NULL;
+    }
 
-    if (gui->gl_ctx) {
-        SDL_GL_DeleteContext(gui->gl_ctx);
+#elif defined(__linux__)
+    if (gui->thread_created) {
+        pthread_join(gui->render_thread, NULL);
+        gui->thread_created = false;
+    }
+    if (gui->gl_ctx && gui->display) {
+        glXDestroyContext(gui->display, gui->gl_ctx);
         gui->gl_ctx = NULL;
     }
-    if (gui->window) {
-        SDL_DestroyWindow(gui->window);
-        gui->window = NULL;
+    if (gui->window && gui->display) {
+        XDestroyWindow(gui->display, gui->window);
+        gui->window = 0;
     }
+    if (gui->colormap && gui->display) {
+        XFreeColormap(gui->display, gui->colormap);
+        gui->colormap = 0;
+    }
+    if (gui->display) {
+        XCloseDisplay(gui->display);
+        gui->display = NULL;
+    }
+
+#elif defined(__APPLE__)
+    /* macOS stub */
+#endif
 }
 
 void oxfx_gui_set_visible(void *gui_ptr, bool visible)
@@ -400,10 +733,20 @@ void oxfx_gui_set_visible(void *gui_ptr, bool visible)
     if (!gui_ptr) return;
     PluginGUI *gui = (PluginGUI *)gui_ptr;
     gui->visible = visible;
-    if (gui->window) {
-        if (visible) SDL_ShowWindow(gui->window);
-        else SDL_HideWindow(gui->window);
+
+#ifdef _WIN32
+    if (gui->hwnd) {
+        ShowWindow(gui->hwnd, visible ? SW_SHOW : SW_HIDE);
     }
+#elif defined(__linux__)
+    if (gui->display && gui->window) {
+        if (visible)
+            XMapWindow(gui->display, gui->window);
+        else
+            XUnmapWindow(gui->display, gui->window);
+        XFlush(gui->display);
+    }
+#endif
 }
 
 void oxfx_gui_get_size(void *gui_ptr, uint32_t *w, uint32_t *h)
@@ -424,9 +767,18 @@ bool oxfx_gui_set_size(void *gui_ptr, uint32_t w, uint32_t h)
     PluginGUI *gui = (PluginGUI *)gui_ptr;
     gui->width = w;
     gui->height = h;
-    if (gui->window) {
-        SDL_SetWindowSize(gui->window, (int)w, (int)h);
+
+#ifdef _WIN32
+    if (gui->hwnd) {
+        SetWindowPos(gui->hwnd, NULL, 0, 0, (int)w, (int)h,
+                     SWP_NOZORDER | SWP_NOMOVE);
     }
+#elif defined(__linux__)
+    if (gui->display && gui->window) {
+        XResizeWindow(gui->display, gui->window, w, h);
+        XFlush(gui->display);
+    }
+#endif
     return true;
 }
 

@@ -978,37 +978,8 @@ static void sync_params_from_engine(OxFXPlugin *p)
 
 /* ── Library load/unload ────────────────────────────────────────── */
 
-static HMODULE g_sdl2_preloaded = NULL;
-
 void cplug_libraryLoad(void) {
-#ifdef _WIN32
-    /* Pre-load SDL2.dll from the plugin's own directory.
-     * Windows doesn't search the plugin DLL's directory for deps,
-     * so we must LoadLibrary with the full path. Once loaded,
-     * implicit imports resolve from the in-memory module. */
-    if (!g_sdl2_preloaded) {
-        char dllPath[512] = {0};
-        HMODULE hm = NULL;
-        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               (LPCSTR)cplug_libraryLoad, &hm)) {
-            GetModuleFileNameA(hm, dllPath, sizeof(dllPath));
-            /* Strip filename to get directory */
-            char *sep = strrchr(dllPath, '\\');
-            if (!sep) sep = strrchr(dllPath, '/');
-            if (sep) sep[1] = '\0';
-            /* Also check parent dir for VST3 bundles (Contents/x86_64-win/) */
-            char sdl2Path[512];
-            snprintf(sdl2Path, sizeof(sdl2Path), "%sSDL2.dll", dllPath);
-            g_sdl2_preloaded = LoadLibraryA(sdl2Path);
-            if (!g_sdl2_preloaded) {
-                /* Try parent directories (VST3 bundle: go up 2 levels) */
-                snprintf(sdl2Path, sizeof(sdl2Path), "%s..\\..\\..\\SDL2.dll", dllPath);
-                g_sdl2_preloaded = LoadLibraryA(sdl2Path);
-            }
-        }
-    }
-#endif
+    /* Plugins use native platform APIs — no external DLLs to pre-load */
 }
 void cplug_libraryUnload(void) {}
 
@@ -1851,18 +1822,18 @@ int oxfx_plugin_get_cc_mapping(void *user_plugin, int cc_number)
     return p->cc_map[cc_number];
 }
 
-/* ── GUI (CPLUG — embedded ImGui+SDL2+OpenGL) ──────────────────── */
+/* ── GUI (CPLUG — embedded ImGui+native platform+OpenGL) ───────── */
 
 #ifdef OXFX_PLUGIN_HAS_GUI
 
 /*
- * Plugin GUI — SDL2 window embedded inside DAW host window.
+ * Plugin GUI — native platform window embedded inside DAW host window.
  *
  * The actual implementation lives in gui_plugin_bridge.cpp which manages:
- * - SDL2 window creation + OpenGL context
- * - Win32 reparenting (SetParent + WS_CHILD) / Linux X11
+ * - Native window creation (Win32 CreateWindowExW / X11 XCreateWindow)
+ * - OpenGL context (WGL / GLX) — no SDL2 dependency
  * - Dedicated render thread running ImGui + fx_gui_render_frame()
- * - WndProc subclass for keyboard/mouse capture on Windows
+ * - Win32 WndProc for keyboard/mouse + ImGui_ImplWin32 backend
  *
  * These C-callable functions are the bridge API:
  */

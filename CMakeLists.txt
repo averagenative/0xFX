@@ -71,8 +71,8 @@ target_include_directories(fx_engine PRIVATE
 target_link_libraries(fx_engine PRIVATE m)
 set_target_properties(fx_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# ── ImGui library (C++) ───────────────────────────────────────
-# SDL2 detection: toolchain may set SDL2_FOUND+SDL2_INCLUDE_DIRS, else try system
+# ── SDL2 detection ───────────────────────────────────────────
+# SDL2 is needed for the standalone GUI app only — plugins use native APIs
 if(NOT SDL2_FOUND)
     find_package(SDL2 QUIET)
 endif()
@@ -82,6 +82,7 @@ if(NOT SDL2_FOUND AND EXISTS "/usr/include/SDL2/SDL.h")
     set(SDL2_LIBRARIES SDL2)
 endif()
 
+# ── ImGui library for standalone (SDL2 backend) ──────────────
 if(SDL2_FOUND)
     add_library(imgui STATIC
         deps/imgui/imgui.cpp
@@ -98,11 +99,38 @@ if(SDL2_FOUND)
     )
     set_target_properties(imgui PROPERTIES POSITION_INDEPENDENT_CODE ON)
     set(HAS_GUI TRUE)
-    message(STATUS "GUI enabled (SDL2 from: ${SDL2_INCLUDE_DIRS})")
+    message(STATUS "Standalone GUI enabled (SDL2 from: ${SDL2_INCLUDE_DIRS})")
 else()
     set(HAS_GUI FALSE)
-    message(STATUS "GUI disabled (SDL2 not found)")
+    message(STATUS "Standalone GUI disabled (SDL2 not found)")
 endif()
+
+# ── ImGui library for plugins (native platform backend, no SDL2) ──
+# Windows: ImGui_ImplWin32 + ImGui_ImplOpenGL3
+# Linux:   ImGui_ImplOpenGL3 only (X11 events fed manually)
+set(IMGUI_PLUGIN_SOURCES
+    deps/imgui/imgui.cpp
+    deps/imgui/imgui_draw.cpp
+    deps/imgui/imgui_tables.cpp
+    deps/imgui/imgui_widgets.cpp
+    deps/imgui/backends/imgui_impl_opengl3.cpp
+)
+if(WIN32 OR MINGW)
+    list(APPEND IMGUI_PLUGIN_SOURCES
+        deps/imgui/backends/imgui_impl_win32.cpp
+    )
+endif()
+
+add_library(imgui_plugin STATIC ${IMGUI_PLUGIN_SOURCES})
+target_include_directories(imgui_plugin PUBLIC
+    ${CMAKE_SOURCE_DIR}/deps/imgui
+    ${CMAKE_SOURCE_DIR}/deps/imgui/backends
+)
+# Disable gamepad support in Win32 backend — plugins don't need XInput
+target_compile_definitions(imgui_plugin PRIVATE IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
+set_target_properties(imgui_plugin PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set(HAS_PLUGIN_GUI TRUE)
+message(STATUS "Plugin GUI enabled (native platform APIs, no SDL2)")
 
 # ── ALSA detection (optional, for MIDI on Linux) ──────────────
 if(UNIX AND NOT APPLE)
@@ -208,20 +236,19 @@ endif()
 
 # ── Shared plugin GUI sources ─────────────────────────────────
 # GUI render + widget sources shared between plugin targets
-if(HAS_GUI)
-    set(PLUGIN_GUI_SOURCES
-        src/gui/gui_render.cpp
-        src/gui/knobs.cpp
-        src/gui/texture.c
-        src/gui/embedded_assets.c
-    )
-    set(PLUGIN_GUI_INCLUDES
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/deps
-        ${CMAKE_SOURCE_DIR}/deps/imgui
-        ${CMAKE_SOURCE_DIR}/deps/imgui/backends
-    )
-endif()
+# No longer gated on HAS_GUI (SDL2) — plugins use native platform APIs
+set(PLUGIN_GUI_SOURCES
+    src/gui/gui_render.cpp
+    src/gui/knobs.cpp
+    src/gui/texture.c
+    src/gui/embedded_assets.c
+)
+set(PLUGIN_GUI_INCLUDES
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/deps
+    ${CMAKE_SOURCE_DIR}/deps/imgui
+    ${CMAKE_SOURCE_DIR}/deps/imgui/backends
+)
 
 # ── CLAP plugin shared library ────────────────────────────────
     set(CLAP_SOURCES
@@ -229,7 +256,7 @@ endif()
         deps/cplug/src/cplug_clap.c
         src/core/log.c
     )
-    if(HAS_GUI)
+    if(HAS_PLUGIN_GUI)
         list(APPEND CLAP_SOURCES ${PLUGIN_GUI_SOURCES}
             src/plugin/gui_plugin_bridge.cpp)
     endif()
@@ -239,17 +266,12 @@ endif()
         ${CMAKE_SOURCE_DIR}/deps/cplug/src
         ${CMAKE_SOURCE_DIR}/src/engine
     )
-    if(HAS_GUI)
+    if(HAS_PLUGIN_GUI)
         target_include_directories(0xfx_clap PRIVATE ${PLUGIN_GUI_INCLUDES})
         target_compile_definitions(0xfx_clap PRIVATE OXFX_PLUGIN_HAS_GUI=1)
-        target_link_libraries(0xfx_clap PRIVATE imgui)
-        if(SDL2_FOUND)
-            target_link_libraries(0xfx_clap PRIVATE ${SDL2_LIBRARIES})
-        else()
-            target_link_libraries(0xfx_clap PRIVATE SDL2)
-        endif()
+        target_link_libraries(0xfx_clap PRIVATE imgui_plugin)
         if(UNIX AND NOT APPLE)
-            target_link_libraries(0xfx_clap PRIVATE GL)
+            target_link_libraries(0xfx_clap PRIVATE GL X11)
         endif()
     endif()
     target_compile_definitions(0xfx_clap PRIVATE CPLUG_SHARED)
@@ -272,7 +294,7 @@ endif()
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_clap PRIVATE pthread dl)
     elseif(WIN32 OR MINGW)
-        target_link_libraries(0xfx_clap PRIVATE ole32 winmm opengl32)
+        target_link_libraries(0xfx_clap PRIVATE ole32 winmm opengl32 dwmapi gdi32 imm32)
     endif()
     message(STATUS "CLAP plugin target enabled")
 
@@ -282,7 +304,7 @@ endif()
         deps/cplug/src/cplug_vst3.c
         src/core/log.c
     )
-    if(HAS_GUI)
+    if(HAS_PLUGIN_GUI)
         list(APPEND VST3_SOURCES ${PLUGIN_GUI_SOURCES}
             src/plugin/gui_plugin_bridge.cpp)
     endif()
@@ -292,17 +314,12 @@ endif()
         ${CMAKE_SOURCE_DIR}/deps/cplug/src
         ${CMAKE_SOURCE_DIR}/src/engine
     )
-    if(HAS_GUI)
+    if(HAS_PLUGIN_GUI)
         target_include_directories(0xfx_vst3 PRIVATE ${PLUGIN_GUI_INCLUDES})
         target_compile_definitions(0xfx_vst3 PRIVATE OXFX_PLUGIN_HAS_GUI=1)
-        target_link_libraries(0xfx_vst3 PRIVATE imgui)
-        if(SDL2_FOUND)
-            target_link_libraries(0xfx_vst3 PRIVATE ${SDL2_LIBRARIES})
-        else()
-            target_link_libraries(0xfx_vst3 PRIVATE SDL2)
-        endif()
+        target_link_libraries(0xfx_vst3 PRIVATE imgui_plugin)
         if(UNIX AND NOT APPLE)
-            target_link_libraries(0xfx_vst3 PRIVATE GL)
+            target_link_libraries(0xfx_vst3 PRIVATE GL X11)
         endif()
     endif()
     target_compile_definitions(0xfx_vst3 PRIVATE CPLUG_SHARED)
@@ -324,7 +341,7 @@ endif()
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_vst3 PRIVATE pthread dl)
     elseif(WIN32 OR MINGW)
-        target_link_libraries(0xfx_vst3 PRIVATE ole32 winmm opengl32)
+        target_link_libraries(0xfx_vst3 PRIVATE ole32 winmm opengl32 dwmapi gdi32 imm32)
     endif()
 
     # VST3 bundle structure (required by Reaper and most hosts)
@@ -341,14 +358,4 @@ endif()
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:0xfx_vst3>" "${VST3_BUNDLE_DIR}/0xFX.vst3"
         COMMENT "Creating VST3 bundle: 0xFX.vst3.bundle"
     )
-    # Copy SDL2.dll alongside plugins (needed for dynamic linking)
-    if(MINGW AND SDL2_DLL_PATH)
-        add_custom_command(TARGET 0xfx_clap POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_DLL_PATH}" "${CMAKE_BINARY_DIR}/SDL2.dll"
-            COMMENT "Copying SDL2.dll for plugin use"
-        )
-        add_custom_command(TARGET 0xfx_vst3 POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_DLL_PATH}" "${VST3_BUNDLE_DIR}/SDL2.dll"
-        )
-    endif()
     message(STATUS "VST3 plugin target enabled")
