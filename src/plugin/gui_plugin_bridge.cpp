@@ -186,15 +186,25 @@ static void gui_dbg(const char *fmt, ...) {
 static void gui_dbg(const char *fmt, ...) { (void)fmt; }
 #endif
 
+/* Global mutex for GL initialization — WGL is not thread-safe */
+static CRITICAL_SECTION s_gl_init_cs;
+static bool s_gl_init_cs_ready = false;
+
 static DWORD WINAPI render_thread_func(LPVOID data)
 {
     PluginGUI *gui = (PluginGUI *)data;
     gui_dbg("render_thread START engine=%p", gui->engine);
 
-    wglMakeCurrent(gui->hdc, gui->hglrc);
+    /* Serialize GL/ImGui initialization — WGL can't handle concurrent
+     * context operations across threads on Windows */
+    if (!s_gl_init_cs_ready) {
+        InitializeCriticalSection(&s_gl_init_cs);
+        s_gl_init_cs_ready = true;
+    }
+    EnterCriticalSection(&s_gl_init_cs);
+    gui_dbg("render_thread GL init lock acquired");
 
-    /* Texture cache is now per-thread — no need to clear.
-     * Each instance's render thread gets its own cache entries. */
+    wglMakeCurrent(gui->hdc, gui->hglrc);
 
     /* ImGui setup on render thread */
     IMGUI_CHECKVERSION();
@@ -203,10 +213,8 @@ static DWORD WINAPI render_thread_func(LPVOID data)
 
     /* Disable imgui.ini — DAW working dirs are unpredictable */
     ImGui::GetIO().IniFilename = NULL;
-    /* Suppress ID conflict popups in plugin — they're non-fatal */
     ImGui::GetIO().ConfigDebugHighlightIdConflicts = false;
 
-    /* Apply the shared 0xFX "worn grime" theme */
     fx_gui_setup_theme();
 
     ImGui_ImplWin32_InitForOpenGL(gui->hwnd);
@@ -214,6 +222,9 @@ static DWORD WINAPI render_thread_func(LPVOID data)
 
     /* Create the GUI rendering state (bound to the engine) */
     gui->gui_state = fx_gui_create(gui->engine);
+
+    gui_dbg("render_thread GL init complete, releasing lock");
+    LeaveCriticalSection(&s_gl_init_cs);
 
     while (gui->running) {
         if (!gui->visible) {
