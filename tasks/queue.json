@@ -2698,5 +2698,27 @@
       "src/gui/gui_render.cpp",
       "src/gui/gui_main.cpp"
     ]
+  },
+  {
+    "id": "TASK-348",
+    "priority": "HIGH",
+    "title": "Fix multi-plugin coexistence (SDL2 conflict in DAW)",
+    "domain": "infra",
+    "phase": 6,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 40000,
+    "acceptanceCriteria": [
+      "0xFX, 0x808, and 0xSYNTH can all be loaded simultaneously in Reaper",
+      "Each plugin opens its GUI independently without crashing or blocking others",
+      "Solution options: (1) shared SDL2.dll, (2) native Win32 OpenGL, (3) symbol namespacing",
+      "Apply fix across all three projects for consistency",
+      "Bundle SDL2.dll alongside plugins if using shared approach"
+    ],
+    "files": [
+      "CMakeLists.txt",
+      "src/plugin/gui_plugin_bridge.cpp"
+    ]
   }
 ]
