@@ -88,6 +88,13 @@ struct PluginGUI {
 
 static LRESULT CALLBACK PluginWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+    /* Get our PluginGUI pointer from the window userdata */
+    PluginGUI *gui = (PluginGUI *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+
+    /* Set the correct ImGui context for this instance (multi-instance safe) */
+    if (gui && gui->imgui_ctx)
+        ImGui::SetCurrentContext(gui->imgui_ctx);
+
     /* Let ImGui process the event first */
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
         return 0;
@@ -238,7 +245,7 @@ static DWORD WINAPI render_thread_func(LPVOID data)
     }
 
     /* Flush texture cache — GL IDs are invalid after context destruction */
-    fx_texture_shutdown();
+    /* NOTE: dont call fx_texture_shutdown — global cache shared across instances */
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplWin32_Shutdown();
@@ -459,7 +466,7 @@ static void *render_thread_func(void *data)
         gui->gui_state = NULL;
     }
 
-    fx_texture_shutdown();
+    /* NOTE: dont call fx_texture_shutdown — global cache shared across instances */
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui::DestroyContext(gui->imgui_ctx);
@@ -545,6 +552,9 @@ void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
                 GetLastError());
         return;
     }
+
+    /* Store our PluginGUI pointer on the window for WndProc to find */
+    SetWindowLongPtrW(gui->hwnd, GWLP_USERDATA, (LONG_PTR)gui);
 
     gui->hdc = GetDC(gui->hwnd);
     if (!gui->hdc) {
