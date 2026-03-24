@@ -85,6 +85,11 @@ struct PluginGUI {
     ImGuiContext   *imgui_ctx;
 };
 
+/* Global mutex for GL/ImGui operations — serializes render frames
+ * AND protects ImGui context access from WndProc */
+static CRITICAL_SECTION s_gl_init_cs;
+static bool s_gl_init_cs_ready = false;
+
 /* ─── WndProc ──────────────────────────────────────────────────────────── */
 
 static LRESULT CALLBACK PluginWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -95,12 +100,18 @@ static LRESULT CALLBACK PluginWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
      * We MUST NOT call ImGui functions without a valid context. */
     PluginGUI *gui = (PluginGUI *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
-    if (gui && gui->imgui_ctx) {
-        ImGui::SetCurrentContext(gui->imgui_ctx);
-        if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
-            return 0;
+    if (gui && gui->imgui_ctx && s_gl_init_cs_ready) {
+        /* Try to acquire the render lock — if the render thread has it,
+         * skip ImGui processing (don't block the Windows message pump) */
+        if (TryEnterCriticalSection(&s_gl_init_cs)) {
+            ImGui::SetCurrentContext(gui->imgui_ctx);
+            LRESULT result = ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp);
+            LeaveCriticalSection(&s_gl_init_cs);
+            if (result)
+                return 0;
+        }
     }
-    /* No valid gui/context — skip ImGui, just handle basic messages */
+    /* No gui/context or render thread has the lock — handle basic messages */
 
     switch (msg) {
     case WM_CHAR:
@@ -185,10 +196,6 @@ static void gui_dbg(const char *fmt, ...) {
 #else
 static void gui_dbg(const char *fmt, ...) { (void)fmt; }
 #endif
-
-/* Global mutex for GL initialization — WGL is not thread-safe */
-static CRITICAL_SECTION s_gl_init_cs;
-static bool s_gl_init_cs_ready = false;
 
 static DWORD WINAPI render_thread_func(LPVOID data)
 {
