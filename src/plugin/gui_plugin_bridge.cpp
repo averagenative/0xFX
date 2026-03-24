@@ -89,16 +89,18 @@ struct PluginGUI {
 
 static LRESULT CALLBACK PluginWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    /* Get our PluginGUI pointer from the window userdata */
+    /* Get our PluginGUI pointer from the window userdata.
+     * During CreateWindowExW, GWLP_USERDATA isn't set yet — gui is NULL.
+     * The ImGui context is created on the render thread — imgui_ctx may be NULL.
+     * We MUST NOT call ImGui functions without a valid context. */
     PluginGUI *gui = (PluginGUI *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
-    /* Set the correct ImGui context for this instance (multi-instance safe) */
-    if (gui && gui->imgui_ctx)
+    if (gui && gui->imgui_ctx) {
         ImGui::SetCurrentContext(gui->imgui_ctx);
-
-    /* Let ImGui process the event first */
-    if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
-        return 0;
+        if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
+            return 0;
+    }
+    /* No valid gui/context — skip ImGui, just handle basic messages */
 
     switch (msg) {
     case WM_CHAR:
