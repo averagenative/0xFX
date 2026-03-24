@@ -29,17 +29,36 @@
 
 /* ── Cache ─────────────────────────────────────────────────────── */
 
-#define MAX_TEXTURES 128
+#define MAX_TEXTURES 512  /* larger to support multiple plugin instances */
 
 typedef struct {
     char      path[512];
     uintptr_t gl_id;
     int       width;
     int       height;
+    uintptr_t owner_thread;  /* thread ID that created this entry */
 } TexEntry;
 
 static TexEntry s_cache[MAX_TEXTURES];
 static int      s_count = 0;
+
+#ifdef _WIN32
+#include <windows.h>
+static CRITICAL_SECTION s_tex_cs;
+static bool s_tex_cs_init = false;
+static void tex_lock(void) {
+    if (!s_tex_cs_init) { InitializeCriticalSection(&s_tex_cs); s_tex_cs_init = true; }
+    EnterCriticalSection(&s_tex_cs);
+}
+static void tex_unlock(void) { LeaveCriticalSection(&s_tex_cs); }
+static uintptr_t tex_thread_id(void) { return (uintptr_t)GetCurrentThreadId(); }
+#else
+#include <pthread.h>
+static pthread_mutex_t s_tex_mutex = PTHREAD_MUTEX_INITIALIZER;
+static void tex_lock(void) { pthread_mutex_lock(&s_tex_mutex); }
+static void tex_unlock(void) { pthread_mutex_unlock(&s_tex_mutex); }
+static uintptr_t tex_thread_id(void) { return (uintptr_t)pthread_self(); }
+#endif
 
 /* ── Public API ─────────────────────────────────────────────────── */
 
@@ -47,16 +66,24 @@ uintptr_t fx_texture_load(const char *path)
 {
     if (!path) return 0;
 
-    /* Check cache first (includes previously failed loads cached with gl_id=0) */
+    uintptr_t tid = tex_thread_id();
+
+    tex_lock();
+
+    /* Check cache — only return hits created by the same thread (same GL context) */
     for (int i = 0; i < s_count; i++) {
-        if (strncmp(s_cache[i].path, path, sizeof(s_cache[i].path) - 1) == 0) {
-            return s_cache[i].gl_id;
+        if (s_cache[i].owner_thread == tid &&
+            strncmp(s_cache[i].path, path, sizeof(s_cache[i].path) - 1) == 0) {
+            uintptr_t id = s_cache[i].gl_id;
+            tex_unlock();
+            return id;
         }
     }
 
     if (s_count >= MAX_TEXTURES) {
         FX_WARN("fx_texture_load: cache full (%d entries), cannot load %s",
                 MAX_TEXTURES, path);
+        tex_unlock();
         return 0;
     }
 
@@ -72,8 +99,8 @@ uintptr_t fx_texture_load(const char *path)
         data = stbi_load(path, &w, &h, &channels, 4);
     }
     if (!data) {
-        /* Don't cache failures — the file might appear later (asset deploy).
-         * Use a simple "already warned" check to avoid log spam. */
+        tex_unlock();
+        /* Don't cache failures */
         static char s_warned[32][512];
         static int s_warn_count = 0;
         bool already_warned = false;
@@ -105,13 +132,16 @@ uintptr_t fx_texture_load(const char *path)
     stbi_image_free(data);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    /* Store in cache */
+    /* Store in cache with owner thread */
     TexEntry *e = &s_cache[s_count++];
     strncpy(e->path, path, sizeof(e->path) - 1);
     e->path[sizeof(e->path) - 1] = '\0';
     e->gl_id = (uintptr_t)tex_id;
     e->width  = w;
     e->height = h;
+    e->owner_thread = tid;
+
+    tex_unlock();
 
     FX_INFO("fx_texture_load: loaded '%s' (%dx%d) -> GL id %u", path, w, h, tex_id);
     return e->gl_id;
@@ -119,8 +149,9 @@ uintptr_t fx_texture_load(const char *path)
 
 bool fx_texture_get_size(uintptr_t gl_id, int *out_w, int *out_h)
 {
+    uintptr_t tid = tex_thread_id();
     for (int i = 0; i < s_count; i++) {
-        if (s_cache[i].gl_id == gl_id) {
+        if (s_cache[i].gl_id == gl_id && s_cache[i].owner_thread == tid) {
             if (out_w) *out_w = s_cache[i].width;
             if (out_h) *out_h = s_cache[i].height;
             return true;
