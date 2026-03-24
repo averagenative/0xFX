@@ -44,6 +44,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <string.h>
 
 /* ── Parameter layout constants ─────────────────────────────────── */
@@ -975,7 +978,38 @@ static void sync_params_from_engine(OxFXPlugin *p)
 
 /* ── Library load/unload ────────────────────────────────────────── */
 
-void cplug_libraryLoad(void)   {}
+void cplug_libraryLoad(void) {
+#ifdef _WIN32
+    /* Debug log to file so we can see what's happening */
+    FILE *dbg = fopen("C:\\Users\\Dan Michael\\Desktop\\0xfx_plugin_debug.log", "a");
+    if (dbg) {
+        fprintf(dbg, "=== 0xFX plugin libraryLoad ===\n");
+        /* Log our own DLL path */
+        char path[512] = {0};
+        HMODULE hm = NULL;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)cplug_libraryLoad, &hm)) {
+            GetModuleFileNameA(hm, path, sizeof(path));
+            fprintf(dbg, "Plugin DLL path: %s\n", path);
+        }
+        /* Log working directory */
+        char cwd[512] = {0};
+        GetCurrentDirectoryA(sizeof(cwd), cwd);
+        fprintf(dbg, "Working directory: %s\n", cwd);
+        /* Check if SDL2.dll is loadable */
+        HMODULE sdl = GetModuleHandleA("SDL2.dll");
+        fprintf(dbg, "SDL2.dll already loaded: %s\n", sdl ? "YES" : "NO");
+        if (!sdl) {
+            sdl = LoadLibraryA("SDL2.dll");
+            fprintf(dbg, "LoadLibrary(SDL2.dll): %s (err=%lu)\n",
+                    sdl ? "OK" : "FAILED", sdl ? 0 : GetLastError());
+            if (sdl) FreeLibrary(sdl);
+        }
+        fclose(dbg);
+    }
+#endif
+}
 void cplug_libraryUnload(void) {}
 
 /* ── Plugin lifecycle ───────────────────────────────────────────── */
