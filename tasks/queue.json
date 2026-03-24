@@ -2705,8 +2705,8 @@
     "title": "Fix multi-plugin coexistence (SDL2 conflict in DAW)",
     "domain": "infra",
     "phase": 6,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 40000,
     "acceptanceCriteria": [

@@ -16,11 +16,22 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(MINGW_SDL2_DIR "${CMAKE_SOURCE_DIR}/deps/SDL2-2.30.12/x86_64-w64-mingw32")
 set(SDL2_FOUND TRUE)
 set(SDL2_INCLUDE_DIRS "${MINGW_SDL2_DIR}/include;${MINGW_SDL2_DIR}/include/SDL2")
-# Static link — no SDL2.dll needed at runtime
-set(SDL2_LIBRARIES
+
+# Two SDL2 link modes:
+# - Static (libSDL2.a) for standalone exe — no DLL needed
+# - Dynamic (libSDL2.dll.a) for plugins — shares SDL2.dll with other plugins
+set(SDL2_STATIC_LIBRARIES
     "${MINGW_SDL2_DIR}/lib/libSDL2.a"
     imm32 version winmm setupapi gdi32 ole32 oleaut32 uuid
 )
+set(SDL2_DYNAMIC_LIBRARIES
+    "${MINGW_SDL2_DIR}/lib/libSDL2.dll.a"
+    imm32 version winmm setupapi gdi32 ole32 oleaut32 uuid
+)
+set(SDL2_DLL_PATH "${MINGW_SDL2_DIR}/bin/SDL2.dll")
+
+# Default: static (standalone builds use this)
+set(SDL2_LIBRARIES ${SDL2_STATIC_LIBRARIES})
 
 # ── OpenGL via mingw's opengl32 ────────────────────────────────────────────
 set(OpenGL_FOUND TRUE)

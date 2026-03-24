@@ -243,7 +243,10 @@ endif()
         target_include_directories(0xfx_clap PRIVATE ${PLUGIN_GUI_INCLUDES})
         target_compile_definitions(0xfx_clap PRIVATE OXFX_PLUGIN_HAS_GUI=1)
         target_link_libraries(0xfx_clap PRIVATE imgui)
-        if(SDL2_FOUND)
+        if(MINGW AND SDL2_DYNAMIC_LIBRARIES)
+            # Plugins use dynamic SDL2 to coexist with other plugins in same DAW
+            target_link_libraries(0xfx_clap PRIVATE ${SDL2_DYNAMIC_LIBRARIES})
+        elseif(SDL2_FOUND)
             target_link_libraries(0xfx_clap PRIVATE ${SDL2_LIBRARIES})
         else()
             target_link_libraries(0xfx_clap PRIVATE SDL2)
@@ -266,7 +269,8 @@ endif()
         C_VISIBILITY_PRESET hidden
     )
     if(MINGW)
-        target_link_options(0xfx_clap PRIVATE -static -static-libgcc -static-libstdc++)
+        # No -static — plugins use dynamic SDL2 for multi-plugin coexistence
+        target_link_options(0xfx_clap PRIVATE -static-libgcc -static-libstdc++)
     endif()
     target_link_libraries(0xfx_clap PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
@@ -296,7 +300,9 @@ endif()
         target_include_directories(0xfx_vst3 PRIVATE ${PLUGIN_GUI_INCLUDES})
         target_compile_definitions(0xfx_vst3 PRIVATE OXFX_PLUGIN_HAS_GUI=1)
         target_link_libraries(0xfx_vst3 PRIVATE imgui)
-        if(SDL2_FOUND)
+        if(MINGW AND SDL2_DYNAMIC_LIBRARIES)
+            target_link_libraries(0xfx_vst3 PRIVATE ${SDL2_DYNAMIC_LIBRARIES})
+        elseif(SDL2_FOUND)
             target_link_libraries(0xfx_vst3 PRIVATE ${SDL2_LIBRARIES})
         else()
             target_link_libraries(0xfx_vst3 PRIVATE SDL2)
@@ -318,7 +324,7 @@ endif()
         C_VISIBILITY_PRESET hidden
     )
     if(MINGW)
-        target_link_options(0xfx_vst3 PRIVATE -static -static-libgcc -static-libstdc++)
+        target_link_options(0xfx_vst3 PRIVATE -static-libgcc -static-libstdc++)
     endif()
     target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
@@ -341,4 +347,14 @@ endif()
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:0xfx_vst3>" "${VST3_BUNDLE_DIR}/0xFX.vst3"
         COMMENT "Creating VST3 bundle: 0xFX.vst3.bundle"
     )
+    # Copy SDL2.dll alongside plugins (needed for dynamic linking)
+    if(MINGW AND SDL2_DLL_PATH)
+        add_custom_command(TARGET 0xfx_clap POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_DLL_PATH}" "${CMAKE_BINARY_DIR}/SDL2.dll"
+            COMMENT "Copying SDL2.dll for plugin use"
+        )
+        add_custom_command(TARGET 0xfx_vst3 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_DLL_PATH}" "${VST3_BUNDLE_DIR}/SDL2.dll"
+        )
+    endif()
     message(STATUS "VST3 plugin target enabled")
