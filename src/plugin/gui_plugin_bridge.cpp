@@ -257,11 +257,21 @@ static DWORD WINAPI render_thread_func(LPVOID data)
             }
         }
 
+        /* Global render lock — only one instance renders at a time.
+         * Concurrent GL rendering on Windows is unreliable even with
+         * separate contexts. This halves framerate with 2+ instances
+         * but prevents crashes. Each instance still gets ~30fps. */
+        EnterCriticalSection(&s_gl_init_cs);
+
+        /* Must re-bind our GL context — the other thread may have
+         * made its context current on this thread (unlikely but safe) */
+        wglMakeCurrent(gui->hdc, gui->hglrc);
+        ImGui::SetCurrentContext(gui->imgui_ctx);
+
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        /* Render the full 0xFX GUI via the shared renderer */
         fx_gui_render_frame(gui->gui_state, (float)gui->width, (float)gui->height,
                             true /* is_plugin */);
 
@@ -273,6 +283,8 @@ static DWORD WINAPI render_thread_func(LPVOID data)
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         SwapBuffers(gui->hdc);
+
+        LeaveCriticalSection(&s_gl_init_cs);
 
         Sleep(16); /* ~60fps */
     }
