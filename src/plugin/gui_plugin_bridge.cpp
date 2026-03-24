@@ -26,6 +26,7 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <cstdarg>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Windows implementation — Win32 + WGL + ImGui_ImplWin32
@@ -162,9 +163,31 @@ static HGLRC create_gl33_context(HDC hdc)
 
 /* ─── Render Thread ────────────────────────────────────────────────────── */
 
+/* Debug log — same as plugin.c but we can't see that one from here */
+#ifdef _WIN32
+static void gui_dbg(const char *fmt, ...) {
+    static CRITICAL_SECTION cs; static bool init = false;
+    if (!init) { InitializeCriticalSection(&cs); init = true; }
+    EnterCriticalSection(&cs);
+    FILE *f = fopen("C:\\Users\\Dan Michael\\Desktop\\0xfx_plugin_debug.log", "a");
+    if (f) {
+        SYSTEMTIME st; GetLocalTime(&st);
+        fprintf(f, "[%02d:%02d:%02d.%03d] [TID %5lu] [GUI] ",
+                st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+                (unsigned long)GetCurrentThreadId());
+        va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
+        fprintf(f, "\n"); fflush(f); fclose(f);
+    }
+    LeaveCriticalSection(&cs);
+}
+#else
+static void gui_dbg(const char *fmt, ...) { (void)fmt; }
+#endif
+
 static DWORD WINAPI render_thread_func(LPVOID data)
 {
     PluginGUI *gui = (PluginGUI *)data;
+    gui_dbg("render_thread START engine=%p", gui->engine);
 
     wglMakeCurrent(gui->hdc, gui->hglrc);
 
@@ -508,11 +531,13 @@ void oxfx_gui_detach(void *gui_ptr);
 
 void *oxfx_gui_create(void *engine)
 {
+    gui_dbg("gui_create engine=%p", engine);
     PluginGUI *gui = new PluginGUI();
     memset(gui, 0, sizeof(*gui));
     gui->engine = (fx_engine_t *)engine;
     gui->width  = 1200;
     gui->height = 700;
+    gui_dbg("gui_create done gui=%p", gui);
     return gui;
 }
 
@@ -530,6 +555,7 @@ void oxfx_gui_destroy(void *gui_ptr)
 
 void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
 {
+    gui_dbg("gui_attach gui=%p parent=%p", gui_ptr, parent_hwnd);
     if (!gui_ptr) return;
     PluginGUI *gui = (PluginGUI *)gui_ptr;
     if (gui->running) return;
@@ -691,6 +717,7 @@ void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
 
 void oxfx_gui_detach(void *gui_ptr)
 {
+    gui_dbg("gui_detach gui=%p", gui_ptr);
     if (!gui_ptr) return;
     PluginGUI *gui = (PluginGUI *)gui_ptr;
     if (!gui->running) return;

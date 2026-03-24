@@ -48,6 +48,33 @@
 #include <windows.h>
 #endif
 #include <string.h>
+#include <stdarg.h>
+
+/* ── Debug log helper (thread-safe, timestamped) ───────────────── */
+#ifdef _WIN32
+static FILE *s_dbg_file = NULL;
+static CRITICAL_SECTION s_dbg_cs;
+static bool s_dbg_cs_init = false;
+
+static void dbg_log(const char *fmt, ...) {
+    if (!s_dbg_cs_init) { InitializeCriticalSection(&s_dbg_cs); s_dbg_cs_init = true; }
+    EnterCriticalSection(&s_dbg_cs);
+    if (!s_dbg_file)
+        s_dbg_file = fopen("C:\\Users\\Dan Michael\\Desktop\\0xfx_plugin_debug.log", "w");
+    if (s_dbg_file) {
+        SYSTEMTIME st; GetLocalTime(&st);
+        fprintf(s_dbg_file, "[%02d:%02d:%02d.%03d] [TID %5lu] ",
+                st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+                (unsigned long)GetCurrentThreadId());
+        va_list ap; va_start(ap, fmt); vfprintf(s_dbg_file, fmt, ap); va_end(ap);
+        fprintf(s_dbg_file, "\n");
+        fflush(s_dbg_file);
+    }
+    LeaveCriticalSection(&s_dbg_cs);
+}
+#else
+static void dbg_log(const char *fmt, ...) { (void)fmt; }
+#endif
 
 /* ── Parameter layout constants ─────────────────────────────────── */
 
@@ -987,6 +1014,7 @@ void cplug_libraryUnload(void) {}
 
 void *cplug_createPlugin(CplugHostContext *ctx)
 {
+    dbg_log("createPlugin called");
     OxFXPlugin *p = (OxFXPlugin *)calloc(1, sizeof(OxFXPlugin));
     if (!p) return NULL;
 
@@ -1023,10 +1051,12 @@ void *cplug_createPlugin(CplugHostContext *ctx)
 
 void cplug_destroyPlugin(void *ptr)
 {
+    dbg_log("destroyPlugin called, ptr=%p", ptr);
     OxFXPlugin *p = (OxFXPlugin *)ptr;
     if (!p) return;
     if (p->engine) fx_engine_destroy(p->engine);
     free(p);
+    dbg_log("destroyPlugin done");
 }
 
 /* ── Bus layout ─────────────────────────────────────────────────── */
