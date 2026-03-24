@@ -168,6 +168,10 @@ static DWORD WINAPI render_thread_func(LPVOID data)
 
     wglMakeCurrent(gui->hdc, gui->hglrc);
 
+    /* Clear the global texture cache — each instance has its own GL context
+     * so cached texture IDs from other instances are invalid here */
+    fx_texture_cache_clear();
+
     /* ImGui setup on render thread */
     IMGUI_CHECKVERSION();
     gui->imgui_ctx = ImGui::CreateContext();

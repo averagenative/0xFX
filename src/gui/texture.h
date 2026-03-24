@@ -15,4 +15,8 @@ bool fx_texture_get_size(uintptr_t gl_id, int *out_w, int *out_h);
 /* Free all cached textures (call at shutdown) */
 void fx_texture_shutdown(void);
 
+/* Clear the cache without deleting GL textures (for multi-instance plugins
+ * where each instance has its own GL context) */
+void fx_texture_cache_clear(void);
+
 #endif

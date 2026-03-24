@@ -137,3 +137,11 @@ void fx_texture_shutdown(void)
     }
     s_count = 0;
 }
+
+void fx_texture_cache_clear(void)
+{
+    /* Reset cache without deleting GL textures — for multi-instance plugins
+     * where GL IDs belong to a specific context that may already be destroyed
+     * or belong to a different instance */
+    s_count = 0;
+}
