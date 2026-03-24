@@ -18,6 +18,7 @@
 
 extern "C" {
 #include "../gui/gui_render.h"
+#include "../gui/texture.h"
 #include "../engine/fx_engine.h"
 }
 
@@ -249,6 +250,9 @@ static int render_thread_func(void *data)
         gui->gui_state = NULL;
     }
 
+    /* Flush texture cache — GL IDs are invalid after context destruction */
+    fx_texture_shutdown();
+
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext(gui->imgui_ctx);
@@ -290,9 +294,12 @@ void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
 
     gui->parent_handle = parent_hwnd;
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "0xFX Plugin GUI: SDL_Init failed: %s\n", SDL_GetError());
-        return;
+    /* Only init SDL video if not already initialized (avoids conflict with 0x808/0xSYNTH) */
+    if (!(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+            fprintf(stderr, "0xFX Plugin GUI: SDL_Init failed: %s\n", SDL_GetError());
+            return;
+        }
     }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
