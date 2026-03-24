@@ -30,7 +30,8 @@ set(SDL2_DYNAMIC_LIBRARIES
 )
 set(SDL2_DLL_PATH "${MINGW_SDL2_DIR}/bin/SDL2.dll")
 
-# Default: static (standalone builds use this)
+# Static for all builds — dynamic SDL2 requires careful DLL deployment
+# TASK-348: switch to dynamic when all 3 projects are ready
 set(SDL2_LIBRARIES ${SDL2_STATIC_LIBRARIES})
 
 # ── OpenGL via mingw's opengl32 ────────────────────────────────────────────

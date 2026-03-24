@@ -169,6 +169,20 @@ __declspec(dllexport) BOOL WINAPI DllMain(
         // Initialize once for each new process.
         // Return FALSE to fail DLL load.
         g_DLL = hinstDLL;
+        // Add plugin's own directory to DLL search path so SDL2.dll is found
+        {
+            WCHAR dllDir[MAX_PATH];
+            if (GetModuleFileNameW((HMODULE)hinstDLL, dllDir, MAX_PATH)) {
+                // Strip filename to get directory
+                for (int i = (int)wcslen(dllDir) - 1; i >= 0; i--) {
+                    if (dllDir[i] == L'\\' || dllDir[i] == L'/') {
+                        dllDir[i] = L'\0';
+                        break;
+                    }
+                }
+                SetDllDirectoryW(dllDir);
+            }
+        }
         break;
 
     case DLL_THREAD_ATTACH:

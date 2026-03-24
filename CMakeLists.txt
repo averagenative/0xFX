@@ -244,7 +244,6 @@ endif()
         target_compile_definitions(0xfx_clap PRIVATE OXFX_PLUGIN_HAS_GUI=1)
         target_link_libraries(0xfx_clap PRIVATE imgui)
         if(MINGW AND SDL2_DYNAMIC_LIBRARIES)
-            # Plugins use dynamic SDL2 to coexist with other plugins in same DAW
             target_link_libraries(0xfx_clap PRIVATE ${SDL2_DYNAMIC_LIBRARIES})
         elseif(SDL2_FOUND)
             target_link_libraries(0xfx_clap PRIVATE ${SDL2_LIBRARIES})
