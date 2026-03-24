@@ -131,6 +131,14 @@ JSON-based open format for presets. Human-readable, shareable, version-controlla
 - `fx_engine_process()` must be real-time safe: no malloc, no printf, no file I/O, no locks.
 - No silent fallbacks in audio code — explicit failure over silent corruption.
 
+### Plugin GUI Thread Safety
+- **CRITICAL**: The plugin GUI renderer MUST be fully thread-safe for multi-instance use. Artists commonly load the same plugin on multiple tracks. A crash during recording is unacceptable.
+- **NO mutable static variables** in `gui_render.cpp` — ALL mutable state goes in `fx_gui_state_t`. Each plugin instance gets its own state struct.
+- `const static` data (knob maps, pedal categories, lookup tables) is fine — read-only, thread-safe.
+- **Texture cache** uses mutex + per-thread owner tracking. Each GL context has its own texture IDs.
+- Each plugin instance has its **own ImGui context** — call `ImGui::SetCurrentContext()` in WndProc before processing events.
+- **No SDL2 in plugins** — use native Win32+WGL (Windows) or X11+GLX (Linux). SDL2 causes multi-plugin conflicts. Standalone app keeps SDL2.
+
 ### Code Style
 - **Everything is C** — engine and GUI. C99 for engine, C for GUI with ImGui's C API or thin C++ wrappers where ImGui requires it.
 - `fx_` prefix for all public types/functions.
@@ -140,6 +148,7 @@ JSON-based open format for presets. Human-readable, shareable, version-controlla
 - Maintain Linux + Windows (MinGW cross-compile) builds
 - WSLg audio is broken — use offline render tests or Windows exe for real audio testing
 - Use `#ifdef _WIN32` guards for platform-specific code
+- Plugin GUI: native Win32+WGL (Windows), X11+GLX (Linux), NSView+NSOpenGL (macOS future)
 
 ### Single Frontend
 - One GUI frontend (ImGui). No GTK. No frontend parity burden.
