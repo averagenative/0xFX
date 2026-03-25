@@ -792,7 +792,17 @@ extern "C" void fx_gui_sync_from_engine(fx_gui_state_t *gui) {
 
     gui->studio_id_count = 0; /* studio IDs tracked separately — reset on preset load */
     gui->selected_node = -1;
-    FX_INFO("GUI sync: %d pre-pedals, %d post-pedals", gui->pre_id_count, gui->post_id_count);
+
+    /* Sync dual chain state from engine */
+    int chain_count = fx_chain_get_count(engine);
+    if (chain_count > 1) {
+        gui->chain_b = 1; /* chain 0 is default, chain 1 is the dual */
+    } else {
+        gui->chain_b = -1;
+    }
+
+    FX_INFO("GUI sync: %d pre-pedals, %d post-pedals, chains=%d",
+            gui->pre_id_count, gui->post_id_count, chain_count);
 }
 
 /* ── Render one frame ──────────────────────────────────────── */
@@ -1170,7 +1180,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.50f, 0.40f, 1.0f));
             }
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-            if (ImGui::Button(is_dual ? "DUAL##split" : "SINGLE##split",
+            if (ImGui::Button(is_dual ? "DUAL##chain_toggle" : "SINGLE##chain_toggle",
                               ImVec2(72.0f, 32.0f))) {
                 if (is_dual) {
                     if (gui->chain_b >= 0) {
@@ -1438,9 +1448,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImVec2 tl = ImVec2(nx, ny);
                 ImVec2 br = ImVec2(nx + NODE_W, ny + NODE_H);
 
-                /* Node background — try texture first, then solid fill.
-                 * Use dl->AddImage (draw list) instead of ImGui::Image to avoid
-                 * ID conflicts when dual chain nodes share the same texture. */
+                /* Node background — try texture first, then solid fill */
                 bool drew_texture = false;
                 {
                     uintptr_t tex = 0;
@@ -1476,9 +1484,12 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         /* TRS plug input — rendered flipped horizontally */
                         tex = fx_texture_load("resources/cables/trs_plug_input.png");
                         if (tex) {
-                            dl->AddImage((ImTextureID)tex,
-                                ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
-                                ImVec2(1, 0), ImVec2(0, 1));
+                            ImGui::SetCursorScreenPos(ImVec2(nx, ny));
+                            ImGui::PushID(i);
+                            ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
+                                         ImVec2(1, 0), ImVec2(0, 1),
+                                         ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                            ImGui::PopID();
                             drew_texture = true;
                             tex = 0;
                         }
@@ -1486,12 +1497,14 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         tex = fx_texture_load("resources/cables/xlr_plug_output.png");
                     }
                     if (tex) {
-                        ImU32 tint_col = bypassed
-                            ? IM_COL32(128, 128, 128, 180)
-                            : IM_COL32(255, 255, 255, 255);
-                        dl->AddImage((ImTextureID)tex,
-                            ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
-                            ImVec2(0, 0), ImVec2(1, 1), tint_col);
+                        ImVec4 tint = bypassed
+                            ? ImVec4(0.5f, 0.5f, 0.5f, 0.7f)
+                            : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                        ImGui::SetCursorScreenPos(ImVec2(nx, ny));
+                        ImGui::PushID(i);
+                        ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
+                                     ImVec2(0, 0), ImVec2(1, 1), tint);
+                        ImGui::PopID();
                         drew_texture = true;
                     }
                 }
@@ -1517,8 +1530,10 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     float led_x = nx + NODE_W - LED_SZ - 3.0f;
                     float led_y = ny + 3.0f;
                     if (led_tex) {
-                        dl->AddImage((ImTextureID)(uintptr_t)led_tex,
-                            ImVec2(led_x, led_y), ImVec2(led_x + LED_SZ, led_y + LED_SZ));
+                        ImGui::SetCursorScreenPos(ImVec2(led_x, led_y));
+                        ImGui::PushID(i + 1000);
+                        ImGui::Image((ImTextureID)(uintptr_t)led_tex, ImVec2(LED_SZ, LED_SZ));
+                        ImGui::PopID();
                     } else {
                         ImU32 led_col = bypassed ? IM_COL32(200, 60, 50, 200)
                                                  : IM_COL32(60, 200, 60, 220);

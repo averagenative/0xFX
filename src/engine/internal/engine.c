@@ -400,6 +400,12 @@ void fx_chain_destroy(fx_engine_t *engine, fx_chain_id id) {
     /* Don't allow destroying chain 0 (default) */
     fx_cab_free(&engine->chains[id].cab);
     engine->chains[id].active = false;
+
+    /* Reclaim trailing inactive chains so IDs can be reused */
+    while (engine->num_chains > 1 &&
+           !engine->chains[engine->num_chains - 1].active) {
+        engine->num_chains--;
+    }
 }
 
 void fx_chain_set_mix(fx_engine_t *engine, fx_chain_id id, float level) {

@@ -160,10 +160,10 @@ const char  *fx_pedal_get_type_name(fx_pedal_type_t type);
 
 fx_chain_id  fx_chain_create(fx_engine_t *engine);
 void         fx_chain_destroy(fx_engine_t *engine, fx_chain_id id);
+int          fx_chain_get_count(fx_engine_t *engine);
 void         fx_chain_set_mix(fx_engine_t *engine, fx_chain_id id,
                               float level);
 float        fx_chain_get_mix(fx_engine_t *engine, fx_chain_id id);
-int          fx_chain_get_count(fx_engine_t *engine);
 
 /* ── Amp model — per chain ────────────────────────────────────── */
 

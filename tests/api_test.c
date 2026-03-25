@@ -702,10 +702,29 @@ static void test_parallel_chain_routing(void) {
     ASSERT(fx_chain_get_count(e) == 4,
            "destroying chain 0 should have no effect");
 
-    /* Can destroy a non-default chain */
+    /* Destroy trailing chains — should reclaim slots */
+    fx_chain_destroy(e, c3);
+    ASSERT(fx_chain_get_count(e) == 3,
+           "destroying last chain should reclaim slot (4 -> 3)");
+    fx_chain_destroy(e, c2);
+    ASSERT(fx_chain_get_count(e) == 2,
+           "destroying last chain should reclaim slot (3 -> 2)");
     fx_chain_destroy(e, c1);
-    /* Note: chain_destroy deactivates but doesn't reduce num_chains,
-     * so count stays at 4 — the chain is just inactive */
+    ASSERT(fx_chain_get_count(e) == 1,
+           "destroying last chain should reclaim slot (2 -> 1)");
+
+    /* Toggle cycle: create and destroy repeatedly should not exhaust slots */
+    for (int cycle = 0; cycle < 20; cycle++) {
+        fx_chain_id cc = fx_chain_create(e);
+        ASSERT(cc >= 0, "chain create should succeed on each cycle");
+        ASSERT(fx_chain_get_count(e) == 2, "should have 2 chains after create");
+        fx_chain_destroy(e, cc);
+        ASSERT(fx_chain_get_count(e) == 1, "should have 1 chain after destroy");
+    }
+
+    /* Recreate for remaining tests */
+    c1 = fx_chain_create(e);
+    ASSERT(c1 >= 0, "re-create chain 1 after cycle test");
 
     /* Mix levels clamp to 0-1 */
     fx_chain_set_mix(e, FX_CHAIN_DEFAULT, -0.5f);

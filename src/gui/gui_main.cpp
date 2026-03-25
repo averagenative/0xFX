@@ -1012,6 +1012,7 @@ int main(int argc, char *argv[]) {
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigDebugHighlightIdConflicts = false;
 
     setup_theme();
 
@@ -1074,6 +1075,7 @@ int main(int argc, char *argv[]) {
     /* Auto-load last session preset first, then fall back to default */
     /* NOTE: GUI sync happens after static locals are declared below */
     static bool s_needs_gui_sync = false;
+    static bool s_did_sync = false;
     static char s_preset_name[128] = "Untitled";
     static bool s_preset_modified = false;
     {
@@ -1120,6 +1122,7 @@ int main(int argc, char *argv[]) {
             s_post_ids[i] = fx_chain_get_pedal_at(engine, FX_CHAIN_POS_POST, i);
 
         FX_INFO("GUI sync: %d pre-pedals, %d post-pedals", s_pre_id_count, s_post_id_count);
+        s_did_sync = true;
     }
 
     /* Signal chain selection state */
@@ -1129,6 +1132,15 @@ int main(int argc, char *argv[]) {
 
     /* Dual-chain (Y-split) state */
     static fx_chain_id s_chain_b = -1; /* chain ID for the second parallel path, -1 = single */
+
+    /* Sync dual chain state from engine after preset load */
+    if (s_did_sync) {
+        s_did_sync = false;
+        int chain_count = fx_chain_get_count(engine);
+        s_chain_b = (chain_count > 1) ? 1 : -1;
+        s_selected_node = -1;
+        FX_INFO("Chain sync: %d chains, chain_b=%d", chain_count, (int)s_chain_b);
+    }
 
     /* Layout constants */
     static const float TOOLBAR_H      = 64.0f;
