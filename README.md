@@ -152,6 +152,11 @@ Download the installer or zip from [Releases](https://github.com/averagenative/0
   - VST3: `C:\Program Files\Common Files\VST3\0xFX.vst3\Contents\x86_64-win\`
 - **Zip**: Manual install — copy plugins to the paths above, run `0xfx_gui.exe` standalone
 
+### macOS
+
+- **Standalone**: Download `0xfx_gui` from Releases, or build from source (see below)
+- **Plugins**: Copy `0xFX.clap` to `~/Library/Audio/Plug-Ins/CLAP/` and `0xFX.vst3` bundle to `~/Library/Audio/Plug-Ins/VST3/`
+
 ### Linux
 
 - **tar.gz**: Extract, copy plugins to `~/.clap/` and `~/.vst3/`, run `./0xfx_gui`
@@ -159,20 +164,83 @@ Download the installer or zip from [Releases](https://github.com/averagenative/0
 
 ---
 
-## Building
+## Building from Source
+
+All platforms require **CMake 3.16+** and **Python 3** (for asset generation). The build auto-generates `src/gui/embedded_assets.c` from the PNG assets in `resources/`.
+
+**Targets:** `0xfx_gui` (standalone) · `0xfx_clap` (CLAP plugin) · `0xfx_vst3` (VST3) · `fx_api_test` (tests)
+
+### Linux
 
 ```bash
-# Linux
-sudo apt install libsdl2-dev libgl-dev g++
+# Prerequisites (Debian/Ubuntu)
+sudo apt install libsdl2-dev libgl-dev g++ cmake python3
+
+# Build
+git clone https://github.com/averagenative/0xFX.git && cd 0xFX
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
-# Windows (cross-compile via MinGW)
-cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
-cmake --build build_win -j$(nproc)
+# Run
+./build/0xfx_gui
+
+# Install plugins (optional)
+mkdir -p ~/.clap ~/.vst3
+cp build/0xFX.clap ~/.clap/
+cp -r build/0xFX.vst3.bundle ~/.vst3/0xFX.vst3
 ```
 
-**Targets:** `0xfx_gui` (standalone) · `0xfx_clap` (CLAP plugin) · `0xfx_vst3` (VST3) · `fx_api_test` (tests)
+### macOS
+
+```bash
+# Prerequisites
+brew install sdl2 cmake python3
+
+# Build
+git clone https://github.com/averagenative/0xFX.git && cd 0xFX
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(sysctl -n hw.ncpu)
+
+# Run
+./build/0xfx_gui
+
+# Install plugins (optional)
+mkdir -p ~/Library/Audio/Plug-Ins/CLAP ~/Library/Audio/Plug-Ins/VST3
+cp build/0xFX.clap ~/Library/Audio/Plug-Ins/CLAP/
+cp -r build/0xFX.vst3.bundle ~/Library/Audio/Plug-Ins/VST3/0xFX.vst3
+```
+
+### Windows (Cross-Compile from Linux via MinGW)
+
+```bash
+# Prerequisites (on Linux)
+sudo apt install mingw-w64 cmake python3
+
+# Build
+cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build_win -j$(nproc)
+
+# Outputs: build_win/0xfx_gui.exe, build_win/0xFX.clap, build_win/0xFX.vst3
+```
+
+### Windows (Native with MSVC)
+
+```powershell
+# Prerequisites: Visual Studio 2019+, CMake, Python 3, SDL2 (via vcpkg or manual)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+### Asset Generation
+
+Visual assets (PNGs) are committed to `resources/`. The build auto-generates `src/gui/embedded_assets.c` (~95MB, gitignored) from them via Python3. CMake runs this automatically when PNGs change. To regenerate manually:
+
+```bash
+python3 tools/generate_embedded_assets.py            # regenerate embedded_assets.c
+python3 tools/generate_embedded_assets.py --dry-run  # list assets without writing
+```
+
+If Python3 is not available, the build will use a pre-existing `embedded_assets.c` if one exists.
 
 ### Release Packaging
 

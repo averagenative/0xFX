@@ -17,7 +17,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
 # macOS
-brew install sdl2 cmake
+brew install sdl2 cmake python3
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(sysctl -n hw.ncpu)
 
@@ -25,6 +25,17 @@ cmake --build build -j$(sysctl -n hw.ncpu)
 cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
 cmake --build build_win -j$(nproc)
 ```
+
+### Asset Pipeline
+
+Source PNGs live in `resources/` (committed to git). The build auto-generates `src/gui/embedded_assets.c` (gitignored, ~95MB) via Python3:
+
+```bash
+python3 tools/generate_embedded_assets.py            # regenerate
+python3 tools/generate_embedded_assets.py --dry-run  # list without writing
+```
+
+CMake runs this automatically when PNGs change. If Python3 isn't available, a pre-existing `embedded_assets.c` is used.
 
 ### Windows Test Deploy
 

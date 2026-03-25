@@ -14,17 +14,11 @@ __pycache__/
 *.swp
 *~
 
-# Generated assets (preview locally, commit only when integrated into GUI)
-resources/pedals/*.png
-resources/amps/*.png
-resources/cabs/*.png
-resources/theme/*.png
-resources/reference/*.png
-resources/cables/*.png
-resources/leds/*.png
-resources/logo/*.png
-resources/knobs/*.png
-resources/icon/*.png
+# AI-generated reference images (not needed for build)
+resources/reference/
+
+# Auto-generated from resources/ PNGs — regenerate with:
+#   python3 tools/generate_embedded_assets.py
 
 # OS
 .DS_Store

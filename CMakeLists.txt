@@ -189,6 +189,44 @@ elseif(WIN32)
     target_link_libraries(0xfx_standalone PRIVATE ole32 winmm)
 endif()
 
+# ── Generate embedded assets from resource PNGs ───────────────
+file(GLOB_RECURSE RESOURCE_PNGS
+    ${CMAKE_SOURCE_DIR}/resources/amps/*.png
+    ${CMAKE_SOURCE_DIR}/resources/buttons/*.png
+    ${CMAKE_SOURCE_DIR}/resources/cables/*.png
+    ${CMAKE_SOURCE_DIR}/resources/cabs/*.png
+    ${CMAKE_SOURCE_DIR}/resources/knobs/*.png
+    ${CMAKE_SOURCE_DIR}/resources/leds/*.png
+    ${CMAKE_SOURCE_DIR}/resources/mics/*.png
+    ${CMAKE_SOURCE_DIR}/resources/pedals/*.png
+    ${CMAKE_SOURCE_DIR}/resources/studio/*.png
+    ${CMAKE_SOURCE_DIR}/resources/theme/*.png
+    ${CMAKE_SOURCE_DIR}/resources/logo/*.png
+    ${CMAKE_SOURCE_DIR}/resources/icon/*.ico
+    ${CMAKE_SOURCE_DIR}/resources/icon/*.png
+)
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND AND RESOURCE_PNGS)
+    add_custom_command(
+        OUTPUT ${CMAKE_SOURCE_DIR}/src/gui/embedded_assets.c
+               ${CMAKE_SOURCE_DIR}/src/gui/embedded_assets.h
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/generate_embedded_assets.py
+        DEPENDS ${RESOURCE_PNGS}
+                ${CMAKE_SOURCE_DIR}/tools/generate_embedded_assets.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating embedded_assets.c from resource PNGs..."
+    )
+    add_custom_target(generate_assets DEPENDS
+        ${CMAKE_SOURCE_DIR}/src/gui/embedded_assets.c
+        ${CMAKE_SOURCE_DIR}/src/gui/embedded_assets.h
+    )
+    message(STATUS "Asset generation enabled (Python3 found, ${CMAKE_SOURCE_DIR}/tools/generate_embedded_assets.py)")
+elseif(EXISTS ${CMAKE_SOURCE_DIR}/src/gui/embedded_assets.c)
+    message(STATUS "Using pre-existing embedded_assets.c (Python3 not found or no resource PNGs)")
+else()
+    message(FATAL_ERROR "No embedded_assets.c and cannot generate (need Python3 + resource PNGs)")
+endif()
+
 # ── GUI application (SDL2 + ImGui + OpenGL) ───────────────────
 if(HAS_GUI)
     # Windows icon resource
@@ -241,6 +279,9 @@ if(HAS_GUI)
             target_include_directories(0xfx_gui PRIVATE ${ALSA_INCLUDE_DIRS})
             target_link_libraries(0xfx_gui PRIVATE ${ALSA_LIBRARIES})
         endif()
+    endif()
+    if(TARGET generate_assets)
+        add_dependencies(0xfx_gui generate_assets)
     endif()
 endif()
 
@@ -329,6 +370,9 @@ set(PLUGIN_GUI_INCLUDES
     elseif(WIN32 OR MINGW)
         target_link_libraries(0xfx_clap PRIVATE ole32 winmm opengl32 dwmapi gdi32 imm32)
     endif()
+    if(TARGET generate_assets)
+        add_dependencies(0xfx_clap generate_assets)
+    endif()
     message(STATUS "CLAP plugin target enabled")
 
 # ── VST3 plugin shared library ────────────────────────────────
@@ -398,4 +442,7 @@ set(PLUGIN_GUI_INCLUDES
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:0xfx_vst3>" "${VST3_BUNDLE_DIR}/0xFX.vst3"
         COMMENT "Creating VST3 bundle: 0xFX.vst3.bundle"
     )
+    if(TARGET generate_assets)
+        add_dependencies(0xfx_vst3 generate_assets)
+    endif()
     message(STATUS "VST3 plugin target enabled")

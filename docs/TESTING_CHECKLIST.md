@@ -169,8 +169,11 @@
 - [ ] Audio works (if not WSL)
 - [ ] MIDI works via ALSA (if available)
 
-### macOS (future)
-- [ ] Builds with Homebrew SDL2
+### macOS
+- [ ] Builds with Homebrew SDL2 (`brew install sdl2 python3`)
+- [ ] Asset generation works (`python3 tools/generate_embedded_assets.py`)
 - [ ] CoreAudio device enumeration
 - [ ] CoreMIDI device enumeration
+- [ ] CLAP plugin loads in DAW (~/Library/Audio/Plug-Ins/CLAP/)
+- [ ] VST3 plugin loads in DAW (~/Library/Audio/Plug-Ins/VST3/)
 - [ ] .icns icon displays correctly
