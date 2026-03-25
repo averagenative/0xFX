@@ -10,17 +10,20 @@ Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3
 
 ## Screenshots
 
-![Main view — pedal strip, amp faceplate, and signal chain](docs/screenshots/main-view.png)
-
-![Preset Library — genre-organized factory and user presets](docs/screenshots/preset-browser.png)
-
-![Amp model selector — 12 circuit-modeled amps](docs/screenshots/amp-selector.png)
-
-![Pedal close-up — interactive knobs, LED indicator, stomp switch](docs/screenshots/pedal-closeup.png)
-
-![Rack effects — post-cab studio processors](docs/screenshots/rack-effects.png)
-
-![Dual chain mode — parallel amps with split/mix/blend](docs/screenshots/dual-chain.png)
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/main-view.png" alt="Main view — signal chain, amp faceplate, overlay knobs"><br><sub>Signal chain with amp faceplate and interactive overlay knobs</sub></td>
+<td width="50%"><img src="docs/screenshots/preset-browser.png" alt="Preset browser — genre-organized factory presets"><br><sub>Preset browser with genre-organized factory presets</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/amp-selector.png" alt="Amp model selector — 12 circuit-modeled amps"><br><sub>12 amp models — circuit-accurate tone stacks from real schematics</sub></td>
+<td width="50%"><img src="docs/screenshots/pedal-closeup.png" alt="Pedal close-up — knobs, LED, stomp switch"><br><sub>Pedal detail — interactive knobs, LED indicator, stomp switch</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/rack-effects.png" alt="Rack effects — post-cab studio processors"><br><sub>Rack effects popup — post-cab studio processors</sub></td>
+<td width="50%"><img src="docs/screenshots/dual-chain.png" alt="Dual chain — parallel amps with split/mix"><br><sub>Dual chain mode — parallel amps with split/mix/blend</sub></td>
+</tr>
+</table>
 
 ---
 

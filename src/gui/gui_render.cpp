@@ -1395,7 +1395,6 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
         /* Draw all nodes */
         for (int i = 0; i < chain_len; i++) {
-            ImGui::PushID(i);  /* unique ID scope per node (prevents conflicts in dual chain) */
             ImVec2 center = get_node_pos(i);
             float nx = center.x - NODE_W * 0.5f;
             float ny = center.y - NODE_H * 0.5f;
@@ -1439,7 +1438,9 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImVec2 tl = ImVec2(nx, ny);
                 ImVec2 br = ImVec2(nx + NODE_W, ny + NODE_H);
 
-                /* Node background — try texture first, then solid fill */
+                /* Node background — try texture first, then solid fill.
+                 * Use dl->AddImage (draw list) instead of ImGui::Image to avoid
+                 * ID conflicts when dual chain nodes share the same texture. */
                 bool drew_texture = false;
                 {
                     uintptr_t tex = 0;
@@ -1452,7 +1453,6 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     } else if (chain[i].kind == NODE_AMP) {
                         const char *aname = fx_amp_get_type_name(
                             fx_amp_get_model(engine, (fx_chain_id)chain[i].chain_id));
-                        /* Use amp body texture for chain view thumbnail */
                         char fname[128];
                         amp_name_to_filename(aname, fname, sizeof(fname));
                         char path[256];
@@ -1476,24 +1476,22 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                         /* TRS plug input — rendered flipped horizontally */
                         tex = fx_texture_load("resources/cables/trs_plug_input.png");
                         if (tex) {
-                            ImGui::SetCursorScreenPos(ImVec2(nx, ny));
-                            ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
-                                         ImVec2(1, 0), ImVec2(0, 1),
-                                         ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                            dl->AddImage((ImTextureID)tex,
+                                ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
+                                ImVec2(1, 0), ImVec2(0, 1));
                             drew_texture = true;
-                            tex = 0; /* skip default rendering below */
+                            tex = 0;
                         }
                     } else if (chain[i].kind == NODE_OUTPUT) {
-                        /* XLR plug output */
                         tex = fx_texture_load("resources/cables/xlr_plug_output.png");
                     }
                     if (tex) {
-                        ImVec4 tint = bypassed
-                            ? ImVec4(0.5f, 0.5f, 0.5f, 0.7f)
-                            : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                        ImGui::SetCursorScreenPos(ImVec2(nx, ny));
-                        ImGui::Image((ImTextureID)tex, ImVec2(NODE_W, NODE_H),
-                                     ImVec2(0, 0), ImVec2(1, 1), tint);
+                        ImU32 tint_col = bypassed
+                            ? IM_COL32(128, 128, 128, 180)
+                            : IM_COL32(255, 255, 255, 255);
+                        dl->AddImage((ImTextureID)tex,
+                            ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
+                            ImVec2(0, 0), ImVec2(1, 1), tint_col);
                         drew_texture = true;
                     }
                 }
@@ -1519,8 +1517,8 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     float led_x = nx + NODE_W - LED_SZ - 3.0f;
                     float led_y = ny + 3.0f;
                     if (led_tex) {
-                        ImGui::SetCursorScreenPos(ImVec2(led_x, led_y));
-                        ImGui::Image((ImTextureID)(uintptr_t)led_tex, ImVec2(LED_SZ, LED_SZ));
+                        dl->AddImage((ImTextureID)(uintptr_t)led_tex,
+                            ImVec2(led_x, led_y), ImVec2(led_x + LED_SZ, led_y + LED_SZ));
                     } else {
                         ImU32 led_col = bypassed ? IM_COL32(200, 60, 50, 200)
                                                  : IM_COL32(60, 200, 60, 220);
@@ -1709,7 +1707,6 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Add rack effect");
             }
-            ImGui::PopID();  /* end per-node ID scope */
         }
 
         /* Pedal gallery popup — pre-amp */
