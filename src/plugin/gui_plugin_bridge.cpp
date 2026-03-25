@@ -553,6 +553,11 @@ struct PluginGUI {
 
 #endif /* platform */
 
+/* Debug log — no-op on non-Windows (Windows version defined above) */
+#ifndef _WIN32
+static void gui_dbg(const char *fmt, ...) { (void)fmt; }
+#endif
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public C API — platform-dispatched
  * ═══════════════════════════════════════════════════════════════════════════ */

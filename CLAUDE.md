@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 0xFX — Guitar amp simulator & effects pedalboard. Standalone app + CLAP/VST3 plugins. Sibling project to [0x808](https://github.com/averagenative/0x808) (drum machine) and 0xSYNTH, sharing build tooling but with a distinct API-driven engine architecture.
 
-**Status**: Pre-alpha — architecture designed, proposal formalized in `openspec/changes/fx-engine/proposal.md`.
+**Status**: 1.0.0 — Engine, GUI, and plugins functional. 12 circuit-modeled amps, 41 pedals, 9 rack effects, 10 mic models. CLAP/VST3 plugins with thread-safe multi-instance support. Windows + Linux.
 
 ## Build Commands
 

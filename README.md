@@ -4,7 +4,7 @@
 
 Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3 plugins. Pure C99 DSP engine with skeuomorphic GUI. Circuit-accurate tone stacks modeled from real amplifier schematics.
 
-> **Status: Pre-alpha** — engine and GUI functional, not yet production-ready.
+**12 amp models** (circuit-modeled from real schematics) | **41 effect pedals** | **9 rack processors** | **10 mic models** | **137 automatable parameters** | **32 factory presets**
 
 ---
 
@@ -78,7 +78,7 @@ Post-amp/cab rack-mount studio processors:
 
 ## Microphone Simulation (optional, per-chain)
 
-9 models with distance, angle, and cone position controls:
+10 models (9 + DI bypass) with distance, angle, and cone position controls:
 
 | Mic | Type | Inspired By |
 |---|---|---|
@@ -119,9 +119,30 @@ Default: DI (direct inject, no mic coloration).
 ## Additional Features
 
 - **CLAP + VST3 plugins** (137 automatable parameters, factory presets, MIDI CC)
+- **Thread-safe multi-instance** — run multiple 0xFX instances in the same DAW session without crashes. Per-instance ImGui contexts, global render mutex, per-thread texture cache.
+- **Multi-plugin coexistence** — 0xFX + 0x808 + 0xSYNTH can all run simultaneously in the same DAW. No SDL2 in plugins — native Win32+WGL (Windows), X11+GLX (Linux).
 - **Debug audio recorder** — captures input+output to WAV for troubleshooting
 - **Dual amp chains** with independent routing and mix
-- **Preset system** — `.0xfx` JSON format, session auto-save/restore
+- **Preset system** — `.0xfx` JSON open format, human-readable, session auto-save/restore
+- **32 factory presets** organized by genre: Classic, 80s, 90s, Modern, Heavy, Experimental
+
+---
+
+## Installation
+
+### Windows
+
+Download the installer or zip from [Releases](https://github.com/averagenative/0xFX/releases):
+
+- **Installer** (`0xFX-setup.exe`): Installs standalone + plugins to standard locations
+  - CLAP: `C:\Program Files\Common Files\CLAP\`
+  - VST3: `C:\Program Files\Common Files\VST3\0xFX.vst3\Contents\x86_64-win\`
+- **Zip**: Manual install — copy plugins to the paths above, run `0xfx_gui.exe` standalone
+
+### Linux
+
+- **tar.gz**: Extract, copy plugins to `~/.clap/` and `~/.vst3/`, run `./0xfx_gui`
+- **AppImage**: `chmod +x 0xFX-*.AppImage && ./0xFX-*.AppImage`
 
 ---
 
@@ -138,7 +159,14 @@ cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
 cmake --build build_win -j$(nproc)
 ```
 
-**Targets:** `0xfx_gui` (standalone) · `0xfx_clap` (CLAP plugin) · `0xfx_vst3` (VST3) · `fx_api_test` (334 tests)
+**Targets:** `0xfx_gui` (standalone) · `0xfx_clap` (CLAP plugin) · `0xfx_vst3` (VST3) · `fx_api_test` (tests)
+
+### Release Packaging
+
+```bash
+./scripts/packaging/package_release.sh 1.0.0
+# Outputs: release/0xFX-1.0.0-linux-x64.tar.gz, AppImage, Windows zip + NSIS installer
+```
 
 ---
 
