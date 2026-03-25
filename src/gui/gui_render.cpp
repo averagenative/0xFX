@@ -1395,6 +1395,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
         /* Draw all nodes */
         for (int i = 0; i < chain_len; i++) {
+            ImGui::PushID(i);  /* unique ID scope per node (prevents conflicts in dual chain) */
             ImVec2 center = get_node_pos(i);
             float nx = center.x - NODE_W * 0.5f;
             float ny = center.y - NODE_H * 0.5f;
@@ -1708,6 +1709,7 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Add rack effect");
             }
+            ImGui::PopID();  /* end per-node ID scope */
         }
 
         /* Pedal gallery popup — pre-amp */
