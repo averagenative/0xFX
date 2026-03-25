@@ -8,6 +8,22 @@ Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3
 
 ---
 
+## Screenshots
+
+![Main view — pedal strip, amp faceplate, and signal chain](docs/screenshots/main-view.png)
+
+![Preset Library — genre-organized factory and user presets](docs/screenshots/preset-browser.png)
+
+![Amp model selector — 12 circuit-modeled amps](docs/screenshots/amp-selector.png)
+
+![Pedal close-up — interactive knobs, LED indicator, stomp switch](docs/screenshots/pedal-closeup.png)
+
+![Rack effects — post-cab studio processors](docs/screenshots/rack-effects.png)
+
+![Dual chain mode — parallel amps with split/mix/blend](docs/screenshots/dual-chain.png)
+
+---
+
 ## Signal Flow
 
 ```
