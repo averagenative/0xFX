@@ -8,22 +8,16 @@ Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3
 
 ---
 
-## Screenshots
-
-<table>
-<tr>
-<td width="50%"><img src="docs/screenshots/main-view.png" alt="Main view — signal chain, amp faceplate, overlay knobs"><br><sub>Signal chain with amp faceplate and interactive overlay knobs</sub></td>
-<td width="50%"><img src="docs/screenshots/preset-browser.png" alt="Preset browser — genre-organized factory presets"><br><sub>Preset browser with genre-organized factory presets</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/screenshots/amp-selector.png" alt="Amp model selector — 12 circuit-modeled amps"><br><sub>12 amp models — circuit-accurate tone stacks from real schematics</sub></td>
-<td width="50%"><img src="docs/screenshots/pedal-closeup.png" alt="Pedal close-up — knobs, LED, stomp switch"><br><sub>Pedal detail — interactive knobs, LED indicator, stomp switch</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/screenshots/rack-effects.png" alt="Rack effects — post-cab studio processors"><br><sub>Rack effects popup — post-cab studio processors</sub></td>
-<td width="50%"><img src="docs/screenshots/dual-chain.png" alt="Dual chain — parallel amps with split/mix"><br><sub>Dual chain mode — parallel amps with split/mix/blend</sub></td>
-</tr>
-</table>
+<p align="center">
+  <a href="docs/screenshots/main-view.png"><img src="docs/screenshots/main-view.png" width="32%" alt="Main view — signal chain, amp faceplate, overlay knobs"></a>
+  <a href="docs/screenshots/preset-browser.png"><img src="docs/screenshots/preset-browser.png" width="32%" alt="Preset browser — genre-organized factory presets"></a>
+  <a href="docs/screenshots/amp-selector.png"><img src="docs/screenshots/amp-selector.png" width="32%" alt="Amp model selector — 12 circuit-modeled amps"></a>
+</p>
+<p align="center">
+  <a href="docs/screenshots/pedal-closeup.png"><img src="docs/screenshots/pedal-closeup.png" width="32%" alt="Pedal close-up — knobs, LED, stomp switch"></a>
+  <a href="docs/screenshots/rack-effects.png"><img src="docs/screenshots/rack-effects.png" width="32%" alt="Rack effects — post-cab studio processors"></a>
+  <a href="docs/screenshots/dual-chain.png"><img src="docs/screenshots/dual-chain.png" width="32%" alt="Dual chain — parallel amps with split/mix"></a>
+</p>
 
 ---
 
