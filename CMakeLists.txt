@@ -3,6 +3,8 @@ project(0xFX VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── Compiler warnings ─────────────────────────────────────────
 add_compile_options(-Wall -Wextra -Wpedantic)
@@ -23,6 +25,8 @@ target_include_directories(fx_core PUBLIC
     ${CMAKE_SOURCE_DIR}/src/core
 )
 if(UNIX AND NOT APPLE)
+    target_link_libraries(fx_core PRIVATE pthread)
+elseif(APPLE)
     target_link_libraries(fx_core PRIVATE pthread)
 endif()
 set_target_properties(fx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -80,6 +84,18 @@ if(NOT SDL2_FOUND AND EXISTS "/usr/include/SDL2/SDL.h")
     set(SDL2_FOUND TRUE)
     set(SDL2_INCLUDE_DIRS "/usr/include/SDL2")
     set(SDL2_LIBRARIES SDL2)
+endif()
+# macOS: Homebrew SDL2
+if(NOT SDL2_FOUND AND APPLE)
+    find_path(SDL2_HOMEBREW_INC SDL.h
+        PATHS /usr/local/include/SDL2 /opt/homebrew/include/SDL2)
+    if(SDL2_HOMEBREW_INC)
+        set(SDL2_FOUND TRUE)
+        set(SDL2_INCLUDE_DIRS "${SDL2_HOMEBREW_INC}")
+        find_library(SDL2_LIB SDL2 PATHS /usr/local/lib /opt/homebrew/lib)
+        set(SDL2_LIBRARIES "${SDL2_LIB}")
+        message(STATUS "SDL2 found via Homebrew: ${SDL2_LIB}")
+    endif()
 endif()
 
 # ── ImGui library for standalone (SDL2 backend) ──────────────
@@ -165,6 +181,10 @@ if(UNIX AND NOT APPLE)
         target_include_directories(0xfx_standalone PRIVATE ${ALSA_INCLUDE_DIRS})
         target_link_libraries(0xfx_standalone PRIVATE ${ALSA_LIBRARIES})
     endif()
+elseif(APPLE)
+    target_link_libraries(0xfx_standalone PRIVATE pthread
+        "-framework CoreAudio" "-framework CoreMIDI" "-framework CoreFoundation"
+        "-framework AudioToolbox" "-framework AudioUnit")
 elseif(WIN32)
     target_link_libraries(0xfx_standalone PRIVATE ole32 winmm)
 endif()
@@ -209,6 +229,12 @@ if(HAS_GUI)
             "${MINGW_SDL2_DIR}/lib/libSDL2main.a"
             ${SDL2_LIBRARIES}
             opengl32 ole32 winmm)
+    elseif(APPLE)
+        target_link_libraries(0xfx_gui PRIVATE
+            "-framework OpenGL" "-framework Cocoa"
+            "-framework CoreAudio" "-framework CoreMIDI" "-framework CoreFoundation"
+            "-framework AudioToolbox" "-framework AudioUnit" "-framework IOKit"
+            pthread)
     elseif(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_gui PRIVATE GL pthread dl)
         if(ALSA_FOUND)
@@ -272,6 +298,8 @@ set(PLUGIN_GUI_INCLUDES
         target_link_libraries(0xfx_clap PRIVATE imgui_plugin)
         if(UNIX AND NOT APPLE)
             target_link_libraries(0xfx_clap PRIVATE GL X11)
+        elseif(APPLE)
+            target_link_libraries(0xfx_clap PRIVATE "-framework OpenGL" "-framework Cocoa")
         endif()
     endif()
     target_compile_definitions(0xfx_clap PRIVATE CPLUG_SHARED)
@@ -293,6 +321,11 @@ set(PLUGIN_GUI_INCLUDES
     target_link_libraries(0xfx_clap PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_clap PRIVATE pthread dl)
+    elseif(APPLE)
+        target_link_libraries(0xfx_clap PRIVATE pthread
+            "-framework OpenGL" "-framework Cocoa"
+            "-framework CoreAudio" "-framework CoreMIDI" "-framework CoreFoundation"
+            "-framework AudioToolbox" "-framework AudioUnit")
     elseif(WIN32 OR MINGW)
         target_link_libraries(0xfx_clap PRIVATE ole32 winmm opengl32 dwmapi gdi32 imm32)
     endif()
@@ -320,6 +353,8 @@ set(PLUGIN_GUI_INCLUDES
         target_link_libraries(0xfx_vst3 PRIVATE imgui_plugin)
         if(UNIX AND NOT APPLE)
             target_link_libraries(0xfx_vst3 PRIVATE GL X11)
+        elseif(APPLE)
+            target_link_libraries(0xfx_vst3 PRIVATE "-framework OpenGL" "-framework Cocoa")
         endif()
     endif()
     target_compile_definitions(0xfx_vst3 PRIVATE CPLUG_SHARED)
@@ -340,6 +375,11 @@ set(PLUGIN_GUI_INCLUDES
     target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
         target_link_libraries(0xfx_vst3 PRIVATE pthread dl)
+    elseif(APPLE)
+        target_link_libraries(0xfx_vst3 PRIVATE pthread
+            "-framework OpenGL" "-framework Cocoa"
+            "-framework CoreAudio" "-framework CoreMIDI" "-framework CoreFoundation"
+            "-framework AudioToolbox" "-framework AudioUnit")
     elseif(WIN32 OR MINGW)
         target_link_libraries(0xfx_vst3 PRIVATE ole32 winmm opengl32 dwmapi gdi32 imm32)
     endif()

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 0xFX — Guitar amp simulator & effects pedalboard. Standalone app + CLAP/VST3 plugins. Sibling project to [0x808](https://github.com/averagenative/0x808) (drum machine) and 0xSYNTH, sharing build tooling but with a distinct API-driven engine architecture.
 
-**Status**: 1.0.0 — Engine, GUI, and plugins functional. 12 circuit-modeled amps, 41 pedals, 9 rack effects, 10 mic models. CLAP/VST3 plugins with thread-safe multi-instance support. Windows + Linux.
+**Status**: 1.0.0 — Engine, GUI, and plugins functional. 12 circuit-modeled amps, 41 pedals, 9 rack effects, 10 mic models. CLAP/VST3 plugins with thread-safe multi-instance support. Windows + Linux + macOS.
 
 ## Build Commands
 
@@ -15,6 +15,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 sudo apt install libsdl2-dev libgl-dev g++
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
+
+# macOS
+brew install sdl2 cmake
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(sysctl -n hw.ncpu)
 
 # Windows (cross-compile from Linux via MinGW)
 cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
@@ -257,6 +262,21 @@ All work happens on `master` unless explicitly working a release branch. Keep th
    ```
 5. **Never force push to master**: If rebase produces a mess, ask the user before `--force`.
 6. **Commit messages**: Use the format from previous commits — summary line, bullet points for changes, test count, co-author tag.
+
+### Release Builds
+
+When building release packages, always commit and push source changes first, then build and upload:
+
+1. **Commit + push source changes** before running packaging scripts. The release must correspond to a committed state.
+2. **Build the release**: run the appropriate packaging script(s).
+3. **Upload assets to GitHub release** immediately after building: `gh release upload v{VERSION} release/*`.
+4. **Update release notes** if the release gains new platforms or features: `gh release edit v{VERSION} --notes "..."`.
+
+Packaging scripts:
+```bash
+./scripts/packaging/package_release.sh 1.0.0     # Linux + Windows
+./scripts/packaging/package_macos.sh 1.0.0        # macOS (.dmg + .zip)
+```
 
 ### Quality Gates (Per-Commit)
 
