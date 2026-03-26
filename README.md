@@ -143,24 +143,34 @@ Default: DI (direct inject, no mic coloration).
 
 ## Installation
 
+Download from [Releases](https://github.com/averagenative/0xFX/releases).
+
+| Platform | Architecture | Installer | Portable |
+|----------|-------------|-----------|----------|
+| Windows | x64 | `0xFX-*-windows-x64-setup.exe` | `0xFX-*-windows-x64.zip` |
+| Windows | ARM64 | `0xFX-*-windows-arm64-setup.exe` | `0xFX-*-windows-arm64.zip` |
+| macOS | Universal (Intel + Apple Silicon) | `0xFX-*-macos-universal.dmg` | `0xFX-*-macos-universal.zip` |
+| Linux | x64 | — | `0xFX-*-linux-x64.tar.gz` |
+| Linux | ARM64 | — | `0xFX-*-linux-arm64.tar.gz` |
+
 ### Windows
 
-Download the installer or zip from [Releases](https://github.com/averagenative/0xFX/releases):
-
-- **Installer** (`0xFX-setup.exe`): Installs standalone + plugins to standard locations
+- **Installer** (`0xFX-*-setup.exe`): Installs standalone + plugins to standard locations, Start Menu + Desktop shortcuts, uninstaller
   - CLAP: `C:\Program Files\Common Files\CLAP\`
-  - VST3: `C:\Program Files\Common Files\VST3\0xFX.vst3\Contents\x86_64-win\`
+  - VST3: `C:\Program Files\Common Files\VST3\0xFX.vst3\Contents\{arch}\`
 - **Zip**: Manual install — copy plugins to the paths above, run `0xfx_gui.exe` standalone
+- ARM64 builds are native for Surface Pro, Snapdragon laptops, etc. (x64 builds also work via emulation)
 
 ### macOS
 
-- **Standalone**: Download `0xfx_gui` from Releases, or build from source (see below)
+- **DMG**: Drag 0xFX to Applications. Universal binary runs natively on both Intel and Apple Silicon (M1/M2/M3/M4).
 - **Plugins**: Copy `0xFX.clap` to `~/Library/Audio/Plug-Ins/CLAP/` and `0xFX.vst3` bundle to `~/Library/Audio/Plug-Ins/VST3/`
 
 ### Linux
 
 - **tar.gz**: Extract, copy plugins to `~/.clap/` and `~/.vst3/`, run `./0xfx_gui`
-- **AppImage**: `chmod +x 0xFX-*.AppImage && ./0xFX-*.AppImage`
+- **AppImage** (x64 only): `chmod +x 0xFX-*.AppImage && ./0xFX-*.AppImage`
+- ARM64 builds target Raspberry Pi 4/5, Pine64, ARM Chromebooks, etc.
 
 ---
 
@@ -216,11 +226,14 @@ cp -r build/0xFX.vst3.bundle ~/Library/Audio/Plug-Ins/VST3/0xFX.vst3
 # Prerequisites (on Linux)
 sudo apt install mingw-w64 cmake python3
 
-# Build
+# x64 build
 cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release
 cmake --build build_win -j$(nproc)
 
-# Outputs: build_win/0xfx_gui.exe, build_win/0xFX.clap, build_win/0xFX.vst3
+# ARM64 build (requires llvm-mingw — https://github.com/mstorsjo/llvm-mingw/releases)
+LLVM_MINGW_PREFIX=/path/to/llvm-mingw \
+cmake -B build_win_arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw-arm64.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build_win_arm64 -j$(nproc)
 ```
 
 ### Windows (Native with MSVC)
@@ -229,6 +242,19 @@ cmake --build build_win -j$(nproc)
 # Prerequisites: Visual Studio 2019+, CMake, Python 3, SDL2 (via vcpkg or manual)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
+```
+
+### Linux ARM64 (Cross-Compile from x64)
+
+```bash
+# Prerequisites
+sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+sudo dpkg --add-architecture arm64
+sudo apt install libgl-dev:arm64 libx11-dev:arm64 libasound2-dev:arm64
+
+# Build
+cmake -B build_linux_arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build_linux_arm64 -j$(nproc)
 ```
 
 ### Asset Generation
@@ -245,8 +271,15 @@ If Python3 is not available, the build will use a pre-existing `embedded_assets.
 ### Release Packaging
 
 ```bash
-./scripts/packaging/package_release.sh 1.0.0
-# Outputs: release/0xFX-1.0.0-linux-x64.tar.gz, AppImage, Windows zip + NSIS installer
+./scripts/packaging/package_release.sh 1.1.0
+# Outputs: linux-x64 tar.gz + AppImage, windows-x64 zip + NSIS installer
+
+# ARM64 installers (after building ARM64 targets above)
+makensis scripts/packaging/0xfx_installer.nsi         # Windows x64 installer
+makensis scripts/packaging/0xfx_installer_arm64.nsi   # Windows ARM64 installer
+
+# macOS (run on Mac)
+./scripts/packaging/package_macos.sh 1.1.0            # Universal .dmg + .zip
 ```
 
 ---
