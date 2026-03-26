@@ -283,11 +283,27 @@ When building release packages, always commit and push source changes first, the
 3. **Upload assets to GitHub release** immediately after building: `gh release upload v{VERSION} release/*`.
 4. **Update release notes** if the release gains new platforms or features: `gh release edit v{VERSION} --notes "..."`.
 
+**Every release MUST include Windows installers (.exe) alongside zip/tarball packages.** Standalone zips are for portable use; installers handle plugin paths, Start Menu shortcuts, and uninstall registry.
+
 Packaging scripts:
 ```bash
-./scripts/packaging/package_release.sh 1.0.0     # Linux + Windows
+./scripts/packaging/package_release.sh 1.0.0     # Linux + Windows x64
 ./scripts/packaging/package_macos.sh 1.0.0        # macOS (.dmg + .zip)
+
+# ARM64 builds (cross-compiled)
+LLVM_MINGW_PREFIX=~/tools/llvm-mingw-* cmake -B build_win_arm64 \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw-arm64.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build_win_arm64 -j$(nproc)
+makensis scripts/packaging/0xfx_installer_arm64.nsi   # ARM64 installer
+
+cmake -B build_linux_arm64 \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build_linux_arm64 -j$(nproc)
 ```
+
+NSIS installer scripts:
+- `scripts/packaging/0xfx_installer.nsi` — Windows x64
+- `scripts/packaging/0xfx_installer_arm64.nsi` — Windows ARM64
 
 ### Quality Gates (Per-Commit)
 

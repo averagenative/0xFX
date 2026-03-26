@@ -1,7 +1,7 @@
-; 0xFX NSIS Installer Script
-; Builds a Windows installer from Linux via makensis
+; 0xFX NSIS Installer Script — Windows ARM64
+; Builds a Windows ARM64 installer from Linux via makensis
 ;
-; Usage: makensis scripts/packaging/0xfx_installer.nsi
+; Usage: makensis scripts/packaging/0xfx_installer_arm64.nsi
 
 !include "MUI2.nsh"
 
@@ -9,8 +9,8 @@
 !define VERFULL "1.1.0.0"
 
 ; --- General ---
-Name "0xFX v${VER}"
-OutFile "../../release/0xFX-${VER}-windows-x64-setup.exe"
+Name "0xFX v${VER} (ARM64)"
+OutFile "../../release/0xFX-${VER}-windows-arm64-setup.exe"
 InstallDir "$PROGRAMFILES64\0xFX"
 InstallDirRegKey HKLM "Software\0xFX" "InstallDir"
 RequestExecutionLevel admin
@@ -19,7 +19,7 @@ RequestExecutionLevel admin
 VIProductVersion "${VERFULL}"
 VIAddVersionKey "ProductName" "0xFX"
 VIAddVersionKey "CompanyName" "Dan Michael"
-VIAddVersionKey "FileDescription" "0xFX Guitar Amp Simulator & Effects Pedalboard"
+VIAddVersionKey "FileDescription" "0xFX Guitar Amp Simulator & Effects Pedalboard (ARM64)"
 VIAddVersionKey "FileVersion" "${VER}"
 VIAddVersionKey "LegalCopyright" "MIT License"
 
@@ -64,7 +64,7 @@ Section "0xFX Standalone (required)" SecMain
     SectionIn RO
 
     SetOutPath "$INSTDIR"
-    File "..\..\build_win\0xfx_gui.exe"
+    File "..\..\build_win_arm64\0xfx_gui.exe"
     File "..\..\resources\icon\0xfx.ico"
     File "..\..\README.md"
     File "..\..\LICENSE"
@@ -84,7 +84,7 @@ Section "0xFX Standalone (required)" SecMain
     ; Registry
     WriteRegStr HKLM "Software\0xFX" "InstallDir" "$INSTDIR"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\0xFX" \
-        "DisplayName" "0xFX - Guitar Amp Simulator & Effects Pedalboard"
+        "DisplayName" "0xFX - Guitar Amp Simulator & Effects Pedalboard (ARM64)"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\0xFX" \
         "UninstallString" '"$INSTDIR\uninstall.exe"'
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\0xFX" \
@@ -104,12 +104,12 @@ SectionEnd
 
 Section "CLAP Plugin" SecCLAP
     SetOutPath "$COMMONFILES64\CLAP"
-    File "..\..\build_win\0xFX.clap"
+    File "..\..\build_win_arm64\0xFX.clap"
 SectionEnd
 
 Section "VST3 Plugin" SecVST3
-    SetOutPath "$COMMONFILES64\VST3\0xFX.vst3\Contents\x86_64-win"
-    File "..\..\build_win\0xFX.vst3\Contents\x86_64-win\0xFX.vst3"
+    SetOutPath "$COMMONFILES64\VST3\0xFX.vst3\Contents\arm64-win"
+    File "..\..\build_win_arm64\0xFX.vst3\Contents\arm64-win\0xFX.vst3"
 SectionEnd
 
 ; --- Descriptions ---
@@ -134,8 +134,8 @@ Section "Uninstall"
 
     ; Plugins
     Delete "$COMMONFILES64\CLAP\0xFX.clap"
-    Delete "$COMMONFILES64\VST3\0xFX.vst3\Contents\x86_64-win\0xFX.vst3"
-    RMDir "$COMMONFILES64\VST3\0xFX.vst3\Contents\x86_64-win"
+    Delete "$COMMONFILES64\VST3\0xFX.vst3\Contents\arm64-win\0xFX.vst3"
+    RMDir "$COMMONFILES64\VST3\0xFX.vst3\Contents\arm64-win"
     RMDir "$COMMONFILES64\VST3\0xFX.vst3\Contents"
     RMDir "$COMMONFILES64\VST3\0xFX.vst3"
 
