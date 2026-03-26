@@ -261,12 +261,23 @@ if(HAS_GUI)
     endif()
     if(WIN32)
         # SDL2main provides WinMain → SDL_main wrapper
-        set(MINGW_SDL2_DIR "${CMAKE_SOURCE_DIR}/deps/SDL2-2.30.12/x86_64-w64-mingw32")
-        target_link_libraries(0xfx_gui PRIVATE
-            -static mingw32
-            "${MINGW_SDL2_DIR}/lib/libSDL2main.a"
-            ${SDL2_LIBRARIES}
-            opengl32 ole32 winmm)
+        # Use toolchain-defined MINGW_SDL2_DIR, or fall back to x86_64
+        if(NOT DEFINED MINGW_SDL2_DIR)
+            set(MINGW_SDL2_DIR "${CMAKE_SOURCE_DIR}/deps/SDL2-2.30.12/x86_64-w64-mingw32")
+        endif()
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+            target_link_libraries(0xfx_gui PRIVATE
+                -static
+                "${MINGW_SDL2_DIR}/lib/libSDL2main.a"
+                ${SDL2_LIBRARIES}
+                opengl32 ole32 winmm)
+        else()
+            target_link_libraries(0xfx_gui PRIVATE
+                -static mingw32
+                "${MINGW_SDL2_DIR}/lib/libSDL2main.a"
+                ${SDL2_LIBRARIES}
+                opengl32 ole32 winmm)
+        endif()
     elseif(APPLE)
         target_link_libraries(0xfx_gui PRIVATE
             "-framework OpenGL" "-framework Cocoa"
@@ -357,7 +368,11 @@ set(PLUGIN_GUI_INCLUDES
         C_VISIBILITY_PRESET hidden
     )
     if(MINGW)
-        target_link_options(0xfx_clap PRIVATE -static -static-libgcc -static-libstdc++)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+            target_link_options(0xfx_clap PRIVATE -static)
+        else()
+            target_link_options(0xfx_clap PRIVATE -static -static-libgcc -static-libstdc++)
+        endif()
     endif()
     target_link_libraries(0xfx_clap PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
@@ -414,7 +429,11 @@ set(PLUGIN_GUI_INCLUDES
         C_VISIBILITY_PRESET hidden
     )
     if(MINGW)
-        target_link_options(0xfx_vst3 PRIVATE -static -static-libgcc -static-libstdc++)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+            target_link_options(0xfx_vst3 PRIVATE -static)
+        else()
+            target_link_options(0xfx_vst3 PRIVATE -static -static-libgcc -static-libstdc++)
+        endif()
     endif()
     target_link_libraries(0xfx_vst3 PRIVATE fx_engine m)
     if(UNIX AND NOT APPLE)
@@ -429,12 +448,20 @@ set(PLUGIN_GUI_INCLUDES
     endif()
 
     # VST3 bundle structure (required by Reaper and most hosts)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR MINGW)
-        set(VST3_ARCH "x86_64-win")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         set(VST3_ARCH "MacOS")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR MINGW)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+            set(VST3_ARCH "arm64-win")
+        else()
+            set(VST3_ARCH "x86_64-win")
+        endif()
     else()
-        set(VST3_ARCH "x86_64-linux")
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+            set(VST3_ARCH "aarch64-linux")
+        else()
+            set(VST3_ARCH "x86_64-linux")
+        endif()
     endif()
     set(VST3_BUNDLE_DIR "${CMAKE_BINARY_DIR}/0xFX.vst3.bundle/Contents/${VST3_ARCH}")
     add_custom_command(TARGET 0xfx_vst3 POST_BUILD

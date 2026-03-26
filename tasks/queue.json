@@ -2721,7 +2721,6 @@
       "src/plugin/gui_plugin_bridge.cpp"
     ]
   },
-
   {
     "id": "TASK-349",
     "priority": "HIGH",
@@ -2730,7 +2729,9 @@
     "phase": 9,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-344"],
+    "depends": [
+      "TASK-344"
+    ],
     "estimatedTokens": 15000,
     "release": "1.1.0",
     "acceptanceCriteria": [
@@ -2752,8 +2753,8 @@
     "title": "Windows ARM64 cross-compilation via llvm-mingw",
     "domain": "infra",
     "phase": 9,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 25000,
     "release": "1.1.0",
@@ -2778,8 +2779,8 @@
     "title": "Linux ARM64 (aarch64) cross-compilation",
     "domain": "infra",
     "phase": 9,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 20000,
     "release": "1.1.0",
@@ -2805,7 +2806,9 @@
     "phase": 9,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-349"],
+    "depends": [
+      "TASK-349"
+    ],
     "estimatedTokens": 20000,
     "release": "1.1.0",
     "acceptanceCriteria": [
@@ -2832,7 +2835,12 @@
     "phase": 9,
     "status": "queued",
     "claimedBy": null,
-    "depends": ["TASK-349", "TASK-350", "TASK-351", "TASK-353"],
+    "depends": [
+      "TASK-349",
+      "TASK-350",
+      "TASK-351",
+      "TASK-353"
+    ],
     "estimatedTokens": 15000,
     "release": "1.1.0",
     "acceptanceCriteria": [
