@@ -190,3 +190,49 @@
 - **Priority**: P3
 - **Depends**: TASK-003
 - **Notes**: Git tag → binary version. Title bar + about dialog.
+
+---
+
+## Release 1.1.0 — Multi-Architecture Support
+
+> ARM64 support across all platforms. Universal macOS, ARM64 Windows (Surface/Snapdragon laptops), ARM64 Linux (RPi/Pine64).
+
+### TASK-349: macOS universal binary (arm64 + x86_64)
+- **Status**: queued
+- **Phase**: 9
+- **Priority**: P1
+- **Release**: 1.1.0
+- **Depends**: TASK-344 (macOS plugin builds)
+- **Notes**: Set `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"` in CMakeLists.txt. Update package_macos.sh naming to `macos-universal`. Can be cross-compiled from Intel Mac — Xcode 12+ required. Verify with `lipo -info`.
+
+### TASK-350: Windows ARM64 cross-compilation via llvm-mingw
+- **Status**: queued
+- **Phase**: 9
+- **Priority**: P2
+- **Release**: 1.1.0
+- **Depends**: none
+- **Notes**: llvm-mingw has native aarch64-w64-mingw32 support (better than GNU mingw for ARM). Need SDL2 ARM64 Windows dev libs. New toolchain file `cmake/llvm-mingw-arm64.cmake`. x86 emulation on ARM Windows works as fallback but native is preferred for audio latency. Install: `apt install llvm-mingw` or download from [llvm-mingw releases](https://github.com/mstorsjo/llvm-mingw).
+
+### TASK-351: Linux ARM64 (aarch64) cross-compilation
+- **Status**: queued
+- **Phase**: 9
+- **Priority**: P2
+- **Release**: 1.1.0
+- **Depends**: none
+- **Notes**: Cross-compile toolchain `aarch64-linux-gnu-gcc`. Install: `apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu`. SDL2 cross-compile deps needed (build from source or use multiarch). Targets: RPi 4/5, Pine64, ARM Chromebooks, Linux ARM servers.
+
+### TASK-353: macOS universal build + installer (run from MacBook)
+- **Status**: queued
+- **Phase**: 9
+- **Priority**: P1
+- **Release**: 1.1.0
+- **Depends**: TASK-349 (CMake universal binary support)
+- **Notes**: **Must be run on MacBook.** After TASK-349 lands the CMake changes, pull to MacBook and build: `cmake -B build -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n hw.ncpu)`. Verify with `lipo -info build/0xfx_gui`. Package with `./scripts/packaging/package_macos.sh 1.1.0`. Test standalone + plugins on M-series. DMG should have drag-to-Applications layout.
+
+### TASK-352: Multi-arch release packaging and naming
+- **Status**: queued
+- **Phase**: 9
+- **Priority**: P2
+- **Release**: 1.1.0
+- **Depends**: TASK-349, TASK-350, TASK-351
+- **Notes**: Unified release script that builds all arch variants. Naming: `0xFX-{ver}-{platform}-{arch}`. Platforms: `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-universal`. Update CLAUDE.md with ARM build commands.

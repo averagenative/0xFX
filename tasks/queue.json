@@ -2720,5 +2720,133 @@
       "CMakeLists.txt",
       "src/plugin/gui_plugin_bridge.cpp"
     ]
+  },
+
+  {
+    "id": "TASK-349",
+    "priority": "HIGH",
+    "title": "macOS universal binary (arm64 + x86_64)",
+    "domain": "infra",
+    "phase": 9,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": ["TASK-344"],
+    "estimatedTokens": 15000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "CMAKE_OSX_ARCHITECTURES set to 'arm64;x86_64' for universal binary",
+      "CMakeLists.txt conditionally sets arch when building on macOS",
+      "package_macos.sh updated: output named 'macos-universal' instead of 'macos-x64'",
+      "lipo -info confirms both slices present in built binaries",
+      "Standalone, CLAP, and VST3 all built as universal",
+      "Can be built from either Intel or Apple Silicon Mac"
+    ],
+    "files": [
+      "CMakeLists.txt",
+      "scripts/packaging/package_macos.sh"
+    ]
+  },
+  {
+    "id": "TASK-350",
+    "priority": "MEDIUM",
+    "title": "Windows ARM64 cross-compilation via llvm-mingw",
+    "domain": "infra",
+    "phase": 9,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 25000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "cmake/llvm-mingw-arm64.cmake toolchain file targets aarch64-w64-mingw32",
+      "llvm-mingw toolchain used (has native ARM64 Windows support)",
+      "SDL2 ARM64 Windows dev libs vendored or fetched during build",
+      "cmake -B build_win_arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw-arm64.cmake succeeds",
+      "Standalone and GUI .exe built for ARM64",
+      "CLAP and VST3 plugins built for ARM64",
+      "Test: file command or dumpbin confirms ARM64 PE target"
+    ],
+    "files": [
+      "cmake/llvm-mingw-arm64.cmake",
+      "CMakeLists.txt",
+      "scripts/packaging/package_release.sh"
+    ]
+  },
+  {
+    "id": "TASK-351",
+    "priority": "MEDIUM",
+    "title": "Linux ARM64 (aarch64) cross-compilation",
+    "domain": "infra",
+    "phase": 9,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 20000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "cmake/aarch64-linux-gnu.cmake toolchain file for cross-compiling",
+      "Uses aarch64-linux-gnu-gcc/g++ toolchain (apt: gcc-aarch64-linux-gnu)",
+      "SDL2 aarch64 dev libs handled (cross-compile or pre-built)",
+      "cmake -B build_linux_arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake succeeds",
+      "Standalone, CLAP, and VST3 built for aarch64",
+      "file command confirms ELF 64-bit ARM aarch64 target"
+    ],
+    "files": [
+      "cmake/aarch64-linux-gnu.cmake",
+      "CMakeLists.txt",
+      "scripts/packaging/package_release.sh"
+    ]
+  },
+  {
+    "id": "TASK-353",
+    "priority": "HIGH",
+    "title": "macOS universal build + installer (run from MacBook)",
+    "domain": "infra",
+    "phase": 9,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": ["TASK-349"],
+    "estimatedTokens": 20000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Build universal binary on MacBook: cmake -B build -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64'",
+      "lipo -info confirms both arm64 and x86_64 slices in standalone, CLAP, VST3",
+      "package_macos.sh produces 0xFX-1.1.0-macos-universal.dmg",
+      "DMG contains: 0xFX.app bundle with universal binary inside",
+      "App bundle has correct Info.plist, icon, and code signature placeholder",
+      "Drag-to-Applications layout in DMG",
+      "Test standalone app launches on M-series Mac",
+      "Test plugins load in Logic Pro / Reaper on M-series Mac",
+      "Also produce .zip for direct download"
+    ],
+    "files": [
+      "scripts/packaging/package_macos.sh",
+      "CMakeLists.txt"
+    ]
+  },
+  {
+    "id": "TASK-352",
+    "priority": "MEDIUM",
+    "title": "Multi-arch release packaging and naming",
+    "domain": "infra",
+    "phase": 9,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": ["TASK-349", "TASK-350", "TASK-351", "TASK-353"],
+    "estimatedTokens": 15000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "package_release.sh accepts optional --arch flag (x64, arm64, all)",
+      "Default builds all available architectures",
+      "Naming convention: 0xFX-{ver}-{platform}-{arch} (e.g. windows-arm64, linux-arm64, macos-universal)",
+      "package_macos.sh produces macos-universal DMG and ZIP",
+      "GitHub release upload script handles all variants",
+      "CLAUDE.md build docs updated with ARM build commands"
+    ],
+    "files": [
+      "scripts/packaging/package_release.sh",
+      "scripts/packaging/package_macos.sh",
+      "CLAUDE.md"
+    ]
   }
 ]
