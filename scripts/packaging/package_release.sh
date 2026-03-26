@@ -49,7 +49,7 @@ mkdir -p "${LINUX_DIR}/presets"
 cp build/0xfx_gui              "${LINUX_DIR}/" 2>/dev/null || echo "  (no standalone GUI binary)"
 cp build/0xfx_standalone       "${LINUX_DIR}/" 2>/dev/null || echo "  (no standalone console binary)"
 cp build/0xFX.clap             "${LINUX_DIR}/" 2>/dev/null || echo "  (no CLAP)"
-cp build/0xFX.vst3             "${LINUX_DIR}/" 2>/dev/null || echo "  (no VST3)"
+cp -r build/0xFX.vst3          "${LINUX_DIR}/" 2>/dev/null || echo "  (no VST3 bundle)"
 cp -r presets/factory           "${LINUX_DIR}/presets/"
 cp README.md LICENSE            "${LINUX_DIR}/"
 
@@ -63,8 +63,7 @@ Standalone:
 
 Plugins:
   CLAP: cp 0xFX.clap ~/.clap/
-  VST3: mkdir -p ~/.vst3/0xFX.vst3/Contents/x86_64-linux && \
-        cp 0xFX.vst3 ~/.vst3/0xFX.vst3/Contents/x86_64-linux/
+  VST3: cp -r 0xFX.vst3 ~/.vst3/
 
 Presets should be alongside the binary in presets/factory/
 or in ~/.local/share/0xFX/presets/
@@ -133,7 +132,7 @@ mkdir -p "${WIN_DIR}/presets"
 cp build_win/0xfx_gui.exe      "${WIN_DIR}/" 2>/dev/null || echo "  (no standalone GUI)"
 cp resources/icon/0xfx.ico     "${WIN_DIR}/" 2>/dev/null || true
 cp build_win/0xFX.clap         "${WIN_DIR}/" 2>/dev/null || echo "  (no CLAP)"
-cp build_win/0xFX.vst3         "${WIN_DIR}/" 2>/dev/null || echo "  (no VST3)"
+cp -r build_win/0xFX.vst3      "${WIN_DIR}/" 2>/dev/null || echo "  (no VST3 bundle)"
 cp -r presets/factory           "${WIN_DIR}/presets/"
 cp README.md LICENSE            "${WIN_DIR}/"
 

@@ -179,9 +179,19 @@ message(STATUS "Plugin GUI enabled (native platform APIs, no SDL2)")
 
 # ── ALSA detection (optional, for MIDI on Linux) ──────────────
 if(UNIX AND NOT APPLE)
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(ALSA QUIET alsa)
+    if(CMAKE_CROSSCOMPILING)
+        # When cross-compiling, don't use host pkg-config — check for lib directly
+        find_library(ALSA_LIB asound PATHS /usr/lib/${CMAKE_SYSTEM_PROCESSOR}-linux-gnu NO_DEFAULT_PATH)
+        if(ALSA_LIB)
+            set(ALSA_FOUND TRUE)
+            set(ALSA_LIBRARIES "${ALSA_LIB}")
+            set(ALSA_INCLUDE_DIRS "/usr/include")
+        endif()
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(ALSA QUIET alsa)
+        endif()
     endif()
     if(ALSA_FOUND)
         message(STATUS "ALSA found — MIDI input enabled")
@@ -550,11 +560,12 @@ endif()
             "-framework AudioToolbox" "-framework AudioUnit")
         oxfx_codesign(0xfx_vst3)
     elseif(UNIX)
-        # Linux VST3: flat bundle structure (.vst3/Contents/x86_64-linux/0xFX.so)
+        # Linux VST3: bundle structure (.vst3/Contents/x86_64-linux/0xFX.so)
+        # Output as .so first, then copy into bundle dir to avoid file/dir name collision
         set_target_properties(0xfx_vst3 PROPERTIES
-            OUTPUT_NAME "0xFX"
+            OUTPUT_NAME "0xFX-vst3"
             PREFIX ""
-            SUFFIX ".vst3"
+            SUFFIX ".so"
             C_VISIBILITY_PRESET hidden
         )
         target_link_libraries(0xfx_vst3 PRIVATE pthread dl)
@@ -570,10 +581,11 @@ endif()
             COMMENT "Creating VST3 bundle: 0xFX.vst3"
         )
     elseif(WIN32 OR MINGW)
+        # Output as .dll first, then copy into bundle dir to avoid file/dir name collision
         set_target_properties(0xfx_vst3 PROPERTIES
-            OUTPUT_NAME "0xFX"
+            OUTPUT_NAME "0xFX-vst3"
             PREFIX ""
-            SUFFIX ".vst3"
+            SUFFIX ".dll"
             C_VISIBILITY_PRESET hidden
         )
         target_link_libraries(0xfx_vst3 PRIVATE ole32 winmm opengl32 dwmapi gdi32 imm32)

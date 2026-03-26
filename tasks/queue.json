@@ -2779,7 +2779,7 @@
     "title": "Linux ARM64 (aarch64) cross-compilation",
     "domain": "infra",
     "phase": 9,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude-opus",
     "depends": [],
     "estimatedTokens": 20000,
