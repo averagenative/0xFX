@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=0xFX
+GenericName=Guitar Amp Simulator
+Comment=Guitar amp simulator & effects pedalboard
+Exec=0xfx_standalone
+Icon=0xfx
+Categories=Audio;AudioVideo;Music;
+Terminal=false
+Keywords=guitar;amp;amplifier;effects;pedals;pedalboard;audio;music;
+MimeType=application/x-0xfx;
+StartupWMClass=0xfx

@@ -48,4 +48,11 @@
 /* CLAP_PLUGIN_FEATURE_* values from <clap/plugin-features.h> */
 #define CPLUG_CLAP_FEATURES    CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_DISTORTION
 
+/* ── AUv2 identifiers (macOS only) ────────────────────────────── */
+/* CPLUG_AUV2_VIEW_CLASS: Objective-C class for the AU Cocoa view.
+ * Must match an @interface/@implementation pair in the GUI bridge.
+ * Currently stubbed — GUI is no-op until TASK-070+. */
+#define CPLUG_AUV2_VIEW_CLASS     OxFXAUView
+#define CPLUG_AUV2_VIEW_CLASS_STR "OxFXAUView"
+
 #endif /* PLUGIN_CONFIG_H */

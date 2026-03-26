@@ -2388,8 +2388,8 @@
     "title": "Mac .icns icon + AppImage desktop integration",
     "domain": "infra",
     "phase": 8,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus-mac",
     "depends": [],
     "estimatedTokens": 10000,
     "acceptanceCriteria": [
@@ -2606,8 +2606,8 @@
     "title": "macOS plugin builds \u2014 AU/VST3/CLAP bundles",
     "domain": "infra",
     "phase": 8,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus-mac",
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [

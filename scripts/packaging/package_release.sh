@@ -92,16 +92,9 @@ cp resources/icon/0xfx_256.png "${APPDIR}/0xfx.png"
 cp resources/icon/0xfx_256.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/0xfx.png"
 ln -sf 0xfx.png "${APPDIR}/.DirIcon"
 
-# Desktop entry
-cat > "${APPDIR}/0xfx.desktop" << EOF
-[Desktop Entry]
-Name=0xFX
-Exec=0xfx_gui
-Icon=0xfx
-Type=Application
-Categories=AudioVideo;Audio;
-Comment=Guitar Amp Simulator & Effects Pedalboard
-EOF
+# Desktop entry — copy from resources and override Exec for AppImage context
+cp resources/0xFX.desktop "${APPDIR}/0xfx.desktop"
+sed -i 's/^Exec=.*/Exec=0xfx_gui/' "${APPDIR}/0xfx.desktop"
 cp "${APPDIR}/0xfx.desktop" "${APPDIR}/usr/share/applications/"
 
 # AppRun
