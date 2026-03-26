@@ -2727,8 +2727,8 @@
     "title": "macOS universal binary (arm64 + x86_64)",
     "domain": "infra",
     "phase": 9,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus-mac",
     "depends": [
       "TASK-344"
     ],
@@ -2804,8 +2804,8 @@
     "title": "macOS universal build + installer (run from MacBook)",
     "domain": "infra",
     "phase": 9,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude-opus-mac",
     "depends": [
       "TASK-349"
     ],

@@ -7,16 +7,16 @@
 #   ./scripts/packaging/package_macos.sh [version]
 #
 # Outputs:
-#   release/0xFX-{version}-macos-x64.dmg
-#   release/0xFX-{version}-macos-x64.zip
+#   release/0xFX-{version}-macos-universal.dmg
+#   release/0xFX-{version}-macos-universal.zip
 #
 # Lessons learned from 0x808/0xSYNTH releases:
 #   - App must work from /Applications (no hardcoded paths relative to build dir)
 #   - Presets bundled inside .app/Contents/Resources/ so drag-to-Applications works
 #   - SDL2 linked from Homebrew — users need: brew install sdl2
 #   - Unsigned app requires xattr -cr to clear Gatekeeper quarantine
-#   - VST3 macOS bundle uses Contents/MacOS/ (not x86_64-linux)
-#   - CLAP is a single .clap file (no bundle structure needed)
+#   - VST3/CLAP/AU macOS bundles use Contents/MacOS/ structure
+#   - Universal binary (arm64 + x86_64) built via CMAKE_OSX_ARCHITECTURES
 #
 
 set -e
@@ -57,8 +57,10 @@ fi
 
 # ── Build ──
 echo ""
-echo "--- Building macOS ---"
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+echo "--- Building macOS (universal: arm64 + x86_64) ---"
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCODESIGN_IDENTITY="-"
 cmake --build build -j$(sysctl -n hw.ncpu)
 
 # ── Run tests ──
@@ -149,45 +151,28 @@ echo "--- Preparing plugins ---"
 PLUGIN_DIR="${RELEASE_DIR}/Plugins"
 mkdir -p "${PLUGIN_DIR}"
 
-# CLAP — single file
-if [ -f build/0xFX.clap ]; then
-    cp build/0xFX.clap "${PLUGIN_DIR}/"
-    echo "  -> CLAP: ${PLUGIN_DIR}/0xFX.clap"
+# CLAP — macOS bundle (.clap/Contents/MacOS/0xFX)
+if [ -d build/0xFX.clap ]; then
+    cp -r build/0xFX.clap "${PLUGIN_DIR}/"
+    echo "  -> CLAP: ${PLUGIN_DIR}/0xFX.clap (bundle)"
 else
     echo "  (no CLAP plugin found)"
 fi
 
-# VST3 — macOS bundle structure (Contents/MacOS/, not x86_64-linux)
-if [ -f build/0xFX.vst3 ]; then
-    VST3_BUNDLE="${PLUGIN_DIR}/0xFX.vst3"
-    mkdir -p "${VST3_BUNDLE}/Contents/MacOS"
-    cp build/0xFX.vst3 "${VST3_BUNDLE}/Contents/MacOS/0xFX"
-
-    cat > "${VST3_BUNDLE}/Contents/Info.plist" << VST3PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>0xFX</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.dcmichael.0xfx.vst3</string>
-    <key>CFBundleName</key>
-    <string>0xFX</string>
-    <key>CFBundleVersion</key>
-    <string>${VERSION}</string>
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
-</dict>
-</plist>
-VST3PLIST
-    echo "  -> VST3: ${VST3_BUNDLE}"
-elif [ -d build/0xFX.vst3.bundle ]; then
-    # Use pre-built bundle from CMake
-    cp -r build/0xFX.vst3.bundle "${PLUGIN_DIR}/0xFX.vst3"
-    echo "  -> VST3: ${PLUGIN_DIR}/0xFX.vst3 (from bundle)"
+# VST3 — macOS bundle (.vst3/Contents/MacOS/0xFX)
+if [ -d build/0xFX.vst3 ]; then
+    cp -r build/0xFX.vst3 "${PLUGIN_DIR}/"
+    echo "  -> VST3: ${PLUGIN_DIR}/0xFX.vst3 (bundle)"
 else
     echo "  (no VST3 plugin found)"
+fi
+
+# AU — macOS bundle (.component/Contents/MacOS/0xFX)
+if [ -d build/0xFX.component ]; then
+    cp -r build/0xFX.component "${PLUGIN_DIR}/"
+    echo "  -> AU: ${PLUGIN_DIR}/0xFX.component (bundle)"
+else
+    echo "  (no AU plugin found)"
 fi
 
 # Plugin install instructions
@@ -199,18 +184,22 @@ Copy the plugins to these locations so your DAW can find them:
 
   VST3:  ~/Library/Audio/Plug-Ins/VST3/0xFX.vst3
   CLAP:  ~/Library/Audio/Plug-Ins/CLAP/0xFX.clap
+  AU:    ~/Library/Audio/Plug-Ins/Components/0xFX.component
 
 Quick install (run in Terminal from this folder):
 
   mkdir -p ~/Library/Audio/Plug-Ins/VST3
   mkdir -p ~/Library/Audio/Plug-Ins/CLAP
-  cp -r 0xFX.vst3 ~/Library/Audio/Plug-Ins/VST3/
-  cp 0xFX.clap    ~/Library/Audio/Plug-Ins/CLAP/
+  mkdir -p ~/Library/Audio/Plug-Ins/Components
+  cp -r 0xFX.vst3       ~/Library/Audio/Plug-Ins/VST3/
+  cp -r 0xFX.clap       ~/Library/Audio/Plug-Ins/CLAP/
+  cp -r 0xFX.component  ~/Library/Audio/Plug-Ins/Components/
 
 Then clear Gatekeeper quarantine (unsigned plugins):
 
   xattr -cr ~/Library/Audio/Plug-Ins/CLAP/0xFX.clap
   xattr -cr ~/Library/Audio/Plug-Ins/VST3/0xFX.vst3
+  xattr -cr ~/Library/Audio/Plug-Ins/Components/0xFX.component
 
 Restart your DAW and rescan plugins.
 PLUGINTXT
@@ -234,6 +223,7 @@ GATEKEEPER (unsigned app):
   xattr -cr /Applications/0xFX.app
   xattr -cr ~/Library/Audio/Plug-Ins/CLAP/0xFX.clap
   xattr -cr ~/Library/Audio/Plug-Ins/VST3/0xFX.vst3
+  xattr -cr ~/Library/Audio/Plug-Ins/Components/0xFX.component
 
   Or: System Settings > Privacy & Security > "Allow Anyway"
 
@@ -249,7 +239,7 @@ EOF
 # ── Create .dmg ──
 echo ""
 echo "--- Creating .dmg ---"
-DMG_NAME="0xFX-${VERSION}-macos-x64.dmg"
+DMG_NAME="0xFX-${VERSION}-macos-universal.dmg"
 DMG_STAGE="${RELEASE_DIR}/dmg_stage"
 mkdir -p "${DMG_STAGE}"
 
@@ -275,9 +265,9 @@ rm -rf "${DMG_STAGE}"
 echo ""
 echo "--- Creating zip ---"
 cd "${RELEASE_DIR}"
-zip -r "0xFX-${VERSION}-macos-x64.zip" \
+zip -r "0xFX-${VERSION}-macos-universal.zip" \
     "${APP_NAME}.app" Plugins/ INSTALL.txt -q 2>/dev/null && {
-    echo "  -> release/0xFX-${VERSION}-macos-x64.zip"
+    echo "  -> release/0xFX-${VERSION}-macos-universal.zip"
 } || {
     echo "  zip creation failed"
 }

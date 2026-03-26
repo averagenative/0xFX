@@ -15,6 +15,11 @@ option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 # macOS codesigning — set to a Developer ID or use "-" for ad-hoc signing
 set(CODESIGN_IDENTITY "" CACHE STRING "macOS codesign identity (empty=skip, '-'=ad-hoc)")
 
+# macOS universal binary — set to "arm64;x86_64" for fat binary, or leave default for native arch
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures (universal by default)")
+endif()
+
 # Enable Objective-C for macOS AU plugin builds
 if(APPLE)
     enable_language(OBJC)
@@ -105,6 +110,18 @@ if(NOT SDL2_FOUND AND APPLE)
         message(STATUS "SDL2 found via Homebrew: ${SDL2_LIB}")
     endif()
 endif()
+# Detect SDL2 architecture — GUI app must match SDL2's arch on macOS
+# (Homebrew SDL2 on Intel is x86_64-only; on M-series it's arm64-only)
+if(SDL2_FOUND AND APPLE)
+    # Find the actual .dylib to check architecture
+    find_library(SDL2_DYLIB_PATH SDL2 PATHS /usr/local/lib /opt/homebrew/lib)
+    if(SDL2_DYLIB_PATH)
+        execute_process(COMMAND lipo -archs "${SDL2_DYLIB_PATH}"
+            OUTPUT_VARIABLE SDL2_ARCHS OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        message(STATUS "SDL2 architectures: ${SDL2_ARCHS}")
+    endif()
+endif()
 
 # ── ImGui library for standalone (SDL2 backend) ──────────────
 if(SDL2_FOUND)
@@ -122,6 +139,10 @@ if(SDL2_FOUND)
         ${SDL2_INCLUDE_DIRS}
     )
     set_target_properties(imgui PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    # Limit SDL2-dependent imgui to SDL2's architecture on macOS
+    if(APPLE AND SDL2_ARCHS AND NOT SDL2_ARCHS MATCHES "arm64.*x86_64|x86_64.*arm64")
+        set_target_properties(imgui PROPERTIES OSX_ARCHITECTURES "${SDL2_ARCHS}")
+    endif()
     set(HAS_GUI TRUE)
     message(STATUS "Standalone GUI enabled (SDL2 from: ${SDL2_INCLUDE_DIRS})")
 else()
@@ -287,6 +308,12 @@ if(HAS_GUI)
                 opengl32 ole32 winmm)
         endif()
     elseif(APPLE)
+        # GUI must match SDL2's architecture (Homebrew may be single-arch)
+        # Plugins are universal regardless — only the GUI app is constrained
+        if(SDL2_ARCHS AND NOT SDL2_ARCHS MATCHES "arm64.*x86_64|x86_64.*arm64")
+            set_target_properties(0xfx_gui PROPERTIES OSX_ARCHITECTURES "${SDL2_ARCHS}")
+            message(STATUS "GUI app limited to SDL2 arch: ${SDL2_ARCHS}")
+        endif()
         target_link_libraries(0xfx_gui PRIVATE
             "-framework OpenGL" "-framework Cocoa"
             "-framework CoreAudio" "-framework CoreMIDI" "-framework CoreFoundation"
