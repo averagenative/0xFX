@@ -849,8 +849,8 @@ static void tape_machine_init(fx_pedal_instance_t *p, float sr) {
     p->state = s;
     p->params[0] = 0.4f;  /* time */
     p->params[1] = 0.35f; /* feedback */
-    p->params[2] = 0.3f;  /* wow */
-    p->params[3] = 0.2f;  /* flutter */
+    p->params[2] = 0.15f; /* wow (subtle slow wobble) */
+    p->params[3] = 0.1f;  /* flutter (subtle fast wobble) */
     p->params[4] = 0.35f; /* mix */
 }
 
@@ -873,9 +873,9 @@ static void tape_machine_process(fx_pedal_instance_t *p, float *buf, int n, floa
     float wow_inc     = (float)(2.0 * M_PI * 0.5  / sr);
     float flutter_inc = (float)(2.0 * M_PI * 7.0  / sr);
 
-    /* Max modulation depths in samples */
-    float wow_samps     = wow_depth     * (sr * 0.008f); /* up to 8ms */
-    float flutter_samps = flutter_depth * (sr * 0.0015f); /* up to 1.5ms */
+    /* Max modulation depths in samples (reduced for subtlety) */
+    float wow_samps     = wow_depth     * (sr * 0.004f);  /* up to 4ms (was 8ms) */
+    float flutter_samps = flutter_depth * (sr * 0.0008f); /* up to 0.8ms (was 1.5ms) */
 
     for (int i = 0; i < n; i++) {
         float dry = buf[i];

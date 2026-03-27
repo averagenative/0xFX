@@ -408,6 +408,9 @@ struct fx_gui_state {
     int          browser_preset_count;
     bool         browser_needs_scan;
     int          selected_cat;
+
+    /* Tuner EMA smoothing (per-instance, no statics) */
+    float        tuner_smoothed_cents;
 };
 
 static const char *s_preset_categories[] = {
@@ -685,6 +688,14 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
         }
     }
 
+    /* Safety limiter — always at end of rack chain to prevent hearing damage */
+    {
+        fx_studio_id lid = fx_studio_add(engine, FX_STUDIO_BRICK_WALL);
+        fx_studio_set_param(engine, lid, 0, 0.4f);  /* threshold ~-7dB (conservative) */
+        fx_studio_set_param(engine, lid, 1, 0.85f);  /* ceiling ~-0.15dB */
+        fx_studio_set_param(engine, lid, 2, 0.5f);  /* medium release */
+    }
+
     /* Generate a fun name */
     static const char *adjectives[] = {
         "Cosmic", "Brutal", "Velvet", "Neon", "Rusty", "Haunted", "Molten",
@@ -890,7 +901,11 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             float freq = fx_tuner_get_frequency(engine);
             bool active = (freq > 20.0f);
             const char *note = active ? fx_tuner_get_note_name(engine) : "--";
-            float cents = active ? fx_tuner_get_cents(engine) : 0.0f;
+            float raw_cents = active ? fx_tuner_get_cents(engine) : 0.0f;
+            /* EMA smoothing for smoother animation (alpha=0.15) */
+            if (!active) { gui->tuner_smoothed_cents = 0.0f; }
+            else { gui->tuner_smoothed_cents += 0.15f * (raw_cents - gui->tuner_smoothed_cents); }
+            float cents = gui->tuner_smoothed_cents;
 
             ImVec4 note_color;
             if (!active) {
@@ -2947,7 +2962,30 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
             draw_meter(in_meter_pos.x, in_level, false);
             ImGui::Dummy(ImVec2(bar_w, bar_h));
 
-            ImGui::SameLine(0, 30);
+            ImGui::SameLine(0, 15);
+
+            /* Master volume slider */
+            {
+                float mv = fx_engine_get_master_volume(engine);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.58f, 0.45f, 1.0f));
+                ImGui::SetWindowFontScale(0.7f);
+                ImGui::Text("MASTER");
+                ImGui::SetWindowFontScale(1.0f);
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 4);
+                ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.80f, 0.58f, 0.18f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.95f, 0.70f, 0.20f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
+                ImGui::SetNextItemWidth(60.0f);
+                if (ImGui::SliderFloat("##master_vol", &mv, 0.0f, 1.0f, "")) {
+                    fx_engine_set_master_volume(engine, mv);
+                }
+                ImGui::PopStyleColor(3);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Master Volume: %.0f%%", mv * 100.0f);
+            }
+
+            ImGui::SameLine(0, 15);
 
             ImGui::SetWindowFontScale(0.85f);
             ImGui::TextDisabled("OUT");

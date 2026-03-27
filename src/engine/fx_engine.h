@@ -297,6 +297,11 @@ float        fx_gate_get_hold(fx_engine_t *engine);
 bool         fx_preset_save(fx_engine_t *engine, const char *path);
 bool         fx_preset_load(fx_engine_t *engine, const char *path);
 
+/* ── Master volume ───────────────────────────────────────────── */
+
+void         fx_engine_set_master_volume(fx_engine_t *engine, float volume);  /* 0.0 to 1.0 */
+float        fx_engine_get_master_volume(fx_engine_t *engine);
+
 /* ── Level metering ───────────────────────────────────────────── */
 
 float        fx_engine_get_input_level(fx_engine_t *engine);   /* peak level of last processed block */

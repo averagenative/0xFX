@@ -221,6 +221,9 @@ bool fx_preset_save(fx_engine_t *engine, const char *path) {
         }
     }
 
+    /* Master volume */
+    cJSON_AddNumberToObject(sc, "master_volume", (double)engine->master_volume);
+
     /* Render to string */
     char *json_str = cJSON_Print(root);
     cJSON_Delete(root);
@@ -450,6 +453,11 @@ bool fx_preset_load(fx_engine_t *engine, const char *path) {
             load_pedal_from_json(engine, item, FX_CHAIN_POS_POST);
         }
     }
+
+    /* ── Master volume ────────────────────────────────────────── */
+    cJSON *mvol = cJSON_GetObjectItem(sc, "master_volume");
+    if (cJSON_IsNumber(mvol))
+        engine->master_volume = clampf((float)mvol->valuedouble, 0.0f, 1.0f);
 
     cJSON_Delete(root);
     return true;

@@ -137,8 +137,11 @@ static void dbg_log(const char *fmt, ...) { (void)fmt; }
 #define PARAMS_PER_PEDAL     8   /* type + bypass + 6 params */
 #define IDX_PEDAL_START      (IDX_STUDIO_START + NUM_STUDIO_SLOTS * PARAMS_PER_STUDIO)  /* index 65 */
 
-#define NUM_PARAMS           (IDX_PEDAL_START + NUM_PEDAL_SLOTS * PARAMS_PER_PEDAL)
-/* = 65 + 9 * 8 = 65 + 72 = 137 */
+/* Master volume (at end to avoid shifting existing param indices) */
+#define IDX_MASTER_VOLUME    (IDX_PEDAL_START + NUM_PEDAL_SLOTS * PARAMS_PER_PEDAL)  /* index 137 */
+
+#define NUM_PARAMS           (IDX_MASTER_VOLUME + 1)
+/* = 137 + 1 = 138 */
 
 /* First param index for pedal block n (0-based) */
 #define PEDAL_BLOCK_START(n)   (IDX_PEDAL_START + (n) * PARAMS_PER_PEDAL)
@@ -429,7 +432,7 @@ static float param_min(int index)
         return 0.0f;
 
     /* Pedal sub-params */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS)
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME)
         return 0.0f;
 
     return 0.0f;
@@ -480,7 +483,7 @@ static float param_max(int index)
     }
 
     /* Pedal sub-params */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME) {
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0) return (float)FX_PEDAL_TYPE_COUNT; /* 0 = none, 1..N = type */
@@ -525,6 +528,9 @@ static float param_default(int index)
     if (index == IDX_B_CAB_BYPASS)    return 0.0f;
     if (index == IDX_B_MIC_TYPE)      return 0.0f;
     if (index >= IDX_B_MIC_DISTANCE && index <= IDX_B_MIC_POSITION) return 0.5f;
+
+    /* Master volume */
+    if (index == IDX_MASTER_VOLUME) return 1.0f;  /* unity gain */
 
     return 0.0f; /* studio/pedal slots: empty / knobs at min */
 }
@@ -843,7 +849,7 @@ static void apply_param(OxFXPlugin *p, int index, float value)
     }
 
     /* ── Pedal param ─────────────────────────────────────────────── */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME) {
         int offset = index - IDX_PEDAL_START;
         int slot   = offset / PARAMS_PER_PEDAL;
         int sub    = offset % PARAMS_PER_PEDAL;
@@ -863,6 +869,12 @@ static void apply_param(OxFXPlugin *p, int index, float value)
             if (pid >= 0)
                 fx_pedal_set_param(p->engine, pid, sub - 2, value);
         }
+        return;
+    }
+
+    /* ── Master volume ────────────────────────────────────────────── */
+    if (index == IDX_MASTER_VOLUME) {
+        fx_engine_set_master_volume(p->engine, value);
         return;
     }
 }
@@ -910,6 +922,9 @@ static void sync_params_from_engine(OxFXPlugin *p)
     p->param_values[IDX_GATE_ATTACK]    = fx_gate_get_attack(p->engine);
     p->param_values[IDX_GATE_RELEASE]   = fx_gate_get_release(p->engine);
     p->param_values[IDX_GATE_HOLD]      = fx_gate_get_hold(p->engine);
+
+    /* ── Master volume ────────────────────────────────────────── */
+    p->param_values[IDX_MASTER_VOLUME] = fx_engine_get_master_volume(p->engine);
 
     /* ── Chain mode ───────────────────────────────────────────── */
     int chain_count = fx_chain_get_count(p->engine);
@@ -1132,7 +1147,7 @@ uint32_t cplug_getParameterID(void *ptr, uint32_t param_index)
     }
 
     /* Pedal params */
-    if (i >= IDX_PEDAL_START && i < NUM_PARAMS) {
+    if (i >= IDX_PEDAL_START && i < IDX_MASTER_VOLUME) {
         int offset = i - IDX_PEDAL_START;
         int slot   = offset / PARAMS_PER_PEDAL;
         int sub    = offset % PARAMS_PER_PEDAL;
@@ -1195,7 +1210,7 @@ uint32_t cplug_getParameterFlags(void *ptr, uint32_t param_id)
     }
 
     /* Pedal type selectors — integer enum; bypass — boolean */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME) {
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0)
@@ -1338,7 +1353,7 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
     }
 
     /* Pedal slot params */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME) {
         int offset   = index - IDX_PEDAL_START;
         int slot     = offset / PARAMS_PER_PEDAL;
         int sub      = offset % PARAMS_PER_PEDAL;
@@ -1351,6 +1366,12 @@ void cplug_getParameterName(void *ptr, uint32_t param_id, char *buf, size_t bufl
         } else {
             snprintf(buf, buflen, "%s Pedal %d P%d", pos_name, slot_num, sub - 1);
         }
+        return;
+    }
+
+    /* Master volume */
+    if (index == IDX_MASTER_VOLUME) {
+        snprintf(buf, buflen, "Master Volume");
         return;
     }
 
@@ -1454,7 +1475,7 @@ double cplug_parameterStringToValue(void *ptr, uint32_t param_id, const char *st
     }
 
     /* Pedal type selectors + bypass */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME) {
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub <= 1) return (double)atoi(str);
@@ -1593,7 +1614,7 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
     }
 
     /* Pedal type selector */
-    if (index >= IDX_PEDAL_START && index < NUM_PARAMS) {
+    if (index >= IDX_PEDAL_START && index < IDX_MASTER_VOLUME) {
         int offset = index - IDX_PEDAL_START;
         int sub    = offset % PARAMS_PER_PEDAL;
         if (sub == 0) {

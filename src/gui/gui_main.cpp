@@ -169,6 +169,12 @@ static const char *s_preset_categories[] = {
 };
 static const int s_preset_category_count = 7;
 
+/* Recording directory state */
+static char s_rec_dir[512] = "";
+static bool s_rec_dir_modal = false;
+static char s_rec_dir_edit[512] = "";
+static bool s_rec_dir_inited = false;
+
 /* Scan a single .0xfx file and extract metadata via cJSON */
 static bool preset_scan_file(const char *path, PresetEntry *entry, bool is_factory) {
     FILE *f = fopen(path, "r");
@@ -495,6 +501,14 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
         int pc = fx_studio_get_param_count(rt);
         for (int p = 0; p < pc; p++)
             fx_studio_set_param(engine, sid, p, randf(0.2f, 0.6f));
+    }
+
+    /* Safety limiter — always at end of rack chain to prevent hearing damage */
+    {
+        fx_studio_id lid = fx_studio_add(engine, FX_STUDIO_BRICK_WALL);
+        fx_studio_set_param(engine, lid, 0, 0.4f);  /* threshold ~-7dB (conservative) */
+        fx_studio_set_param(engine, lid, 1, 0.85f);  /* ceiling ~-0.15dB */
+        fx_studio_set_param(engine, lid, 2, 0.5f);  /* medium release */
     }
 
     /* Fun name */
@@ -1239,7 +1253,12 @@ int main(int argc, char *argv[]) {
                 float freq = fx_tuner_get_frequency(engine);
                 bool active = (freq > 20.0f);
                 const char *note = active ? fx_tuner_get_note_name(engine) : "--";
-                float cents = active ? fx_tuner_get_cents(engine) : 0.0f;
+                float raw_cents = active ? fx_tuner_get_cents(engine) : 0.0f;
+                /* EMA smoothing for smoother animation (alpha=0.15 → responsive but smooth) */
+                static float smoothed_cents = 0.0f;
+                if (!active) { smoothed_cents = 0.0f; }
+                else { smoothed_cents += 0.15f * (raw_cents - smoothed_cents); }
+                float cents = smoothed_cents;
 
                 ImVec4 note_color;
                 if (!active) {
@@ -1683,6 +1702,19 @@ int main(int argc, char *argv[]) {
             /* REC button + format selector (REC first, format after) */
             {
                 static int rec_format_idx = 0;
+
+                /* Init recording directory to ~/Music/0xFX once */
+                if (!s_rec_dir_inited) {
+                    const char *home = getenv("HOME");
+                    if (!home) home = getenv("USERPROFILE");
+                    if (home) {
+                        snprintf(s_rec_dir, sizeof(s_rec_dir), "%s/Music/0xFX", home);
+                    } else {
+                        snprintf(s_rec_dir, sizeof(s_rec_dir), "recordings");
+                    }
+                    s_rec_dir_inited = true;
+                }
+
                 bool recording = fx_recorder_active();
 
                 /* REC button */
@@ -1714,12 +1746,19 @@ int main(int argc, char *argv[]) {
                         fx_recorder_stop();
                     } else {
                         const char *exts[] = { ".wav", ".wav", ".mp3", ".mp3", ".flac", ".flac" };
-                        char rec_path[256];
+                        char rec_path[768];
+                        /* Ensure recording directory exists */
+                        #ifdef _WIN32
+                        _mkdir(s_rec_dir);
+                        #else
+                        mkdir(s_rec_dir, 0755);
+                        #endif
                         /* Timestamp filename: recording_2026-03-21_110555.wav */
                         time_t now = time(NULL);
                         struct tm *t = localtime(&now);
                         snprintf(rec_path, sizeof(rec_path),
-                            "recording_%04d-%02d-%02d_%02d%02d%02d%s",
+                            "%s/recording_%04d-%02d-%02d_%02d%02d%02d%s",
+                            s_rec_dir,
                             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                             t->tm_hour, t->tm_min, t->tm_sec,
                             exts[rec_format_idx]);
@@ -1757,7 +1796,50 @@ int main(int argc, char *argv[]) {
                     ImGui::PopStyleVar();
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Recording format");
+
+                    /* Folder button to set recording directory */
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.10f, 0.09f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.18f, 0.14f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.55f, 0.45f, 1.0f));
+                    if (ImGui::Button("\xf0\x9f\x93\x81##rec_dir", ImVec2(30.0f, 0.0f))) {
+                        strncpy(s_rec_dir_edit, s_rec_dir, sizeof(s_rec_dir_edit));
+                        s_rec_dir_modal = true;
+                    }
+                    ImGui::PopStyleColor(3);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Recordings save to:\n%s", s_rec_dir);
+                    }
                 }
+            }
+
+            /* Recording directory modal */
+            if (s_rec_dir_modal) {
+                ImGui::OpenPopup("rec_dir_popup");
+            }
+            if (ImGui::BeginPopupModal("rec_dir_popup", &s_rec_dir_modal,
+                                       ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("Recording Save Location");
+                ImGui::Separator();
+                ImGui::SetNextItemWidth(400);
+                ImGui::InputText("##rec_dir_path", s_rec_dir_edit,
+                                 sizeof(s_rec_dir_edit));
+                ImGui::Spacing();
+                ImGui::TextDisabled("Recordings will be saved to this directory.");
+                ImGui::TextDisabled("The folder will be created automatically.");
+                ImGui::Spacing();
+                if (ImGui::Button("OK", ImVec2(120, 0))) {
+                    strncpy(s_rec_dir, s_rec_dir_edit, sizeof(s_rec_dir));
+                    s_rec_dir[sizeof(s_rec_dir) - 1] = '\0';
+                    s_rec_dir_modal = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                    s_rec_dir_modal = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
 
             ImGui::SameLine();
@@ -2110,6 +2192,7 @@ int main(int argc, char *argv[]) {
                     ok = fx_preset_save(engine, path);
                 }
                 FX_INFO(ok ? "Saved preset: %s" : "Save failed: %s", s_save_as_name);
+                if (ok) s_browser_needs_scan = true;
                 s_save_as_open = false;
                 ImGui::CloseCurrentPopup();
             }
@@ -4314,6 +4397,32 @@ int main(int argc, char *argv[]) {
                 float cy = (STATUS_H - ImGui::GetTextLineHeight()) * 0.5f;
                 ImGui::SetCursorPos(ImVec2(cx, cy));
                 ImGui::TextColored(ImVec4(0.55f, 0.50f, 0.40f, 0.7f), "%s", ns_text);
+            }
+
+            /* Master volume knob — between meters */
+            {
+                static float s_master_vol = 1.0f;
+                s_master_vol = fx_engine_get_master_volume(engine);
+                float mv_x = win_w * 0.5f - 25.0f;
+                if (!no_signal) mv_x = win_w * 0.5f - 25.0f;
+                ImGui::SetCursorPos(ImVec2(mv_x, 2.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.58f, 0.45f, 1.0f));
+                ImGui::SetWindowFontScale(0.75f);
+                ImGui::Text("MASTER");
+                ImGui::SetWindowFontScale(1.0f);
+                ImGui::PopStyleColor();
+                ImGui::SetCursorPos(ImVec2(mv_x - 10.0f, 16.0f));
+                ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.80f, 0.58f, 0.18f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.95f, 0.70f, 0.20f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
+                ImGui::SetNextItemWidth(70.0f);
+                if (ImGui::SliderFloat("##master_vol", &s_master_vol, 0.0f, 1.0f, "")) {
+                    fx_engine_set_master_volume(engine, s_master_vol);
+                }
+                ImGui::PopStyleColor(3);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Master Volume: %.0f%%", s_master_vol * 100.0f);
+                }
             }
 
             /* Right: output meter */

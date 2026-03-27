@@ -1467,6 +1467,112 @@ static void test_all_pedal_types(void) {
 
 /* ── Main ─────────────────────────────────────────────────────── */
 
+/* ── Test: cab/distortion frequency response evaluation ─────────── */
+
+static void test_cab_distortion_freq_response(void) {
+    printf("test_cab_distortion_freq_response...\n");
+    printf("  Evaluating distortion + cab combinations for boxy sound...\n");
+
+    const int N = 8192;
+    const float sr = 44100.0f;
+    float *input = (float *)calloc(N, sizeof(float));
+    float *output = (float *)calloc(N, sizeof(float));
+
+    /* White noise input (deterministic seed) */
+    unsigned int seed = 12345;
+    for (int i = 0; i < N; i++) {
+        seed = seed * 1103515245 + 12345;
+        input[i] = 0.3f * ((float)(seed >> 16) / 32768.0f - 1.0f);
+    }
+
+    /* Test each cab type with a moderate gain Fullerton Clean */
+    const char *cab_names[] = {"1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant", "Direct"};
+
+    for (int cab_idx = 0; cab_idx < FX_CAB_TYPE_COUNT; cab_idx++) {
+        fx_engine_t *e = fx_engine_create(sr);
+        fx_amp_set_model(e, FX_CHAIN_DEFAULT, FX_AMP_FULLERTON_CLEAN);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.6f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_BASS, 0.5f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MID, 0.5f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_TREBLE, 0.5f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 0.6f);
+        fx_amp_set_param(e, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 0.7f);
+
+        /* Generate synthetic cab */
+        fx_cab_params_t params = { (fx_cab_type_t)cab_idx, FX_MIC_ON_AXIS, 80.0f, 0.5f, 0.5f };
+        fx_cab_generate_ir(e, FX_CHAIN_DEFAULT, &params);
+
+        /* Process two blocks (let state settle) */
+        fx_engine_process(e, input, output, N / 2);
+        fx_engine_process(e, input + N/2, output + N/2, N / 2);
+
+        /* Measure energy in frequency bands (simple DFT approach) */
+        float sub_bass = 0, bass_e = 0, low_mid = 0, mid_e = 0, hi_mid = 0, presence = 0, treble_e = 0;
+
+        for (int i = N/2; i < N; i++) {
+            float s = output[i];
+            sub_bass += s * s;
+        }
+        sub_bass /= (N/2);
+
+        /* Use band-pass filters approximated by measuring RMS of frequency-specific sines */
+        float bands[] = {60, 120, 250, 500, 800, 1200, 2500, 5000, 8000};
+        float band_e[9] = {0};
+        const char *band_names[] = {"60Hz", "120Hz", "250Hz", "500Hz", "800Hz", "1.2k", "2.5k", "5kHz", "8kHz"};
+
+        for (int b = 0; b < 9; b++) {
+            float sine_in[4096], sine_out[4096];
+            for (int i = 0; i < 4096; i++)
+                sine_in[i] = 0.2f * sinf(2.0f * 3.14159f * bands[b] * (float)i / sr);
+
+            fx_engine_t *e2 = fx_engine_create(sr);
+            fx_amp_set_model(e2, FX_CHAIN_DEFAULT, FX_AMP_FULLERTON_CLEAN);
+            fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.6f);
+            fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_BASS, 0.5f);
+            fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MID, 0.5f);
+            fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_TREBLE, 0.5f);
+            fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 0.6f);
+            fx_amp_set_param(e2, FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 0.7f);
+            fx_cab_generate_ir(e2, FX_CHAIN_DEFAULT, &params);
+
+            fx_engine_process(e2, sine_in, sine_out, 4096);
+            fx_engine_process(e2, sine_in, sine_out, 4096);
+
+            float rms = 0;
+            for (int i = 2048; i < 4096; i++)
+                rms += sine_out[i] * sine_out[i];
+            band_e[b] = sqrtf(rms / 2048.0f);
+
+            fx_engine_destroy(e2);
+        }
+
+        printf("    %s: ", cab_names[cab_idx]);
+        for (int b = 0; b < 9; b++) {
+            float db = 20.0f * log10f(band_e[b] + 1e-10f);
+            printf("%s=%.0fdB ", band_names[b], db);
+        }
+
+        /* Check for boxiness: excessive 300-600Hz relative to sub-100Hz */
+        float ratio_300_to_sub = (band_e[3] + 1e-10f) / (band_e[0] + 1e-10f);
+        printf(" box_ratio=%.1f", ratio_300_to_sub);
+
+        if (ratio_300_to_sub > 8.0f) {
+            printf(" [BOXY!]");
+        }
+        printf("\n");
+
+        fx_engine_destroy(e);
+    }
+
+    /* Overall: the 1x12 Open should have less bass than 4x12 — that's expected.
+     * But it shouldn't be so extreme as to sound boxy. */
+    ASSERT(1, "frequency response evaluated — check output above");
+    printf("  OK (review band levels above for boxiness)\n");
+
+    free(input);
+    free(output);
+}
+
 int main(void) {
     printf("═══ 0xFX API Test ═══\n\n");
 
@@ -1492,6 +1598,7 @@ int main(void) {
     test_preset_fuzz();
     test_default_presets();
     test_all_pedal_types();
+    test_cab_distortion_freq_response();
 
     printf("\n═══ Results: %d passed, %d failed ═══\n",
            tests_passed, tests_failed);

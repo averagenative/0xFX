@@ -265,8 +265,8 @@
     ],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
-      "Signal flow: input \u2192 gate \u2192 pre-pedals \u2192 amp \u2192 post-pedals \u2192 output",
-      "Multi-chain: split \u2192 per-chain amp+cab \u2192 sum with mix",
+      "Signal flow: input → gate → pre-pedals → amp → post-pedals → output",
+      "Multi-chain: split → per-chain amp+cab → sum with mix",
       "Test: all 5 amp models produce unique output"
     ],
     "files": [
@@ -307,7 +307,7 @@
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
       "Pedal add/remove/move/bypass API works",
-      "Internal dispatch table maps type \u2192 init/process/free",
+      "Internal dispatch table maps type → init/process/free",
       "Test: add pedal, set param, verify param"
     ],
     "files": [
@@ -317,7 +317,7 @@
   {
     "id": "TASK-018",
     "priority": "HIGH",
-    "title": "Port overdrive \u2192 Jade Drive",
+    "title": "Port overdrive → Jade Drive",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -380,7 +380,7 @@
   {
     "id": "TASK-021",
     "priority": "HIGH",
-    "title": "Port delay \u2192 Echo Delay",
+    "title": "Port delay → Echo Delay",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -402,7 +402,7 @@
   {
     "id": "TASK-022",
     "priority": "HIGH",
-    "title": "Port reverb \u2192 Hall Verb",
+    "title": "Port reverb → Hall Verb",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -424,7 +424,7 @@
   {
     "id": "TASK-023",
     "priority": "HIGH",
-    "title": "Port compressor \u2192 Squeeze Box",
+    "title": "Port compressor → Squeeze Box",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -658,7 +658,7 @@
     "acceptanceCriteria": [
       "Load .wav IR via dr_wav",
       "FFT via KissFFT",
-      "Per-block: FFT input \u2192 complex multiply \u2192 IFFT \u2192 overlap-add",
+      "Per-block: FFT input → complex multiply → IFFT → overlap-add",
       "Test: convolve impulse with known IR, verify output"
     ],
     "files": [
@@ -791,7 +791,7 @@
       "Parse .0xfx JSON",
       "Reconstruct engine state",
       "Validate all fields, clamp out-of-range",
-      "Test: save \u2192 load \u2192 process \u2192 identical output"
+      "Test: save → load → process → identical output"
     ],
     "files": [
       "src/engine/internal/preset.c"
@@ -871,7 +871,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Wraps fx_engine_process()",
-      "Mono in \u2192 engine \u2192 stereo out",
+      "Mono in → engine → stereo out",
       "CLAP loads in Reaper/Bitwig"
     ],
     "files": [
@@ -1458,7 +1458,7 @@
     "depends": [],
     "estimatedTokens": 80000,
     "acceptanceCriteria": [
-      "Top section: horizontal signal chain \u2014 pedal icons connected by visual cables/lines leading to amp then cab",
+      "Top section: horizontal signal chain — pedal icons connected by visual cables/lines leading to amp then cab",
       "Each element (pedal, amp, cab) is a clickable node in the chain",
       "Visual connections (lines/curves) between nodes showing signal flow",
       "SINGLE/DUAL chain toggle (like BIAS FX)",
@@ -1487,9 +1487,9 @@
     "estimatedTokens": 40000,
     "acceptanceCriteria": [
       "Bottom section: large detail view of selected element",
-      "Click pedal in chain \u2192 shows large pedal face with turnable knobs",
-      "Click amp in chain \u2192 shows large amp panel with all knobs (like BIAS FX screenshot)",
-      "Click cab in chain \u2192 shows cab selector with IR waveform",
+      "Click pedal in chain → shows large pedal face with turnable knobs",
+      "Click amp in chain → shows large amp panel with all knobs (like BIAS FX screenshot)",
+      "Click cab in chain → shows cab selector with IR waveform",
       "Smooth transition between detail views",
       "Detail view shows element name prominently"
     ],
@@ -1508,7 +1508,7 @@
     "depends": [],
     "estimatedTokens": 10000,
     "acceptanceCriteria": [
-      "Prominent LIVE button in toolbar \u2014 large, visible",
+      "Prominent LIVE button in toolbar — large, visible",
       "Lit up (bright green/amber glow) when audio is active",
       "Dim/dark when audio is off",
       "Click to toggle audio on/off",
@@ -1553,7 +1553,7 @@
     ],
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
-      "Bezier curves or straight lines connecting pedal \u2192 pedal \u2192 amp \u2192 cab",
+      "Bezier curves or straight lines connecting pedal → pedal → amp → cab",
       "Cables drawn on the ImGui foreground draw list",
       "Cable color changes based on signal presence (dim when muted, bright when LIVE)",
       "Input jack on left, output jack on right of each node"
@@ -1618,7 +1618,7 @@
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [
-      "Save current rig as named preset (.0xfx JSON \u2014 already implemented)",
+      "Save current rig as named preset (.0xfx JSON — already implemented)",
       "Load preset from file browser",
       "Quick-save (Ctrl+S) overwrites current preset",
       "Quick-load last used preset on startup",
@@ -1930,7 +1930,7 @@
     ],
     "estimatedTokens": 30000,
     "acceptanceCriteria": [
-      "Visual Y-split node in signal chain \u2014 signal splits to 2+ parallel paths",
+      "Visual Y-split node in signal chain — signal splits to 2+ parallel paths",
       "Each path has its own amp + cab nodes",
       "Paths merge at a mixer node with per-path level/blend",
       "Add/remove parallel paths via UI",
@@ -1956,7 +1956,7 @@
       "Texture cache: load once, return GL texture ID on subsequent calls",
       "Support transparency (RGBA)",
       "stb_image.h for PNG decoding (single-header, vendor into deps/)",
-      "API: GLuint fx_texture_load(const char *path) \u2014 returns cached texture ID"
+      "API: GLuint fx_texture_load(const char *path) — returns cached texture ID"
     ],
     "files": [
       "src/gui/texture.c",
@@ -2134,7 +2134,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Generate PNG asset of a TRS guitar cable plug, angled upward, cable leading right into pedal chain",
-      "Worn grime aesthetic matching existing assets \u2014 scuffed metal, road-worn look",
+      "Worn grime aesthetic matching existing assets — scuffed metal, road-worn look",
       "Transparent background (_nobg variant)",
       "Replace the green INPUT rectangle in the signal chain with this asset",
       "Cable portion connects visually to the first pedal/amp node"
@@ -2206,7 +2206,7 @@
       "Define frequency response profiles / EQ curves for each mic type",
       "Define mic placement parameters: distance from cab, angle (on-axis vs off-axis), position (center cone vs edge)",
       "Document how mic placement affects tone (proximity effect, high-frequency rolloff, etc.)",
-      "Design this as OPTIONAL feature \u2014 DI (direct inject) from cab is the default, mic placement is opt-in",
+      "Design this as OPTIONAL feature — DI (direct inject) from cab is the default, mic placement is opt-in",
       "Output: specification doc with mic models, original names, frequency profiles, and placement parameters"
     ],
     "files": [
@@ -2252,7 +2252,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Generate PNG assets for each microphone model defined in TASK-326",
-      "Worn grime aesthetic \u2014 beat-up studio mics, road-worn look",
+      "Worn grime aesthetic — beat-up studio mics, road-worn look",
       "Transparent backgrounds (_nobg variants)",
       "Show mic positioned in front of amp/cab in the signal chain visualization",
       "Follow existing asset generation guide format"
@@ -2326,7 +2326,7 @@
       "Amp detail view: render knobs overlaid on the amp face image at correct positions",
       "Pedal detail view: render knobs overlaid on the pedal body image at correct positions",
       "Define knob position maps for each amp model and pedal type (x,y coordinates on image)",
-      "Knobs are interactive \u2014 dragging them changes the parameter value",
+      "Knobs are interactive — dragging them changes the parameter value",
       "Knob visual rotation matches the parameter value",
       "Use textured knob assets (knob_chicken_cream, knob_skirted_black, etc.) matched to each amp/pedal style"
     ],
@@ -2459,7 +2459,7 @@
     "acceptanceCriteria": [
       "ImGui+SDL2/OpenGL renders inside the host-provided native window (CLAP/VST3)",
       "Same visual appearance as standalone GUI",
-      "Resize support \u2014 adapts to host window size",
+      "Resize support — adapts to host window size",
       "Works in at least one DAW on Windows (Reaper recommended)",
       "Share gui_main.cpp rendering code between standalone and plugin (extract to shared module)",
       "cplug_createGUI/destroyGUI/setParent/setVisible fully implemented"
@@ -2481,7 +2481,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Plugin exposes chain count selector (single/dual)",
-      "Chain B amp model, params, cab, mic \u2014 all automatable",
+      "Chain B amp model, params, cab, mic — all automatable",
       "Chain A/B mix levels exposed as params",
       "Noise gate threshold/attack/release/hold exposed as params",
       "Parameter count increases to accommodate dual chain"
@@ -2555,7 +2555,7 @@
   {
     "id": "TASK-342",
     "priority": "HIGH",
-    "title": "Sync plugin GUI renderer with standalone \u2014 full visual parity",
+    "title": "Sync plugin GUI renderer with standalone — full visual parity",
     "domain": "frontend",
     "phase": 6,
     "status": "done",
@@ -2591,7 +2591,7 @@
     "acceptanceCriteria": [
       "Clicking on the lower portion of the pedal body image toggles bypass (like stomping a real footswitch)",
       "The stomp switch hit area is the bottom ~30% of the pedal image",
-      "Remove the separate Active/Remove ImGui buttons \u2014 they should be part of the pedal image interaction",
+      "Remove the separate Active/Remove ImGui buttons — they should be part of the pedal image interaction",
       "Remove button moves to a small X overlay on the pedal image corner",
       "LED glow on the pedal image is the bypass indicator (green=active, red=bypassed)",
       "Reorder arrows could be drag-and-drop instead of buttons (future)"
@@ -2603,7 +2603,7 @@
   {
     "id": "TASK-344",
     "priority": "MEDIUM",
-    "title": "macOS plugin builds \u2014 AU/VST3/CLAP bundles",
+    "title": "macOS plugin builds — AU/VST3/CLAP bundles",
     "domain": "infra",
     "phase": 8,
     "status": "done",
@@ -2856,5 +2856,235 @@
       "scripts/packaging/package_macos.sh",
       "CLAUDE.md"
     ]
+  },
+  {
+    "id": "TASK-354",
+    "priority": "CRITICAL",
+    "title": "BUG: Cabinet switching causes signal peak/corruption",
+    "domain": "engine",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 25000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Cabinet switching does not cause signal peaking or corruption",
+      "Overlap buffer is properly cleared/crossfaded on cab switch",
+      "No race condition between audio thread and IR reload",
+      "Test: switch cabs rapidly while processing audio — output stays within [-1.0, 1.0] without hard clipping",
+      "Test: switch cab and verify output level is consistent before and after"
+    ],
+    "files": [
+      "src/engine/internal/cab_ir.c",
+      "src/engine/internal/engine.c",
+      "src/gui/gui_main.cpp",
+      "src/gui/gui_render.cpp"
+    ]
+  },
+  {
+    "id": "TASK-355",
+    "priority": "CRITICAL",
+    "title": "BUG: Tone knobs (treble/mid/bass) reversed on amp sims",
+    "domain": "engine",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 15000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Turning treble knob up increases high frequencies",
+      "Turning bass knob up increases low frequencies",
+      "Turning mid knob up increases mid frequencies",
+      "Test: sine sweep through each amp, verify spectral response matches knob direction",
+      "All 12 amp models verified correct"
+    ],
+    "files": [
+      "src/engine/internal/amp.c",
+      "src/gui/gui_render.cpp"
+    ]
+  },
+  {
+    "id": "TASK-356",
+    "priority": "CRITICAL",
+    "title": "BUG: Presets dont appear in list after saving",
+    "domain": "frontend",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 5000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "After saving a preset, browser list refreshes automatically",
+      "Newly saved preset appears in user presets section",
+      "Both gui_main.cpp and gui_render.cpp fixed",
+      "Test: save preset, reopen browser, verify preset is listed"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/gui/gui_render.cpp"
+    ]
+  },
+  {
+    "id": "TASK-357",
+    "priority": "HIGH",
+    "title": "Recording save location modal with folder picker",
+    "domain": "frontend",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 20000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Modal dialog allows user to select recording save directory",
+      "Selected directory persists across sessions",
+      "Recording save path displayed in UI near record button",
+      "Default path is user home or Documents folder",
+      "Works on Linux and Windows"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/gui/gui_render.cpp",
+      "src/audio/recorder.h",
+      "src/audio/recorder.c"
+    ]
+  },
+  {
+    "id": "TASK-358",
+    "priority": "HIGH",
+    "title": "Mystery Rig: add limiter pedal at end of chain",
+    "domain": "frontend",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 5000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "surprise_me_generate() always adds a limiter pedal as last effect in post chain",
+      "Limiter threshold set to safe listening level",
+      "Mystery rig output never exceeds safe levels regardless of random parameters"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp"
+    ]
+  },
+  {
+    "id": "TASK-359",
+    "priority": "HIGH",
+    "title": "Add master output level control",
+    "domain": "engine",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 15000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "fx_engine_set_master_volume() and fx_engine_get_master_volume() in API",
+      "Master volume applied in fx_engine_process() before final output clip",
+      "GUI knob/slider for master output level in status bar area",
+      "Default master volume is 1.0 (unity gain)",
+      "Range 0.0 to 1.0",
+      "Plugin parameter exposed for DAW automation"
+    ],
+    "files": [
+      "src/engine/fx_engine.h",
+      "src/engine/internal/engine.c",
+      "src/engine/internal/engine_internal.h",
+      "src/gui/gui_main.cpp",
+      "src/gui/gui_render.cpp",
+      "src/plugin/plugin.c"
+    ]
+  },
+  {
+    "id": "TASK-360",
+    "priority": "MEDIUM",
+    "title": "Tuner: smooth cents animation (EMA filter)",
+    "domain": "frontend",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 8000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Tuner cents display uses exponential moving average smoothing",
+      "Animation appears smooth and professional",
+      "Accuracy is preserved (smoothing is visual only)",
+      "Smoothing applied in both gui_main.cpp and gui_render.cpp"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/gui/gui_render.cpp"
+    ]
+  },
+  {
+    "id": "TASK-361",
+    "priority": "MEDIUM",
+    "title": "Tape echo: reduce flutter/wow defaults",
+    "domain": "engine",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [],
+    "estimatedTokens": 5000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Default wow reduced from 0.3 to 0.15",
+      "Default flutter reduced from 0.2 to 0.1",
+      "Max modulation depth reduced for more subtle effect",
+      "Effect still sounds like tape when cranked up"
+    ],
+    "files": [
+      "src/engine/internal/pedals.c"
+    ]
+  },
+  {
+    "id": "TASK-362",
+    "priority": "MEDIUM",
+    "title": "Boxy distortion: evaluate cab/distortion frequency response via test",
+    "domain": "testing",
+    "phase": 10,
+    "status": "done",
+    "claimedBy": "claude-opus",
+    "depends": [
+      "TASK-354"
+    ],
+    "estimatedTokens": 20000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "Test harness processes distortion pedal through each cab type",
+      "Measures frequency response via sine sweep and FFT",
+      "Evaluates low-end content (sub 100Hz) for each cab",
+      "Identifies if 1x12 cab is too boxy (excessive 300-600Hz, lacking sub-100Hz)",
+      "Output recorded to WAV files for manual listening",
+      "Test report with spectral measurements"
+    ],
+    "files": [
+      "tests/"
+    ]
+  },
+  {
+    "id": "TASK-363",
+    "priority": "LOW",
+    "title": "BACKLOG: Looper pedal for multi-take recording",
+    "domain": "engine",
+    "phase": 11,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 40000,
+    "release": "1.2.0",
+    "acceptanceCriteria": [
+      "Looper pedal in signal chain with record/play/overdub/undo",
+      "Multiple takes can be layered",
+      "Visual feedback showing loop position and layers",
+      "Export loop to audio file"
+    ],
+    "files": []
   }
 ]

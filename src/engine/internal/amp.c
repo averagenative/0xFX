@@ -360,11 +360,14 @@ static void tmb_compute_coefficients(fx_tone_stack_3rd_t *ts,
                                      float t, float m, float b,
                                      float sr)
 {
-    /* Extract component values */
-    float R1 = comp->R1 * t + 1.0f;       /* treble pot: 0 to R1 (avoid zero) */
-    float R1i = comp->R1 * (1.0f - t);    /* treble pot inverse wiper */
-    float R2 = comp->R2 * b + 1.0f;       /* bass pot */
-    float R3 = comp->R3 * m + 1.0f;       /* mid pot */
+    /* Extract component values.
+     * Treble pot: CW (t=1) should give low R1 (more treble passes).
+     * Mid pot: CW (m=1) should give high R3 (less mid scoop).
+     * Bass pot: CW (b=1) gives high R2 (less bass shunted to ground). */
+    float R1 = comp->R1 * (1.0f - t) + 1.0f;   /* treble pot: low R = more treble */
+    float R1i = comp->R1 * t;                    /* treble pot inverse wiper */
+    float R2 = comp->R2 * b + 1.0f;             /* bass pot (correct direction) */
+    float R3 = comp->R3 * (1.0f - m) + 1.0f;   /* mid pot: low R = more mid scoop */
     float R4 = comp->R4;
     float C1 = comp->C1;
     float C2 = comp->C2;

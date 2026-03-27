@@ -92,7 +92,7 @@ typedef struct {
 /* ── Cabinet IR state ─────────────────────────────────────────── */
 
 typedef struct {
-    bool           loaded;
+    volatile bool  loaded;         /* volatile: checked by audio thread, set by GUI thread */
     bool           bypass;
     kiss_fft_cpx  *ir_fft;         /* pre-computed IR FFT (fft_size/2+1 bins) */
     float         *overlap_buf;    /* overlap-add tail buffer (fft_size floats) */
@@ -166,6 +166,7 @@ typedef struct {
 
 struct fx_engine {
     float sample_rate;
+    float master_volume;     /* 0.0 to 1.0, applied before final output clip */
 
     /* Noise gate (input stage) */
     fx_noise_gate_t gate;

@@ -19,6 +19,7 @@ fx_engine_t *fx_engine_create(float sample_rate) {
     if (!e) return NULL;
 
     e->sample_rate = sample_rate;
+    e->master_volume = 1.0f;  /* unity gain by default */
     e->next_pedal_id = 1;
     e->next_studio_id = 1;
 
@@ -161,12 +162,15 @@ void fx_engine_process(fx_engine_t *engine,
         fx_studio_process_dsp(&engine->studio[i], buf, num_frames, sr);
     }
 
-    /* ── Output cleanup: NaN/Inf protection + denormal flush ── */
+    /* ── Master volume + output cleanup ──────────────────────── */
+    float master_vol = engine->master_volume;
     for (int i = 0; i < num_frames; i++) {
         float s = buf[i];
         /* Kill NaN and infinity — prevents engine crash from feedback runaway */
         if (s != s || s > 1e6f || s < -1e6f) { buf[i] = 0.0f; continue; }
         if (s > -1e-20f && s < 1e-20f) s = 0.0f;
+        /* Apply master volume before clip */
+        s *= master_vol;
         /* Hard clip safety */
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
@@ -181,6 +185,19 @@ void fx_engine_process(fx_engine_t *engine,
         if (a > out_peak) out_peak = a;
     }
     engine->output_peak = out_peak;
+}
+
+/* ── Master volume ───────────────────────────────────────────── */
+
+void fx_engine_set_master_volume(fx_engine_t *engine, float volume) {
+    if (!engine) return;
+    if (volume < 0.0f) volume = 0.0f;
+    if (volume > 1.0f) volume = 1.0f;
+    engine->master_volume = volume;
+}
+
+float fx_engine_get_master_volume(fx_engine_t *engine) {
+    return engine ? engine->master_volume : 1.0f;
 }
 
 /* ── Level metering ───────────────────────────────────────────── */

@@ -42,9 +42,6 @@ void fx_cab_free(fx_cab_state_t *cab) {
 bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) {
     if (!cab || !wav_path || block_size <= 0) return false;
 
-    /* Free any previous IR */
-    fx_cab_free(cab);
-
     /* Load WAV file — dr_wav handles 16/24/32-bit PCM and IEEE float,
      * converting everything to float32 for us */
     unsigned int channels = 0;
@@ -86,50 +83,14 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
 
     const float *ir_data = ir_mono ? ir_mono : ir_samples;
 
-    /* Compute FFT size: next power of 2 >= block_size + ir_len - 1 */
-    int fft_size = next_power_of_2(block_size + ir_len - 1);
-    int n_bins = fft_size / 2 + 1;
-
-    /* Allocate all buffers */
-    kiss_fft_cpx *ir_fft     = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
-    kiss_fft_cpx *fft_buf    = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
-    float        *overlap    = (float *)calloc((size_t)fft_size, sizeof(float));
-    float        *time_buf   = (float *)calloc((size_t)fft_size, sizeof(float));
-    kiss_fftr_cfg fft_cfg    = kiss_fftr_alloc(fft_size, 0, NULL, NULL);
-    kiss_fftr_cfg ifft_cfg   = kiss_fftr_alloc(fft_size, 1, NULL, NULL);
-
-    if (!ir_fft || !fft_buf || !overlap || !time_buf || !fft_cfg || !ifft_cfg) {
-        free(ir_fft); free(fft_buf); free(overlap); free(time_buf);
-        if (fft_cfg)  kiss_fftr_free(fft_cfg);
-        if (ifft_cfg) kiss_fftr_free(ifft_cfg);
-        free(ir_mono);
-        drwav_free(ir_samples, NULL);
-        return false;
-    }
-
-    /* Zero-pad IR and compute its FFT */
-    memset(time_buf, 0, sizeof(float) * (size_t)fft_size);
-    memcpy(time_buf, ir_data, sizeof(float) * (size_t)ir_len);
-    kiss_fftr(fft_cfg, time_buf, ir_fft);
-
-    /* Store state */
-    cab->ir_fft     = ir_fft;
-    cab->fft_buf    = fft_buf;
-    cab->overlap_buf = overlap;
-    cab->time_buf   = time_buf;
-    cab->fft_cfg    = fft_cfg;
-    cab->ifft_cfg   = ifft_cfg;
-    cab->fft_size   = fft_size;
-    cab->ir_len     = ir_len;
-    cab->block_size = block_size;
-    cab->loaded     = true;
-    cab->bypass     = false;
+    /* Load via fx_cab_load_buffer which handles thread-safe swap */
+    bool ok = fx_cab_load_buffer(cab, ir_data, ir_len, block_size);
 
     /* Cleanup temp data */
     free(ir_mono);
     drwav_free(ir_samples, NULL);
 
-    return true;
+    return ok;
 }
 
 /* ── Load IR from raw float buffer ───────────────────────────── */
@@ -137,51 +98,66 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
 bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, int block_size) {
     if (!cab || !ir_data || ir_len <= 0 || block_size <= 0) return false;
 
-    /* Temporarily mark as unloaded to prevent audio thread from using
-     * stale pointers while we reallocate */
-    cab->loaded = false;
-
-    /* Free any previous IR */
-    fx_cab_free(cab);
-
     if (ir_len > 4096) ir_len = 4096;  /* cap IR length */
 
     /* Compute FFT size: next power of 2 >= block_size + ir_len - 1 */
     int fft_size = next_power_of_2(block_size + ir_len - 1);
     int n_bins = fft_size / 2 + 1;
 
-    /* Allocate all buffers */
-    kiss_fft_cpx *ir_fft     = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
-    kiss_fft_cpx *fft_buf    = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
-    float        *overlap    = (float *)calloc((size_t)fft_size, sizeof(float));
-    float        *time_buf   = (float *)calloc((size_t)fft_size, sizeof(float));
-    kiss_fftr_cfg fft_cfg    = kiss_fftr_alloc(fft_size, 0, NULL, NULL);
-    kiss_fftr_cfg ifft_cfg   = kiss_fftr_alloc(fft_size, 1, NULL, NULL);
+    /* ── Step 1: Allocate and prepare ALL new state before touching cab ── */
+    kiss_fft_cpx *new_ir_fft  = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
+    kiss_fft_cpx *new_fft_buf = (kiss_fft_cpx *)calloc((size_t)n_bins, sizeof(kiss_fft_cpx));
+    float        *new_overlap = (float *)calloc((size_t)fft_size, sizeof(float));
+    float        *new_time    = (float *)calloc((size_t)fft_size, sizeof(float));
+    kiss_fftr_cfg new_fft_cfg = kiss_fftr_alloc(fft_size, 0, NULL, NULL);
+    kiss_fftr_cfg new_ifft    = kiss_fftr_alloc(fft_size, 1, NULL, NULL);
 
-    if (!ir_fft || !fft_buf || !overlap || !time_buf || !fft_cfg || !ifft_cfg) {
-        free(ir_fft); free(fft_buf); free(overlap); free(time_buf);
-        if (fft_cfg)  kiss_fftr_free(fft_cfg);
-        if (ifft_cfg) kiss_fftr_free(ifft_cfg);
+    if (!new_ir_fft || !new_fft_buf || !new_overlap || !new_time ||
+        !new_fft_cfg || !new_ifft) {
+        free(new_ir_fft); free(new_fft_buf); free(new_overlap); free(new_time);
+        if (new_fft_cfg) kiss_fftr_free(new_fft_cfg);
+        if (new_ifft)    kiss_fftr_free(new_ifft);
         return false;
     }
 
-    /* Zero-pad IR and compute its FFT */
-    memset(time_buf, 0, sizeof(float) * (size_t)fft_size);
-    memcpy(time_buf, ir_data, sizeof(float) * (size_t)ir_len);
-    kiss_fftr(fft_cfg, time_buf, ir_fft);
+    /* Zero-pad IR and compute its FFT (using new buffers, cab untouched) */
+    memcpy(new_time, ir_data, sizeof(float) * (size_t)ir_len);
+    /* rest is already zeroed from calloc */
+    kiss_fftr(new_fft_cfg, new_time, new_ir_fft);
 
-    /* Store state */
-    cab->ir_fft     = ir_fft;
-    cab->fft_buf    = fft_buf;
-    cab->overlap_buf = overlap;
-    cab->time_buf   = time_buf;
-    cab->fft_cfg    = fft_cfg;
-    cab->ifft_cfg   = ifft_cfg;
-    cab->fft_size   = fft_size;
-    cab->ir_len     = ir_len;
-    cab->block_size = block_size;
-    cab->loaded     = true;
-    cab->bypass     = false;
+    /* ── Step 2: Disable cab processing (audio thread will pass through) ── */
+    cab->loaded = false;
+
+    /* ── Step 3: Save old pointers for deferred free ── */
+    kiss_fft_cpx  *old_ir_fft  = cab->ir_fft;
+    kiss_fft_cpx  *old_fft_buf = cab->fft_buf;
+    float         *old_overlap = cab->overlap_buf;
+    float         *old_time    = cab->time_buf;
+    kiss_fftr_cfg  old_fft_cfg = cab->fft_cfg;
+    kiss_fftr_cfg  old_ifft    = cab->ifft_cfg;
+
+    /* ── Step 4: Swap in fully-prepared new state ── */
+    cab->ir_fft      = new_ir_fft;
+    cab->fft_buf     = new_fft_buf;
+    cab->overlap_buf = new_overlap;
+    cab->time_buf    = new_time;
+    cab->fft_cfg     = new_fft_cfg;
+    cab->ifft_cfg    = new_ifft;
+    cab->fft_size    = fft_size;
+    cab->ir_len      = ir_len;
+    cab->block_size  = block_size;
+    cab->bypass      = false;
+
+    /* ── Step 5: Re-enable processing — new state is complete ── */
+    cab->loaded = true;
+
+    /* ── Step 6: Free old buffers (audio thread now uses new ones) ── */
+    free(old_ir_fft);
+    free(old_fft_buf);
+    free(old_overlap);
+    free(old_time);
+    if (old_fft_cfg) kiss_fftr_free(old_fft_cfg);
+    if (old_ifft)    kiss_fftr_free(old_ifft);
 
     return true;
 }
