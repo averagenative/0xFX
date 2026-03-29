@@ -345,6 +345,12 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
         mag[i] = m;
     }
 
+    /* Find peak magnitude response — used for normalization later */
+    float mag_peak = 0.0f;
+    for (int i = 0; i < n_bins; i++) {
+        if (mag[i] > mag_peak) mag_peak = mag[i];
+    }
+
     /* ── Step 2: Minimum-phase reconstruction ──────────────── */
     /* Phase = -Hilbert(log(|H(f)|))
      * Simplified: use the cepstral method.
@@ -430,19 +436,10 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
     int fade_len = 256;
     if (fade_len > ir_len / 2) fade_len = ir_len / 2;
 
-    /* Normalize for consistent output level across cab types.
-     * Use energy normalization: scale so RMS of IR matches a target.
-     * This prevents some cabs being louder/quieter than others
-     * while preserving tonal differences. */
-    float energy = 0.0f;
-    float peak = 0.0f;
-    for (int i = 0; i < ir_len; i++) {
-        energy += time_buf[i] * time_buf[i];
-        float a = fabsf(time_buf[i]);
-        if (a > peak) peak = a;
-    }
-    /* Normalize peak to 0.5 — consistent across cab types, no clipping */
-    float norm = (peak > 1e-6f) ? (0.5f / peak) : 1.0f;
+    /* Normalize by peak magnitude response so no frequency is amplified.
+     * mag_peak is the highest gain at any frequency in the designed response.
+     * Scale so the peak response ≈ 0.85 (slight headroom, no boost). */
+    float norm = (mag_peak > 1e-6f) ? (0.85f / mag_peak) : 1.0f;
 
     for (int i = 0; i < ir_len; i++) {
         float w = 1.0f;

@@ -1140,6 +1140,18 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                     ImGui::SetTooltip("%s", pe->description);
                 }
 
+                /* Right-click context menu — delete for user presets only */
+                if (!pe->is_factory && ImGui::BeginPopupContextItem()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.35f, 0.30f, 1.0f));
+                    if (ImGui::Selectable("Delete")) {
+                        remove(pe->path);
+                        FX_INFO("Deleted preset: %s", pe->name);
+                        gui->browser_needs_scan = true;
+                    }
+                    ImGui::PopStyleColor();
+                    ImGui::EndPopup();
+                }
+
                 ImGui::PopID();
             }
 
@@ -1175,6 +1187,41 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::PopStyleColor(3);
             }
 
+            ImGui::EndPopup();
+        }
+
+        /* Save As popup modal */
+        if (gui->save_as_open) {
+            ImGui::OpenPopup("save_as_popup_r");
+        }
+        if (ImGui::BeginPopupModal("save_as_popup_r", &gui->save_as_open,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Save Preset As");
+            ImGui::Separator();
+            ImGui::SetNextItemWidth(280);
+            bool enter_pressed = ImGui::InputText("Preset Name", gui->save_as_name,
+                                                  sizeof(gui->save_as_name),
+                                                  ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::Spacing();
+            if ((ImGui::Button("Save", ImVec2(120, 0)) || enter_pressed) &&
+                gui->save_as_name[0] != '\0') {
+                char path[400];
+                snprintf(path, sizeof(path), "presets/%s.0xfx", gui->save_as_name);
+                bool ok = fx_preset_save(engine, path);
+                if (!ok) {
+                    snprintf(path, sizeof(path), "../presets/%s.0xfx", gui->save_as_name);
+                    ok = fx_preset_save(engine, path);
+                }
+                FX_INFO(ok ? "Saved preset: %s" : "Save failed: %s", gui->save_as_name);
+                if (ok) gui->browser_needs_scan = true;
+                gui->save_as_open = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                gui->save_as_open = false;
+                ImGui::CloseCurrentPopup();
+            }
             ImGui::EndPopup();
         }
 

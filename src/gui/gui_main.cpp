@@ -1199,6 +1199,8 @@ int main(int argc, char *argv[]) {
         /* Save-As state (shared between preset browser and Ctrl+Shift+S) */
         static bool s_save_as_open = false;
         static char s_save_as_name[128] = "";
+        static char s_save_toast[512] = "";
+        static float s_save_toast_timer = 0.0f;
 
         /* ── Toolbar ──────────────────────────────────────────── */
         {
@@ -1517,6 +1519,18 @@ int main(int argc, char *argv[]) {
                         ImGui::SetTooltip("%s", pe->description);
                     }
 
+                    /* Right-click context menu — delete for user presets only */
+                    if (!pe->is_factory && ImGui::BeginPopupContextItem()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.35f, 0.30f, 1.0f));
+                        if (ImGui::Selectable("Delete")) {
+                            remove(pe->path);
+                            FX_INFO("Deleted preset: %s", pe->name);
+                            s_browser_needs_scan = true;
+                        }
+                        ImGui::PopStyleColor();
+                        ImGui::EndPopup();
+                    }
+
                     ImGui::PopID();
                 }
 
@@ -1749,7 +1763,7 @@ int main(int argc, char *argv[]) {
                         char rec_path[768];
                         /* Ensure recording directory exists */
                         #ifdef _WIN32
-                        _mkdir(s_rec_dir);
+                        mkdir(s_rec_dir);
                         #else
                         mkdir(s_rec_dir, 0755);
                         #endif
@@ -2191,8 +2205,25 @@ int main(int argc, char *argv[]) {
                     snprintf(path, sizeof(path), "../presets/%s.0xfx", s_save_as_name);
                     ok = fx_preset_save(engine, path);
                 }
+                if (ok) {
+                    s_browser_needs_scan = true;
+                    /* Resolve to absolute path for display */
+                    char abs_path[512] = "";
+                    #ifdef _WIN32
+                    _fullpath(abs_path, path, sizeof(abs_path));
+                    #else
+                    realpath(path, abs_path);
+                    #endif
+                    if (abs_path[0])
+                        snprintf(s_save_toast, sizeof(s_save_toast), "Saved to: %s", abs_path);
+                    else
+                        snprintf(s_save_toast, sizeof(s_save_toast), "Saved to: %s", path);
+                    s_save_toast_timer = 5.0f;
+                } else {
+                    snprintf(s_save_toast, sizeof(s_save_toast), "Save failed: %s", s_save_as_name);
+                    s_save_toast_timer = 4.0f;
+                }
                 FX_INFO(ok ? "Saved preset: %s" : "Save failed: %s", s_save_as_name);
-                if (ok) s_browser_needs_scan = true;
                 s_save_as_open = false;
                 ImGui::CloseCurrentPopup();
             }
@@ -2202,6 +2233,28 @@ int main(int argc, char *argv[]) {
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
+        }
+
+        /* Save toast notification */
+        if (s_save_toast_timer > 0.0f) {
+            s_save_toast_timer -= io.DeltaTime;
+            float alpha = s_save_toast_timer > 1.0f ? 1.0f : s_save_toast_timer;
+            if (alpha > 0.0f) {
+                ImVec2 toast_sz = ImGui::CalcTextSize(s_save_toast);
+                float toast_x = (win_w - toast_sz.x - 20.0f) * 0.5f;
+                float toast_y = win_h - 60.0f;
+                ImDrawList *dl = ImGui::GetForegroundDrawList();
+                dl->AddRectFilled(
+                    ImVec2(toast_x - 10.0f, toast_y - 6.0f),
+                    ImVec2(toast_x + toast_sz.x + 10.0f, toast_y + toast_sz.y + 6.0f),
+                    IM_COL32(30, 28, 22, (int)(220 * alpha)), 6.0f);
+                dl->AddRect(
+                    ImVec2(toast_x - 10.0f, toast_y - 6.0f),
+                    ImVec2(toast_x + toast_sz.x + 10.0f, toast_y + toast_sz.y + 6.0f),
+                    IM_COL32(180, 140, 40, (int)(160 * alpha)), 6.0f);
+                dl->AddText(ImVec2(toast_x, toast_y),
+                    IM_COL32(220, 200, 160, (int)(255 * alpha)), s_save_toast);
+            }
         }
 
         /* ============================================================

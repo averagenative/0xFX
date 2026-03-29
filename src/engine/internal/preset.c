@@ -164,10 +164,23 @@ bool fx_preset_save(fx_engine_t *engine, const char *path) {
     cJSON *root = cJSON_CreateObject();
     if (!root) return false;
 
-    /* Metadata */
+    /* Metadata — derive name from filename */
     cJSON_AddStringToObject(root, "format", "0xfx");
     cJSON_AddStringToObject(root, "version", "1.0");
-    cJSON_AddStringToObject(root, "name", "Untitled Preset");
+    {
+        /* Extract name from path: "presets/dan.0xfx" → "dan" */
+        const char *slash = strrchr(path, '/');
+        if (!slash) slash = strrchr(path, '\\');
+        const char *basename = slash ? slash + 1 : path;
+        char preset_name[128];
+        strncpy(preset_name, basename, sizeof(preset_name) - 1);
+        preset_name[sizeof(preset_name) - 1] = '\0';
+        /* Strip .0xfx extension */
+        char *dot = strstr(preset_name, ".0xfx");
+        if (dot) *dot = '\0';
+        cJSON_AddStringToObject(root, "name",
+            preset_name[0] ? preset_name : "Untitled Preset");
+    }
 
     /* Signal chain */
     cJSON *sc = cJSON_AddObjectToObject(root, "signal_chain");
