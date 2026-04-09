@@ -1545,10 +1545,33 @@ int main(int argc, char *argv[]) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.68f, 0.5f, 1.0f));
 
                     if (ImGui::Button("Save (Ctrl+S)", ImVec2(150, 0))) {
-                        bool ok = fx_preset_save(engine, "presets/last_session.0xfx");
-                        if (!ok) ok = fx_preset_save(engine, "../presets/last_session.0xfx");
-                        FX_INFO(ok ? "Quick-saved" : "Quick-save failed");
-                        ImGui::CloseCurrentPopup();
+                        /* If a named preset is loaded, overwrite it; otherwise prompt Save As */
+                        bool has_name = (s_preset_name[0] != '\0'
+                            && strcmp(s_preset_name, "Untitled") != 0
+                            && strcmp(s_preset_name, "Last Session") != 0);
+                        if (has_name) {
+                            char path[400];
+                            snprintf(path, sizeof(path), "presets/%s.0xfx", s_preset_name);
+                            bool ok = fx_preset_save(engine, path);
+                            if (!ok) {
+                                snprintf(path, sizeof(path), "../presets/%s.0xfx", s_preset_name);
+                                ok = fx_preset_save(engine, path);
+                            }
+                            if (ok) {
+                                s_preset_modified = false;
+                                s_browser_needs_scan = true;
+                                FX_INFO("Saved preset: %s", s_preset_name);
+                            } else {
+                                FX_ERROR("Save failed: %s", s_preset_name);
+                            }
+                            ImGui::CloseCurrentPopup();
+                        } else {
+                            /* No preset loaded — open Save As */
+                            ImGui::CloseCurrentPopup();
+                            s_save_as_open = true;
+                        }
+                        /* Always quick-save session too */
+                        fx_preset_save(engine, "presets/last_session.0xfx");
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Save As... (Ctrl+Shift+S)", ImVec2(200, 0))) {
@@ -2176,10 +2199,24 @@ int main(int argc, char *argv[]) {
                     s_save_as_open = true;
                     ImGui::OpenPopup("save_as_popup");
                 } else {
-                    /* Ctrl+S = quick-save to last_session */
-                    bool ok = fx_preset_save(engine, "presets/last_session.0xfx");
-                    if (!ok) ok = fx_preset_save(engine, "../presets/last_session.0xfx");
-                    FX_INFO(ok ? "Quick-saved to last_session.0xfx" : "Quick-save failed");
+                    /* Ctrl+S = save current preset, or Save As if untitled */
+                    bool has_name = (s_preset_name[0] != '\0'
+                        && strcmp(s_preset_name, "Untitled") != 0
+                        && strcmp(s_preset_name, "Last Session") != 0);
+                    if (has_name) {
+                        char path[400];
+                        snprintf(path, sizeof(path), "presets/%s.0xfx", s_preset_name);
+                        bool ok = fx_preset_save(engine, path);
+                        if (!ok) {
+                            snprintf(path, sizeof(path), "../presets/%s.0xfx", s_preset_name);
+                            ok = fx_preset_save(engine, path);
+                        }
+                        if (ok) { s_preset_modified = false; s_browser_needs_scan = true; }
+                        FX_INFO(ok ? "Saved: %s" : "Save failed: %s", s_preset_name);
+                    } else {
+                        s_save_as_open = true;
+                    }
+                    fx_preset_save(engine, "presets/last_session.0xfx");
                 }
             }
         }

@@ -345,11 +345,13 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
         mag[i] = m;
     }
 
-    /* Find peak magnitude response — used for normalization later */
-    float mag_peak = 0.0f;
-    for (int i = 0; i < n_bins; i++) {
-        if (mag[i] > mag_peak) mag_peak = mag[i];
-    }
+    /* Find magnitude at 200 Hz (guitar fundamental range) for normalization.
+     * Using a fixed reference frequency keeps all cab types level-matched
+     * instead of each cab normalizing by its own peak (which varies). */
+    int ref_bin = (int)(200.0f * (float)fft_size / sample_rate);
+    if (ref_bin < 1) ref_bin = 1;
+    if (ref_bin >= n_bins) ref_bin = n_bins - 1;
+    float mag_ref = mag[ref_bin];
 
     /* ── Step 2: Minimum-phase reconstruction ──────────────── */
     /* Phase = -Hilbert(log(|H(f)|))
@@ -436,10 +438,11 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
     int fade_len = 256;
     if (fade_len > ir_len / 2) fade_len = ir_len / 2;
 
-    /* Normalize by peak magnitude response so no frequency is amplified.
-     * mag_peak is the highest gain at any frequency in the designed response.
-     * Scale so the peak response ≈ 0.85 (slight headroom, no boost). */
-    float norm = (mag_peak > 1e-6f) ? (0.85f / mag_peak) : 1.0f;
+    /* Normalize so magnitude at 200 Hz ≈ 1.5x. All cab types get the
+     * same level at guitar fundamentals; only tonal color differs.
+     * Slight boost compensates for perceived volume loss from HF rolloff.
+     * The engine's hard clip at 1.0 catches resonant peaks. */
+    float norm = (mag_ref > 1e-6f) ? (1.5f / mag_ref) : 1.0f;
 
     for (int i = 0; i < ir_len; i++) {
         float w = 1.0f;
