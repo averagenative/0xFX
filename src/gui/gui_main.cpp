@@ -4544,6 +4544,43 @@ int main(int argc, char *argv[]) {
             draw_meter(in_meter_pos.x, in_level, s_in_clip_timer > 0.0f);
             ImGui::Dummy(ImVec2(bar_w + 14.0f, bar_h));
 
+            /* Input gain trim — live control next to IN meter */
+            ImGui::SameLine(0, 10);
+            ImGui::SetCursorPosY((STATUS_H - bar_h) * 0.5f);
+            ImGui::PushStyleColor(ImGuiCol_SliderGrab,        ImVec4(0.80f, 0.58f, 0.18f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_SliderGrabActive,  ImVec4(0.95f, 0.70f, 0.20f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg,           ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::SliderFloat("##in_gain_sb", &s_input_gain_db, -24.0f, 12.0f, "%+.1f dB")) {
+                fx_audio_set_input_gain_db(s_input_gain_db);
+                s_session_cfg.input_gain_db = s_input_gain_db;
+            }
+            ImGui::PopStyleColor(3);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Input gain trim: -24 to +12 dB\nPre-chain, stacks with PAD.");
+
+            ImGui::SameLine(0, 4);
+            ImGui::SetCursorPosY((STATUS_H - bar_h) * 0.5f);
+            if (s_input_pad) {
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.65f, 0.42f, 0.05f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.55f, 0.10f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.50f, 0.32f, 0.03f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(1.00f, 0.90f, 0.50f, 1.0f));
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.18f, 0.16f, 0.13f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.24f, 0.18f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.60f, 0.55f, 0.45f, 1.0f));
+            }
+            if (ImGui::Button("PAD", ImVec2(38.0f, bar_h))) {
+                s_input_pad = !s_input_pad;
+                fx_audio_set_input_pad(s_input_pad);
+                s_session_cfg.input_pad = s_input_pad;
+            }
+            ImGui::PopStyleColor(4);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("-20 dB pad (stacks with slider)");
+
             /* Center: NO SIGNAL text */
             if (no_signal) {
                 const char *ns_text = "NO SIGNAL";
