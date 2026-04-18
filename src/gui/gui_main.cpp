@@ -4036,22 +4036,64 @@ int main(int argc, char *argv[]) {
                                 }
                             }
 
-                            /* Restore cursor to below the image (overlay knobs moved it) */
+                            /* Remove X overlay — top-right corner of pedal image */
+                            {
+                                const float XBTN_SZ = 22.0f;
+                                float xbtn_x = img_pos.x + img_w - XBTN_SZ * 0.5f;
+                                float xbtn_y = img_pos.y + XBTN_SZ * 0.5f;
+                                /* Invisible hit area centered on corner */
+                                ImGui::SetCursorScreenPos(
+                                    ImVec2(xbtn_x - XBTN_SZ * 0.5f, xbtn_y - XBTN_SZ * 0.5f));
+                                char xbtn_id[32];
+                                snprintf(xbtn_id, sizeof(xbtn_id), "##xcorner_%d", (int)pid);
+                                bool x_clicked = ImGui::InvisibleButton(xbtn_id, ImVec2(XBTN_SZ, XBTN_SZ));
+                                bool x_hovered = ImGui::IsItemHovered();
+                                ImDrawList *xdl = ImGui::GetWindowDrawList();
+                                float xr = XBTN_SZ * 0.42f;
+                                /* Background — always visible, brighter on hover */
+                                xdl->AddCircleFilled(ImVec2(xbtn_x, xbtn_y), xr,
+                                    x_hovered ? IM_COL32(180, 40, 30, 220) : IM_COL32(80, 20, 15, 170), 16);
+                                xdl->AddCircle(ImVec2(xbtn_x, xbtn_y), xr,
+                                    IM_COL32(220, 60, 40, x_hovered ? 220 : 120), 16, 1.5f);
+                                /* X arms */
+                                float xa = xr * 0.48f;
+                                ImU32 xcol = IM_COL32(255, 210, 195, x_hovered ? 255 : 200);
+                                xdl->AddLine(ImVec2(xbtn_x - xa, xbtn_y - xa),
+                                             ImVec2(xbtn_x + xa, xbtn_y + xa), xcol, 2.0f);
+                                xdl->AddLine(ImVec2(xbtn_x + xa, xbtn_y - xa),
+                                             ImVec2(xbtn_x - xa, xbtn_y + xa), xcol, 2.0f);
+                                if (x_hovered)
+                                    ImGui::SetTooltip("Remove pedal");
+                                if (x_clicked) {
+                                    fx_chain_pos_t xpos = (sel.kind == NODE_PEDAL_PRE)
+                                                           ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
+                                    fx_pedal_id *xids = (xpos == FX_CHAIN_POS_PRE) ? s_pre_ids : s_post_ids;
+                                    int *xid_count = (xpos == FX_CHAIN_POS_PRE) ? &s_pre_id_count : &s_post_id_count;
+                                    int xpi = sel.slot;
+                                    fx_chain_remove_pedal(engine, pid);
+                                    for (int j = xpi; j < *xid_count - 1; j++)
+                                        xids[j] = xids[j + 1];
+                                    (*xid_count)--;
+                                    s_selected_node = -1;
+                                }
+                            }
+
+                            /* Restore cursor to below the image (overlay knobs + X button moved it) */
                             ImGui::SetCursorPosY(cursor_after_img_y);
                         }
 
                         ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
-                        /* Bottom row: reorder + remove (bypass is on the stomp switch) */
+                        /* Bottom row: reorder arrows (bypass is on the stomp switch, remove is X on image corner) */
+                        /* TODO(future): replace arrows with drag-and-drop reorder on the chain view */
                         {
-                            const float BTN_SZ = 36.0f;
                             const float ARR_SZ = 30.0f;
-                            float row_w = ARR_SZ + 4 + ARR_SZ + 16 + BTN_SZ;
+                            float row_w = ARR_SZ + 4 + ARR_SZ;
                             float row_off = (avail_w - row_w) * 0.5f;
                             if (row_off > 0.0f)
                                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + row_off);
 
-                            /* Reorder arrows — textured */
+                            /* Reorder arrows */
                             fx_chain_pos_t pos = (sel.kind == NODE_PEDAL_PRE)
                                                   ? FX_CHAIN_POS_PRE : FX_CHAIN_POS_POST;
                             fx_pedal_id *ids = (pos == FX_CHAIN_POS_PRE) ? s_pre_ids : s_post_ids;
@@ -4123,43 +4165,6 @@ int main(int argc, char *argv[]) {
                                 ImGui::PopID();
                             }
 
-                            ImGui::SameLine(0, 16);
-
-                            /* Remove button — drawn X with dark red background */
-                            {
-                                ImGui::PushID("##rm_btn");
-                                ImVec2 rp = ImGui::GetCursorScreenPos();
-                                bool rm_clicked = ImGui::InvisibleButton("##rm_click", ImVec2(BTN_SZ, BTN_SZ));
-                                bool rm_hovered = ImGui::IsItemHovered();
-                                ImDrawList *rdl = ImGui::GetWindowDrawList();
-
-                                /* Background circle */
-                                float rcx = rp.x + BTN_SZ * 0.5f;
-                                float rcy = rp.y + BTN_SZ * 0.5f;
-                                float rr = BTN_SZ * 0.42f;
-                                rdl->AddCircleFilled(ImVec2(rcx, rcy), rr,
-                                    rm_hovered ? IM_COL32(180, 40, 30, 240) : IM_COL32(120, 30, 20, 200), 16);
-                                rdl->AddCircle(ImVec2(rcx, rcy), rr,
-                                    IM_COL32(220, 60, 40, 180), 16, 1.5f);
-
-                                /* Bold X */
-                                float xarm = rr * 0.5f;
-                                ImU32 xcol = IM_COL32(255, 220, 200, 240);
-                                rdl->AddLine(ImVec2(rcx - xarm, rcy - xarm), ImVec2(rcx + xarm, rcy + xarm), xcol, 3.0f);
-                                rdl->AddLine(ImVec2(rcx + xarm, rcy - xarm), ImVec2(rcx - xarm, rcy + xarm), xcol, 3.0f);
-
-                                if (rm_hovered)
-                                    ImGui::SetTooltip("Remove pedal");
-
-                                if (rm_clicked) {
-                                    fx_chain_remove_pedal(engine, pid);
-                                    for (int j = pi; j < *id_count - 1; j++)
-                                        ids[j] = ids[j + 1];
-                                    (*id_count)--;
-                                    s_selected_node = -1;
-                                }
-                                ImGui::PopID();
-                            }
                         }
                     }
                 }
