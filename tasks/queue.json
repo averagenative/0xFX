@@ -3078,7 +3078,7 @@
     "claimedBy": null,
     "depends": [],
     "estimatedTokens": 50000,
-    "release": "1.2.0",
+    "release": "1.3.0",
     "acceptanceCriteria": [
       "Looper is a dedicated module (NOT a single pedal in the chain) — separate panel addressable via keyboard for hands-free live use",
       "9 independent loop slots (keys 1-9), each with its own record/play/overdub/mute state machine",
