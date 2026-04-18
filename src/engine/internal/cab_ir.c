@@ -438,11 +438,23 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
     int fade_len = 256;
     if (fade_len > ir_len / 2) fade_len = ir_len / 2;
 
-    /* Normalize so magnitude at 200 Hz ≈ 1.5x. All cab types get the
-     * same level at guitar fundamentals; only tonal color differs.
-     * Slight boost compensates for perceived volume loss from HF rolloff.
-     * The engine's hard clip at 1.0 catches resonant peaks. */
-    float norm = (mag_ref > 1e-6f) ? (1.5f / mag_ref) : 1.0f;
+    /* Level-match cabs by time-domain RMS. A single-bin reference (e.g. 200 Hz)
+     * over-attenuates cabs that happen to resonate at the reference frequency
+     * and under-attenuates cabs that dip there — giving an audibly muted
+     * result for many preset cabs. RMS across the IR is robust to spectral
+     * shape. Peak-safety scaler keeps convolution output below clip. */
+    float sum_sq = 0.0f;
+    for (int i = 0; i < ir_len; i++) sum_sq += time_buf[i] * time_buf[i];
+    float rms = sqrtf(sum_sq / (float)ir_len);
+    float norm = (rms > 1e-6f) ? (0.15f / rms) : 1.0f;
+
+    float peak_td = 0.0f;
+    for (int i = 0; i < ir_len; i++) {
+        float v = fabsf(time_buf[i]) * norm;
+        if (v > peak_td) peak_td = v;
+    }
+    if (peak_td > 0.98f) norm *= (0.98f / peak_td);
+    (void)mag_ref;
 
     for (int i = 0; i < ir_len; i++) {
         float w = 1.0f;
