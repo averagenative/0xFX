@@ -265,8 +265,8 @@
     ],
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
-      "Signal flow: input \u2192 gate \u2192 pre-pedals \u2192 amp \u2192 post-pedals \u2192 output",
-      "Multi-chain: split \u2192 per-chain amp+cab \u2192 sum with mix",
+      "Signal flow: input → gate → pre-pedals → amp → post-pedals → output",
+      "Multi-chain: split → per-chain amp+cab → sum with mix",
       "Test: all 5 amp models produce unique output"
     ],
     "files": [
@@ -307,7 +307,7 @@
     "estimatedTokens": 15000,
     "acceptanceCriteria": [
       "Pedal add/remove/move/bypass API works",
-      "Internal dispatch table maps type \u2192 init/process/free",
+      "Internal dispatch table maps type → init/process/free",
       "Test: add pedal, set param, verify param"
     ],
     "files": [
@@ -317,7 +317,7 @@
   {
     "id": "TASK-018",
     "priority": "HIGH",
-    "title": "Port overdrive \u2192 Jade Drive",
+    "title": "Port overdrive → Jade Drive",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -380,7 +380,7 @@
   {
     "id": "TASK-021",
     "priority": "HIGH",
-    "title": "Port delay \u2192 Echo Delay",
+    "title": "Port delay → Echo Delay",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -402,7 +402,7 @@
   {
     "id": "TASK-022",
     "priority": "HIGH",
-    "title": "Port reverb \u2192 Hall Verb",
+    "title": "Port reverb → Hall Verb",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -424,7 +424,7 @@
   {
     "id": "TASK-023",
     "priority": "HIGH",
-    "title": "Port compressor \u2192 Squeeze Box",
+    "title": "Port compressor → Squeeze Box",
     "domain": "engine",
     "phase": 3,
     "status": "done",
@@ -658,7 +658,7 @@
     "acceptanceCriteria": [
       "Load .wav IR via dr_wav",
       "FFT via KissFFT",
-      "Per-block: FFT input \u2192 complex multiply \u2192 IFFT \u2192 overlap-add",
+      "Per-block: FFT input → complex multiply → IFFT → overlap-add",
       "Test: convolve impulse with known IR, verify output"
     ],
     "files": [
@@ -791,7 +791,7 @@
       "Parse .0xfx JSON",
       "Reconstruct engine state",
       "Validate all fields, clamp out-of-range",
-      "Test: save \u2192 load \u2192 process \u2192 identical output"
+      "Test: save → load → process → identical output"
     ],
     "files": [
       "src/engine/internal/preset.c"
@@ -871,7 +871,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Wraps fx_engine_process()",
-      "Mono in \u2192 engine \u2192 stereo out",
+      "Mono in → engine → stereo out",
       "CLAP loads in Reaper/Bitwig"
     ],
     "files": [
@@ -1458,7 +1458,7 @@
     "depends": [],
     "estimatedTokens": 80000,
     "acceptanceCriteria": [
-      "Top section: horizontal signal chain \u2014 pedal icons connected by visual cables/lines leading to amp then cab",
+      "Top section: horizontal signal chain — pedal icons connected by visual cables/lines leading to amp then cab",
       "Each element (pedal, amp, cab) is a clickable node in the chain",
       "Visual connections (lines/curves) between nodes showing signal flow",
       "SINGLE/DUAL chain toggle (like BIAS FX)",
@@ -1487,9 +1487,9 @@
     "estimatedTokens": 40000,
     "acceptanceCriteria": [
       "Bottom section: large detail view of selected element",
-      "Click pedal in chain \u2192 shows large pedal face with turnable knobs",
-      "Click amp in chain \u2192 shows large amp panel with all knobs (like BIAS FX screenshot)",
-      "Click cab in chain \u2192 shows cab selector with IR waveform",
+      "Click pedal in chain → shows large pedal face with turnable knobs",
+      "Click amp in chain → shows large amp panel with all knobs (like BIAS FX screenshot)",
+      "Click cab in chain → shows cab selector with IR waveform",
       "Smooth transition between detail views",
       "Detail view shows element name prominently"
     ],
@@ -1508,7 +1508,7 @@
     "depends": [],
     "estimatedTokens": 10000,
     "acceptanceCriteria": [
-      "Prominent LIVE button in toolbar \u2014 large, visible",
+      "Prominent LIVE button in toolbar — large, visible",
       "Lit up (bright green/amber glow) when audio is active",
       "Dim/dark when audio is off",
       "Click to toggle audio on/off",
@@ -1553,7 +1553,7 @@
     ],
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
-      "Bezier curves or straight lines connecting pedal \u2192 pedal \u2192 amp \u2192 cab",
+      "Bezier curves or straight lines connecting pedal → pedal → amp → cab",
       "Cables drawn on the ImGui foreground draw list",
       "Cable color changes based on signal presence (dim when muted, bright when LIVE)",
       "Input jack on left, output jack on right of each node"
@@ -1618,7 +1618,7 @@
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [
-      "Save current rig as named preset (.0xfx JSON \u2014 already implemented)",
+      "Save current rig as named preset (.0xfx JSON — already implemented)",
       "Load preset from file browser",
       "Quick-save (Ctrl+S) overwrites current preset",
       "Quick-load last used preset on startup",
@@ -1930,7 +1930,7 @@
     ],
     "estimatedTokens": 30000,
     "acceptanceCriteria": [
-      "Visual Y-split node in signal chain \u2014 signal splits to 2+ parallel paths",
+      "Visual Y-split node in signal chain — signal splits to 2+ parallel paths",
       "Each path has its own amp + cab nodes",
       "Paths merge at a mixer node with per-path level/blend",
       "Add/remove parallel paths via UI",
@@ -1956,7 +1956,7 @@
       "Texture cache: load once, return GL texture ID on subsequent calls",
       "Support transparency (RGBA)",
       "stb_image.h for PNG decoding (single-header, vendor into deps/)",
-      "API: GLuint fx_texture_load(const char *path) \u2014 returns cached texture ID"
+      "API: GLuint fx_texture_load(const char *path) — returns cached texture ID"
     ],
     "files": [
       "src/gui/texture.c",
@@ -2134,7 +2134,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Generate PNG asset of a TRS guitar cable plug, angled upward, cable leading right into pedal chain",
-      "Worn grime aesthetic matching existing assets \u2014 scuffed metal, road-worn look",
+      "Worn grime aesthetic matching existing assets — scuffed metal, road-worn look",
       "Transparent background (_nobg variant)",
       "Replace the green INPUT rectangle in the signal chain with this asset",
       "Cable portion connects visually to the first pedal/amp node"
@@ -2206,7 +2206,7 @@
       "Define frequency response profiles / EQ curves for each mic type",
       "Define mic placement parameters: distance from cab, angle (on-axis vs off-axis), position (center cone vs edge)",
       "Document how mic placement affects tone (proximity effect, high-frequency rolloff, etc.)",
-      "Design this as OPTIONAL feature \u2014 DI (direct inject) from cab is the default, mic placement is opt-in",
+      "Design this as OPTIONAL feature — DI (direct inject) from cab is the default, mic placement is opt-in",
       "Output: specification doc with mic models, original names, frequency profiles, and placement parameters"
     ],
     "files": [
@@ -2252,7 +2252,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Generate PNG assets for each microphone model defined in TASK-326",
-      "Worn grime aesthetic \u2014 beat-up studio mics, road-worn look",
+      "Worn grime aesthetic — beat-up studio mics, road-worn look",
       "Transparent backgrounds (_nobg variants)",
       "Show mic positioned in front of amp/cab in the signal chain visualization",
       "Follow existing asset generation guide format"
@@ -2326,7 +2326,7 @@
       "Amp detail view: render knobs overlaid on the amp face image at correct positions",
       "Pedal detail view: render knobs overlaid on the pedal body image at correct positions",
       "Define knob position maps for each amp model and pedal type (x,y coordinates on image)",
-      "Knobs are interactive \u2014 dragging them changes the parameter value",
+      "Knobs are interactive — dragging them changes the parameter value",
       "Knob visual rotation matches the parameter value",
       "Use textured knob assets (knob_chicken_cream, knob_skirted_black, etc.) matched to each amp/pedal style"
     ],
@@ -2459,7 +2459,7 @@
     "acceptanceCriteria": [
       "ImGui+SDL2/OpenGL renders inside the host-provided native window (CLAP/VST3)",
       "Same visual appearance as standalone GUI",
-      "Resize support \u2014 adapts to host window size",
+      "Resize support — adapts to host window size",
       "Works in at least one DAW on Windows (Reaper recommended)",
       "Share gui_main.cpp rendering code between standalone and plugin (extract to shared module)",
       "cplug_createGUI/destroyGUI/setParent/setVisible fully implemented"
@@ -2481,7 +2481,7 @@
     "estimatedTokens": 20000,
     "acceptanceCriteria": [
       "Plugin exposes chain count selector (single/dual)",
-      "Chain B amp model, params, cab, mic \u2014 all automatable",
+      "Chain B amp model, params, cab, mic — all automatable",
       "Chain A/B mix levels exposed as params",
       "Noise gate threshold/attack/release/hold exposed as params",
       "Parameter count increases to accommodate dual chain"
@@ -2555,7 +2555,7 @@
   {
     "id": "TASK-342",
     "priority": "HIGH",
-    "title": "Sync plugin GUI renderer with standalone \u2014 full visual parity",
+    "title": "Sync plugin GUI renderer with standalone — full visual parity",
     "domain": "frontend",
     "phase": 6,
     "status": "done",
@@ -2591,7 +2591,7 @@
     "acceptanceCriteria": [
       "Clicking on the lower portion of the pedal body image toggles bypass (like stomping a real footswitch)",
       "The stomp switch hit area is the bottom ~30% of the pedal image",
-      "Remove the separate Active/Remove ImGui buttons \u2014 they should be part of the pedal image interaction",
+      "Remove the separate Active/Remove ImGui buttons — they should be part of the pedal image interaction",
       "Remove button moves to a small X overlay on the pedal image corner",
       "LED glow on the pedal image is the bypass indicator (green=active, red=bypassed)",
       "Reorder arrows could be drag-and-drop instead of buttons (future)"
@@ -2603,7 +2603,7 @@
   {
     "id": "TASK-344",
     "priority": "MEDIUM",
-    "title": "macOS plugin builds \u2014 AU/VST3/CLAP bundles",
+    "title": "macOS plugin builds — AU/VST3/CLAP bundles",
     "domain": "infra",
     "phase": 8,
     "status": "done",
@@ -2872,7 +2872,7 @@
       "Cabinet switching does not cause signal peaking or corruption",
       "Overlap buffer is properly cleared/crossfaded on cab switch",
       "No race condition between audio thread and IR reload",
-      "Test: switch cabs rapidly while processing audio \u2014 output stays within [-1.0, 1.0] without hard clipping",
+      "Test: switch cabs rapidly while processing audio — output stays within [-1.0, 1.0] without hard clipping",
       "Test: switch cab and verify output level is consistent before and after"
     ],
     "files": [
@@ -3142,14 +3142,14 @@
       "Running the 1.1.0 AppImage (and native build) on Fedora 43 enumerates input devices via PipeWire/PulseAudio",
       "USB interfaces (iRig, Scarlett) appear in the input device dropdown",
       "Selecting an input and arming a chain passes signal end-to-end (verified with meter / recording)",
-      "miniaudio PipeWire/ALSA backend paths investigated \u2014 confirm whether miniaudio is picking a backend that excludes capture devices on Fedora 43",
+      "miniaudio PipeWire/ALSA backend paths investigated — confirm whether miniaudio is picking a backend that excludes capture devices on Fedora 43",
       "Regression test / logging added so device-enumeration failures surface clearly in fx_log output instead of an empty dropdown"
     ],
     "files": [
       "src/audio/audio_device.c",
       "src/audio/audio_device.h"
     ],
-    "notes": "Reported 2026-04-18 on native Fedora 44 (Dan moved off WSL). The WSLg-audio-broken assumption in CLAUDE.md no longer applies \u2014 real Linux audio stack is available, but mic input is not being detected. miniaudio may be defaulting to a backend without capture support, or the device enumeration may need a PipeWire-aware path. Start by running the AppImage with FX_DEBUG enabled and checking which backend miniaudio selects and what devices it returns."
+    "notes": "Reported 2026-04-18 on native Fedora 44 (Dan moved off WSL). The WSLg-audio-broken assumption in CLAUDE.md no longer applies — real Linux audio stack is available, but mic input is not being detected. miniaudio may be defaulting to a backend without capture support, or the device enumeration may need a PipeWire-aware path. Start by running the AppImage with FX_DEBUG enabled and checking which backend miniaudio selects and what devices it returns."
   },
   {
     "id": "TASK-366",
@@ -3168,12 +3168,12 @@
       "0xfx_gui.exe launches under the bottle and responds to input (even if audio is limited)",
       "Reaper-for-Windows (or another DAW) installs under the bottle and can scan / load the VST3 plugin and CLAP plugin",
       "Short README (scripts/wine/README.md or similar) documenting bottle setup steps for reproducibility",
-      "Optional: mark Wine-specific caveats \u2014 e.g. no real audio device in the bottle, use output-only for smoke testing"
+      "Optional: mark Wine-specific caveats — e.g. no real audio device in the bottle, use output-only for smoke testing"
     ],
     "files": [
       "scripts/wine/"
     ],
-    "notes": "Dan is on native Fedora 44 and wants to validate Windows artifacts (standalone .exe, NSIS installer, VST3/CLAP plugins) without dual-booting. Wine bottle gives reproducible test surface. Not a release blocker, but greatly reduces release-test friction. Bottles (flatpak app) or plain wineprefix both acceptable \u2014 pick whichever is simplest to script."
+    "notes": "Dan is on native Fedora 44 and wants to validate Windows artifacts (standalone .exe, NSIS installer, VST3/CLAP plugins) without dual-booting. Wine bottle gives reproducible test surface. Not a release blocker, but greatly reduces release-test friction. Bottles (flatpak app) or plain wineprefix both acceptable — pick whichever is simplest to script."
   },
   {
     "id": "TASK-367",
@@ -3190,9 +3190,9 @@
       "Input gain slider (continuous, -24 dB to +12 dB, default 0 dB) in the audio settings UI",
       "-20 dB Pad toggle button next to the slider for quick attenuation of hot sources (laptop mic arrays, line-level signals)",
       "Gain is applied in the standalone audio capture path BEFORE samples reach fx_engine_process (pre-engine, not a new engine API)",
-      "Plugin build path is unaffected \u2014 hosts provide their own channel gain, the plugin does not need this",
+      "Plugin build path is unaffected — hosts provide their own channel gain, the plugin does not need this",
       "Input meter in GUI reflects the post-gain signal so users see the effect of the slider",
-      "Setting persists between runs \u2014 saved to the user-config / last-session file so relaunching keeps the level",
+      "Setting persists between runs — saved to the user-config / last-session file so relaunching keeps the level",
       "Real-time safe: multiplication is a simple scalar in the capture callback, no mallocs, no locks"
     ],
     "files": [
@@ -3200,7 +3200,7 @@
       "src/audio/audio_device.h",
       "src/gui/gui_main.cpp"
     ],
-    "notes": "Discovered 2026-04-18 during TASK-365 verification. Laptop mic arrays on Fedora 44 / PipeWire run at high system gain intended for far-field voice; plugging that into an amp-sim chain clips the input meter instantly. Real interfaces (iRig/Scarlett) won't have this issue but the app still needs a simple input trim so users can run off the laptop mic without re-digging pactl volumes. Keep it standalone-only \u2014 the plugin doesn't need pre-gain since the DAW supplies that."
+    "notes": "Discovered 2026-04-18 during TASK-365 verification. Laptop mic arrays on Fedora 44 / PipeWire run at high system gain intended for far-field voice; plugging that into an amp-sim chain clips the input meter instantly. Real interfaces (iRig/Scarlett) won't have this issue but the app still needs a simple input trim so users can run off the laptop mic without re-digging pactl volumes. Keep it standalone-only — the plugin doesn't need pre-gain since the DAW supplies that."
   },
   {
     "id": "TASK-368",
@@ -3230,7 +3230,7 @@
       "scripts/packaging/0xfx_installer.nsi",
       "scripts/packaging/0xfx_installer_arm64.nsi"
     ],
-    "notes": "Dan asked 2026-04-18 \u2014 he'd rather use actual measured IRs than our parametric synth curves. The 650 Assorted pack on musical-artifacts.com is public domain; four of its files use original geographic names (cambridge/allston/northbridge/worcester) that match our no-trademark naming convention. Synthetic remains as an offline/testing fallback."
+    "notes": "Dan asked 2026-04-18 — he'd rather use actual measured IRs than our parametric synth curves. The 650 Assorted pack on musical-artifacts.com is public domain; four of its files use original geographic names (cambridge/allston/northbridge/worcester) that match our no-trademark naming convention. Synthetic remains as an offline/testing fallback."
   },
   {
     "id": "TASK-369",
@@ -3238,26 +3238,26 @@
     "title": "Custom cab IR upload button (bring-your-own .wav)",
     "domain": "frontend",
     "phase": 13,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "done",
+    "claimedBy": "claude",
     "depends": [],
     "estimatedTokens": 20000,
     "release": "1.3.0",
     "acceptanceCriteria": [
       "File picker button next to the cab dropdown: 'Load Custom IR...' that opens a native file-open dialog filtered to *.wav",
-      "Uses fx_cab_load_ir(engine, chain, path) with the picked path \u2014 engine API already supports arbitrary paths, this is wiring + UI",
+      "Uses fx_cab_load_ir(engine, chain, path) with the picked path — engine API already supports arbitrary paths, this is wiring + UI",
       "Loaded custom IR name displays in the cab selector area so the user can tell a custom IR is active",
       "Clicking a stock cab in the dropdown reverts to the bundled IR, discarding the custom one",
       "Per-chain: dual-chain routing keeps independent custom IRs (chain A vs B)",
-      "Custom IR path is persisted in .0xfx presets \u2014 reloading a preset with a custom IR path that no longer exists falls back cleanly to the default synthetic cab (warn via FX_WARN, no crash)",
+      "Custom IR path is persisted in .0xfx presets — reloading a preset with a custom IR path that no longer exists falls back cleanly to the default synthetic cab (warn via FX_WARN, no crash)",
       "Tested round-trip: load third-party IR, save preset, close app, reopen, preset reloads with the same custom IR",
-      "File dialog uses native OS picker on each platform \u2014 nativefiledialog-extended is the usual choice and it's a single-header-ish dep"
+      "File dialog uses native OS picker on each platform — nativefiledialog-extended is the usual choice and it's a single-header-ish dep"
     ],
     "files": [
       "src/gui/gui_main.cpp",
       "src/engine/internal/preset.c",
       "deps/nfd/"
     ],
-    "notes": "Dan asked 2026-04-18 after we finished TASK-368 (bundled IRs). The engine API already accepts an arbitrary wav path \u2014 just never exposed in the GUI. Users who own commercial IR packs (OwnHammer, Redwirez, 3 Sigma, etc.) should be able to drag/drop or file-pick their own .wav and hear it immediately. Same dialog pattern will also unblock import of NAM profiles and .0xfx presets later. Skip drag-and-drop for v1, file-picker is enough; we can add DnD as a separate polish task."
+    "notes": "Dan asked 2026-04-18 after we finished TASK-368 (bundled IRs). The engine API already accepts an arbitrary wav path — just never exposed in the GUI. Users who own commercial IR packs (OwnHammer, Redwirez, 3 Sigma, etc.) should be able to drag/drop or file-pick their own .wav and hear it immediately. Same dialog pattern will also unblock import of NAM profiles and .0xfx presets later. Skip drag-and-drop for v1, file-picker is enough; we can add DnD as a separate polish task."
   }
 ]

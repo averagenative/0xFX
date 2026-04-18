@@ -6,6 +6,7 @@
  */
 #include "engine_internal.h"
 #include "cJSON.h"
+#include "../../core/log.h"
 #include <stdio.h>
 
 /* ── String ↔ enum mapping helpers ──────────────────────────────── */
@@ -148,6 +149,11 @@ static cJSON *serialize_chain(fx_signal_chain_t *chain) {
     cJSON *cab = cJSON_AddObjectToObject(obj, "cab");
     if (cab) {
         cJSON_AddBoolToObject(cab, "bypass", chain->cab.bypass);
+        if (chain->cab.custom_ir_path[0]) {
+            cJSON_AddStringToObject(cab, "custom_ir_path",    chain->cab.custom_ir_path);
+            cJSON_AddStringToObject(cab, "custom_name",       chain->cab.custom_name);
+            cJSON_AddStringToObject(cab, "custom_image_path", chain->cab.custom_image_path);
+        }
     }
 
     /* Mix */
@@ -330,12 +336,34 @@ static bool load_chain_from_json(fx_engine_t *engine, cJSON *obj,
         }
     }
 
-    /* Cab bypass */
+    /* Cab bypass + custom IR metadata */
     cJSON *cab = cJSON_GetObjectItem(obj, "cab");
     if (cJSON_IsObject(cab)) {
         cJSON *bypass = cJSON_GetObjectItem(cab, "bypass");
         if (cJSON_IsBool(bypass)) {
             fx_cab_set_bypass(engine, chain_idx, cJSON_IsTrue(bypass));
+        }
+        cJSON *ir_path_j    = cJSON_GetObjectItem(cab, "custom_ir_path");
+        cJSON *cname_j      = cJSON_GetObjectItem(cab, "custom_name");
+        cJSON *cimg_j       = cJSON_GetObjectItem(cab, "custom_image_path");
+        const char *ir_path = (cJSON_IsString(ir_path_j) && ir_path_j->valuestring)
+                              ? ir_path_j->valuestring : "";
+        if (*ir_path) {
+            if (fx_cab_load_ir(engine, chain_idx, ir_path)) {
+                if (cJSON_IsString(cname_j) && cname_j->valuestring)
+                    fx_cab_set_custom_name(engine, chain_idx, cname_j->valuestring);
+                if (cJSON_IsString(cimg_j) && cimg_j->valuestring)
+                    fx_cab_set_custom_image_path(engine, chain_idx, cimg_j->valuestring);
+            } else {
+                FX_WARN("Preset %s: custom IR not loadable — falling back to synthetic",
+                        ir_path);
+                fx_cab_clear_custom_ir_path(engine, chain_idx);
+                fx_cab_params_t params = { FX_CAB_4X12_STRAIGHT, FX_MIC_ON_AXIS,
+                                            80.0f, 0.5f, 0.5f };
+                fx_cab_generate_ir(engine, chain_idx, &params);
+            }
+        } else {
+            fx_cab_clear_custom_ir_path(engine, chain_idx);
         }
     }
 

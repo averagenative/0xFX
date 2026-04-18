@@ -49,6 +49,7 @@ extern "C" {
 
 extern "C" {
 #include "cJSON.h"
+#include "nfd.h"
 }
 
 /* ── Session config helpers (TASK-307) ───────────────────────── */
@@ -355,6 +356,141 @@ static void preset_browser_scan(void) {
     FX_INFO("Preset browser: scanned %d presets", s_browser_preset_count);
 }
 
+/* ── Custom cab library ──────────────────────────────────────── */
+
+#define FX_MAX_CUSTOM_CABS 32
+
+struct custom_cab_entry_t {
+    char ir_path[1024];
+    char name[64];
+    char image_path[1024];
+};
+
+static custom_cab_entry_t s_custom_cabs[FX_MAX_CUSTOM_CABS];
+static int s_custom_cab_count = 0;
+
+static const char *custom_cabs_path(void) {
+    static char buf[1024];
+    snprintf(buf, sizeof(buf), "%s%scustom_cabs.json", get_config_dir(), PATH_SEP);
+    return buf;
+}
+
+static void basename_no_ext(const char *path, char *out, size_t out_sz) {
+    if (!path || !out || out_sz == 0) return;
+    const char *slash = strrchr(path, '/');
+#ifdef _WIN32
+    const char *bslash = strrchr(path, '\\');
+    if (bslash && (!slash || bslash > slash)) slash = bslash;
+#endif
+    const char *base = slash ? slash + 1 : path;
+    strncpy(out, base, out_sz - 1);
+    out[out_sz - 1] = '\0';
+    char *dot = strrchr(out, '.');
+    if (dot) *dot = '\0';
+}
+
+static int custom_cab_find(const char *ir_path) {
+    if (!ir_path) return -1;
+    for (int i = 0; i < s_custom_cab_count; i++) {
+        if (strcmp(s_custom_cabs[i].ir_path, ir_path) == 0) return i;
+    }
+    return -1;
+}
+
+static int custom_cab_add(const char *ir_path) {
+    int idx = custom_cab_find(ir_path);
+    if (idx >= 0) return idx;
+    if (s_custom_cab_count >= FX_MAX_CUSTOM_CABS) {
+        FX_WARN("Custom cab library full (%d) — cannot add %s",
+                FX_MAX_CUSTOM_CABS, ir_path);
+        return -1;
+    }
+    custom_cab_entry_t &e = s_custom_cabs[s_custom_cab_count];
+    memset(&e, 0, sizeof(e));
+    strncpy(e.ir_path, ir_path, sizeof(e.ir_path) - 1);
+    basename_no_ext(ir_path, e.name, sizeof(e.name));
+    return s_custom_cab_count++;
+}
+
+static void custom_cab_remove(int idx) {
+    if (idx < 0 || idx >= s_custom_cab_count) return;
+    for (int i = idx; i < s_custom_cab_count - 1; i++)
+        s_custom_cabs[i] = s_custom_cabs[i + 1];
+    s_custom_cab_count--;
+    memset(&s_custom_cabs[s_custom_cab_count], 0, sizeof(custom_cab_entry_t));
+}
+
+static void custom_cabs_load(void) {
+    s_custom_cab_count = 0;
+    FILE *fp = fopen(custom_cabs_path(), "rb");
+    if (!fp) return;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz <= 0 || sz > 1 << 20) { fclose(fp); return; }
+    char *buf = (char *)malloc((size_t)sz + 1);
+    if (!buf) { fclose(fp); return; }
+    fread(buf, 1, (size_t)sz, fp);
+    buf[sz] = '\0';
+    fclose(fp);
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    if (!root || !cJSON_IsArray(root)) { if (root) cJSON_Delete(root); return; }
+    int n = cJSON_GetArraySize(root);
+    for (int i = 0; i < n && s_custom_cab_count < FX_MAX_CUSTOM_CABS; i++) {
+        cJSON *it = cJSON_GetArrayItem(root, i);
+        if (!cJSON_IsObject(it)) continue;
+        cJSON *p   = cJSON_GetObjectItem(it, "ir_path");
+        cJSON *nm  = cJSON_GetObjectItem(it, "name");
+        cJSON *img = cJSON_GetObjectItem(it, "image_path");
+        if (!cJSON_IsString(p) || !p->valuestring || !*p->valuestring) continue;
+        custom_cab_entry_t &e = s_custom_cabs[s_custom_cab_count++];
+        memset(&e, 0, sizeof(e));
+        strncpy(e.ir_path, p->valuestring, sizeof(e.ir_path) - 1);
+        if (cJSON_IsString(nm) && nm->valuestring)
+            strncpy(e.name, nm->valuestring, sizeof(e.name) - 1);
+        else
+            basename_no_ext(e.ir_path, e.name, sizeof(e.name));
+        if (cJSON_IsString(img) && img->valuestring)
+            strncpy(e.image_path, img->valuestring, sizeof(e.image_path) - 1);
+    }
+    cJSON_Delete(root);
+    FX_INFO("Custom cabs: loaded %d from %s", s_custom_cab_count, custom_cabs_path());
+}
+
+static void custom_cabs_save(void) {
+    ensure_dir(get_config_dir());
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < s_custom_cab_count; i++) {
+        cJSON *it = cJSON_CreateObject();
+        cJSON_AddStringToObject(it, "ir_path",    s_custom_cabs[i].ir_path);
+        cJSON_AddStringToObject(it, "name",       s_custom_cabs[i].name);
+        cJSON_AddStringToObject(it, "image_path", s_custom_cabs[i].image_path);
+        cJSON_AddItemToArray(arr, it);
+    }
+    char *out = cJSON_Print(arr);
+    cJSON_Delete(arr);
+    if (!out) return;
+    FILE *fp = fopen(custom_cabs_path(), "wb");
+    if (fp) { fwrite(out, 1, strlen(out), fp); fclose(fp); }
+    free(out);
+}
+
+/* Filters: pass NULL filters_n to skip filter spec */
+static bool open_file_picker(const nfdu8filteritem_t *filters, int filters_n,
+                             char *out_path, size_t out_sz) {
+    nfdu8char_t *picked = NULL;
+    nfdopendialogu8args_t args = {};
+    args.filterList = filters;
+    args.filterCount = (nfdfiltersize_t)filters_n;
+    nfdresult_t r = NFD_OpenDialogU8_With(&picked, &args);
+    if (r != NFD_OKAY || !picked) return false;
+    strncpy(out_path, picked, out_sz - 1);
+    out_path[out_sz - 1] = '\0';
+    NFD_FreePathU8(picked);
+    return true;
+}
+
 /* ── Surprise Me — random preset generator ──────────────────── */
 
 static float randf(float lo, float hi) {
@@ -363,6 +499,7 @@ static float randf(float lo, float hi) {
 
 static void load_cab_for_type(fx_engine_t *engine, fx_chain_id chain,
                               fx_cab_type_t cab_type);
+static void draw_procedural_cab(ImDrawList *dl, ImVec2 p0, ImVec2 p1, unsigned seed);
 
 static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int name_sz) {
     srand((unsigned)time(NULL));
@@ -807,20 +944,165 @@ static const char *s_cab_ir_filenames[] = {
  * the parametric synthesizer if the WAV isn't present. */
 static void load_cab_for_type(fx_engine_t *engine, fx_chain_id chain,
                               fx_cab_type_t cab_type) {
+    bool loaded = false;
     if (cab_type >= 0 && cab_type < FX_CAB_TYPE_COUNT) {
         char ir_path[256];
         snprintf(ir_path, sizeof(ir_path),
                  "resources/ir/bundled/%s.wav",
                  s_cab_ir_filenames[cab_type]);
-        if (fx_cab_load_ir(engine, chain, ir_path)) return;
+        loaded = fx_cab_load_ir(engine, chain, ir_path);
     }
-    fx_cab_params_t params = {};
-    params.cab_type   = cab_type;
-    params.mic_pos    = FX_MIC_ON_AXIS;
-    params.speaker_fs = 80.0f;
-    params.brightness = 0.5f;
-    params.resonance  = 0.5f;
-    fx_cab_generate_ir(engine, chain, &params);
+    if (!loaded) {
+        fx_cab_params_t params = {};
+        params.cab_type   = cab_type;
+        params.mic_pos    = FX_MIC_ON_AXIS;
+        params.speaker_fs = 80.0f;
+        params.brightness = 0.5f;
+        params.resonance  = 0.5f;
+        fx_cab_generate_ir(engine, chain, &params);
+    }
+    /* Stock cabs aren't "custom" — drop any metadata the WAV load stamped in */
+    fx_cab_clear_custom_ir_path(engine, chain);
+}
+
+/* ── Procedural cab rendering ─────────────────────────────────
+ * Draws one of 10 variant cabinet designs into rect [p0,p1] using
+ * ImGui's draw list. `seed` (usually an FNV-1a hash of the IR filename)
+ * picks the variant deterministically, so the same custom IR always
+ * gets the same art.  No assets required. */
+
+static unsigned fnv1a(const char *s) {
+    unsigned h = 2166136261u;
+    while (*s) { h ^= (unsigned char)(*s++); h *= 16777619u; }
+    return h;
+}
+
+struct cab_design_t {
+    ImU32 body;       /* tolex fill */
+    ImU32 body_edge;  /* tolex border / scuff */
+    ImU32 grill;      /* grill cloth */
+    ImU32 grill_line; /* grill weave */
+    ImU32 speaker;    /* speaker cone */
+    ImU32 dust_cap;   /* speaker dust cap */
+    ImU32 corner;     /* metal corner protector */
+    int   speakers;   /* 1, 2, or 4 */
+    bool  slant;      /* slanted top edge (4x12 slant) */
+    bool  chrome;     /* chrome corner caps */
+    const char *badge;
+};
+
+static const cab_design_t s_cab_designs[10] = {
+    /* 0: 4x12 straight, black tolex, tan grill */
+    { IM_COL32(28,24,22,255),  IM_COL32(55,48,42,255), IM_COL32(180,150,110,255), IM_COL32(140,115,80,255),  IM_COL32(30,28,26,255), IM_COL32(15,14,13,255), IM_COL32(120,115,105,255), 4, false, true,  "0xFX" },
+    /* 1: 4x12 slant, black tolex, silver grill */
+    { IM_COL32(26,22,20,255),  IM_COL32(50,45,40,255), IM_COL32(185,185,190,255), IM_COL32(130,130,135,255), IM_COL32(40,35,32,255), IM_COL32(20,18,16,255), IM_COL32(110,110,110,255), 4, true,  true,  "FX" },
+    /* 2: 2x12 combo-ish, tweed */
+    { IM_COL32(168,135,85,255),IM_COL32(120,95,60,255), IM_COL32(95,75,55,255),    IM_COL32(60,45,32,255),    IM_COL32(45,35,28,255), IM_COL32(25,18,14,255), IM_COL32(90,75,55,255),    2, false, false, "0xFX" },
+    /* 3: 1x12 combo, cream bronco */
+    { IM_COL32(215,205,185,255),IM_COL32(170,160,140,255),IM_COL32(105,85,55,255),  IM_COL32(70,55,35,255),    IM_COL32(50,40,30,255), IM_COL32(25,20,15,255), IM_COL32(140,130,110,255), 1, false, false, "FX" },
+    /* 4: 4x12 straight, brown/oxblood vinyl */
+    { IM_COL32(78,38,32,255),  IM_COL32(115,55,48,255), IM_COL32(180,155,95,255),  IM_COL32(130,110,70,255),  IM_COL32(35,28,24,255), IM_COL32(18,14,12,255), IM_COL32(130,95,55,255),   4, false, true,  "0xFX" },
+    /* 5: 1x12 blue tolex */
+    { IM_COL32(30,52,88,255),  IM_COL32(60,85,125,255), IM_COL32(195,195,195,255), IM_COL32(140,145,150,255), IM_COL32(38,34,30,255), IM_COL32(18,16,14,255), IM_COL32(140,145,155,255), 1, false, true,  "FX" },
+    /* 6: 2x12 oversized, forest green tolex */
+    { IM_COL32(28,58,38,255),  IM_COL32(55,95,65,255),  IM_COL32(92,78,55,255),    IM_COL32(60,50,32,255),    IM_COL32(35,30,26,255), IM_COL32(18,15,13,255), IM_COL32(120,110,95,255),  2, false, false, "0xFX" },
+    /* 7: 4x12 straight, white tolex, black grill */
+    { IM_COL32(210,210,205,255),IM_COL32(165,165,160,255),IM_COL32(22,20,18,255),   IM_COL32(55,52,50,255),    IM_COL32(25,22,20,255), IM_COL32(12,11,10,255), IM_COL32(180,180,185,255), 4, false, true,  "FX" },
+    /* 8: 4x12 slant, red tolex, gold grill */
+    { IM_COL32(130,28,32,255), IM_COL32(175,55,58,255), IM_COL32(200,165,70,255),  IM_COL32(150,120,45,255),  IM_COL32(40,32,28,255), IM_COL32(20,15,13,255), IM_COL32(210,180,90,255),  4, true,  true,  "0xFX" },
+    /* 9: 1x12 open-back, purple tolex */
+    { IM_COL32(58,32,78,255),  IM_COL32(95,55,120,255), IM_COL32(180,175,165,255), IM_COL32(120,115,105,255), IM_COL32(38,32,30,255), IM_COL32(18,15,14,255), IM_COL32(150,140,160,255), 1, false, false, "FX" },
+};
+
+static void draw_procedural_cab(ImDrawList *dl, ImVec2 p0, ImVec2 p1, unsigned seed) {
+    const cab_design_t &d = s_cab_designs[seed % 10];
+
+    float x0 = p0.x, y0 = p0.y, x1 = p1.x, y1 = p1.y;
+    float w = x1 - x0, h = y1 - y0;
+
+    /* Slant shifts the top edge down on the right side */
+    float top_right_y = y0 + (d.slant ? h * 0.10f : 0.0f);
+
+    /* Cab body — tolex */
+    ImVec2 poly[4] = {
+        ImVec2(x0, y0),
+        ImVec2(x1, top_right_y),
+        ImVec2(x1, y1),
+        ImVec2(x0, y1),
+    };
+    dl->AddConvexPolyFilled(poly, 4, d.body);
+    dl->AddPolyline(poly, 4, d.body_edge, ImDrawFlags_Closed, 2.0f);
+
+    /* Top/bottom tolex piping lines for depth */
+    dl->AddLine(ImVec2(x0 + 3, y0 + 3), ImVec2(x1 - 3, top_right_y + 3),
+                d.body_edge, 1.0f);
+    dl->AddLine(ImVec2(x0 + 3, y1 - 3), ImVec2(x1 - 3, y1 - 3), d.body_edge, 1.0f);
+
+    /* Grill cloth area — inset from body */
+    float pad = w * 0.06f;
+    float grill_top    = y0 + h * 0.12f;
+    float grill_bot    = y1 - h * 0.12f;
+    float grill_left   = x0 + pad;
+    float grill_right  = x1 - pad;
+    if (d.slant) grill_top += (top_right_y - y0) * 0.6f;
+    dl->AddRectFilled(ImVec2(grill_left, grill_top),
+                      ImVec2(grill_right, grill_bot), d.grill, 3.0f);
+    dl->AddRect      (ImVec2(grill_left, grill_top),
+                      ImVec2(grill_right, grill_bot), d.body_edge, 3.0f, 0, 1.5f);
+
+    /* Grill weave — diagonal crosshatch */
+    float gw = grill_right - grill_left;
+    float gh = grill_bot - grill_top;
+    float step = 6.0f;
+    for (float k = -gh; k < gw; k += step) {
+        float ax = grill_left + k,      ay = grill_top;
+        float bx = grill_left + k + gh, by = grill_bot;
+        if (ax < grill_left)  { ay = grill_top + (grill_left - ax);  ax = grill_left;  }
+        if (bx > grill_right) { by = grill_bot - (bx - grill_right); bx = grill_right; }
+        if (ay > grill_bot || by < grill_top) continue;
+        dl->AddLine(ImVec2(ax, ay), ImVec2(bx, by), d.grill_line, 0.6f);
+    }
+    for (float k = 0; k < gw + gh; k += step) {
+        float ax = grill_left + k,      ay = grill_top;
+        float bx = grill_left + k - gh, by = grill_bot;
+        if (ax > grill_right) { ay = grill_top + (ax - grill_right); ax = grill_right; }
+        if (bx < grill_left)  { by = grill_bot - (grill_left - bx);  bx = grill_left;  }
+        if (ay > grill_bot || by < grill_top) continue;
+        dl->AddLine(ImVec2(ax, ay), ImVec2(bx, by), d.grill_line, 0.6f);
+    }
+
+    /* Speaker cones showing through grill (subtle) */
+    int rows = (d.speakers == 4) ? 2 : 1;
+    int cols = (d.speakers == 1) ? 1 : 2;
+    float cell_w = gw / cols, cell_h = gh / rows;
+    float radius = (cell_w < cell_h ? cell_w : cell_h) * 0.36f;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            float cx = grill_left + (c + 0.5f) * cell_w;
+            float cy = grill_top  + (r + 0.5f) * cell_h;
+            dl->AddCircleFilled(ImVec2(cx, cy), radius,
+                                IM_COL32(0, 0, 0, 60), 24);
+            dl->AddCircleFilled(ImVec2(cx, cy), radius * 0.55f, d.speaker, 24);
+            dl->AddCircleFilled(ImVec2(cx, cy), radius * 0.22f, d.dust_cap, 16);
+        }
+    }
+
+    /* Chrome corner caps (optional) */
+    if (d.chrome) {
+        float cap = w * 0.05f;
+        dl->AddRectFilled(ImVec2(x0,       y0),       ImVec2(x0 + cap, y0 + cap), d.corner, 2.0f);
+        dl->AddRectFilled(ImVec2(x1 - cap, top_right_y), ImVec2(x1, top_right_y + cap), d.corner, 2.0f);
+        dl->AddRectFilled(ImVec2(x0,       y1 - cap), ImVec2(x0 + cap, y1),        d.corner, 2.0f);
+        dl->AddRectFilled(ImVec2(x1 - cap, y1 - cap), ImVec2(x1,       y1),        d.corner, 2.0f);
+    }
+
+    /* Badge plate */
+    if (d.badge && *d.badge) {
+        ImVec2 ts = ImGui::CalcTextSize(d.badge);
+        float bx = x0 + (w - ts.x) * 0.5f;
+        float by = grill_bot + (y1 - grill_bot - ts.y) * 0.5f;
+        dl->AddText(ImVec2(bx, by), IM_COL32(230, 200, 130, 220), d.badge);
+    }
 }
 
 /* ── Pedal gallery: category-organized pedal browser ──────────── */
@@ -1017,6 +1299,12 @@ int main(int argc, char *argv[]) {
         fx_log_shutdown();
         return 1;
     }
+
+    if (NFD_Init() != NFD_OKAY) {
+        FX_WARN("NFD_Init failed — custom IR / image upload will be unavailable");
+    }
+
+    custom_cabs_load();
 
     /* OpenGL 3.3 */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -3737,10 +4025,18 @@ int main(int argc, char *argv[]) {
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - ts.x) * 0.5f);
                         ImGui::TextColored(ImVec4(0.92f, 0.68f, 0.22f, 1.0f), "%s", title);
                         ImGui::SetWindowFontScale(1.0f);
-                        /* Subtitle: "Cabinet — 4x12 Straight" style */
-                        const char *cab_name = (cab_type_ref >= 0 && cab_type_ref < FX_CAB_TYPE_COUNT)
-                            ? s_cab_type_names[cab_type_ref] : "Unknown";
-                        char sub[64];
+                        /* Subtitle: "Cabinet — 4x12 Straight" or "Cabinet — <Custom Name>" */
+                        const char *sub_active_ir = fx_cab_get_custom_ir_path(engine, cab_chain);
+                        bool sub_is_custom = (sub_active_ir && *sub_active_ir);
+                        const char *cab_name;
+                        if (sub_is_custom) {
+                            cab_name = fx_cab_get_custom_name(engine, cab_chain);
+                            if (!cab_name || !*cab_name) cab_name = "Custom IR";
+                        } else {
+                            cab_name = (cab_type_ref >= 0 && cab_type_ref < FX_CAB_TYPE_COUNT)
+                                ? s_cab_type_names[cab_type_ref] : "Unknown";
+                        }
+                        char sub[80];
                         snprintf(sub, sizeof(sub), "Cabinet \xe2\x80\x94 %s", cab_name);
                         ImVec2 sub_sz = ImGui::CalcTextSize(sub);
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - sub_sz.x) * 0.5f);
@@ -3768,14 +4064,76 @@ int main(int argc, char *argv[]) {
                         ImGui::TextDisabled("Cab Type");
                         ImGui::SameLine(0, 8);
                     }
+                    /* Dropdown: stock cabs + custom cabs from library + "Add..." entry.
+                     * "Custom" is active when the engine reports a custom_ir_path. */
+                    const char *active_ir  = fx_cab_get_custom_ir_path(engine, cab_chain);
+                    bool is_custom_active  = (active_ir && *active_ir);
+                    const char *preview    = is_custom_active
+                        ? fx_cab_get_custom_name(engine, cab_chain)
+                        : s_cab_type_names[cab_type_ref];
+                    if (!preview || !*preview) preview = "(unnamed)";
+
                     ImGui::SetNextItemWidth(200);
                     char cab_combo_id[32];
                     snprintf(cab_combo_id, sizeof(cab_combo_id), "##cab_sel_%d", sel.chain_id);
-                    if (ImGui::Combo(cab_combo_id, &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
-                        load_cab_for_type(engine, cab_chain, (fx_cab_type_t)cab_type_ref);
+                    if (ImGui::BeginCombo(cab_combo_id, preview)) {
+                        for (int i = 0; i < FX_CAB_TYPE_COUNT; i++) {
+                            bool sel_i = !is_custom_active && (cab_type_ref == i);
+                            if (ImGui::Selectable(s_cab_type_names[i], sel_i)) {
+                                cab_type_ref = i;
+                                load_cab_for_type(engine, cab_chain, (fx_cab_type_t)i);
+                            }
+                        }
+                        if (s_custom_cab_count > 0) {
+                            ImGui::Separator();
+                            for (int i = 0; i < s_custom_cab_count; i++) {
+                                bool sel_i = is_custom_active &&
+                                             strcmp(active_ir, s_custom_cabs[i].ir_path) == 0;
+                                char label[80];
+                                snprintf(label, sizeof(label), "%s##cc%d",
+                                         s_custom_cabs[i].name, i);
+                                if (ImGui::Selectable(label, sel_i)) {
+                                    if (fx_cab_load_ir(engine, cab_chain,
+                                                       s_custom_cabs[i].ir_path)) {
+                                        fx_cab_set_custom_name(engine, cab_chain,
+                                                               s_custom_cabs[i].name);
+                                        fx_cab_set_custom_image_path(engine, cab_chain,
+                                                                     s_custom_cabs[i].image_path);
+                                    } else {
+                                        FX_WARN("Custom IR load failed: %s",
+                                                s_custom_cabs[i].ir_path);
+                                    }
+                                }
+                            }
+                        }
+                        ImGui::Separator();
+                        if (ImGui::Selectable("+ Add Custom IR...")) {
+                            char picked[1024];
+                            nfdu8filteritem_t filt[1] = { { "Wav audio", "wav" } };
+                            if (open_file_picker(filt, 1, picked, sizeof(picked))) {
+                                int idx = custom_cab_add(picked);
+                                if (idx >= 0 &&
+                                    fx_cab_load_ir(engine, cab_chain,
+                                                   s_custom_cabs[idx].ir_path)) {
+                                    fx_cab_set_custom_name(engine, cab_chain,
+                                                           s_custom_cabs[idx].name);
+                                    fx_cab_set_custom_image_path(engine, cab_chain,
+                                                                 s_custom_cabs[idx].image_path);
+                                    custom_cabs_save();
+                                    FX_INFO("Custom IR added: %s", picked);
+                                } else if (idx >= 0) {
+                                    FX_WARN("Failed to load picked IR %s — removing from library",
+                                            picked);
+                                    custom_cab_remove(idx);
+                                }
+                            }
+                        }
+                        ImGui::EndCombo();
                     }
-                    /* Scroll wheel to cycle cab types */
-                    if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
+
+                    /* Scroll wheel to cycle stock cabs only (no-op when custom active) */
+                    if (!is_custom_active && ImGui::IsItemHovered() &&
+                        !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
                         float wheel = ImGui::GetIO().MouseWheel;
                         if (wheel != 0.0f) {
                             int next = cab_type_ref + (wheel < 0.0f ? 1 : -1);
@@ -3786,15 +4144,95 @@ int main(int argc, char *argv[]) {
                         }
                     }
 
+                    /* Custom-cab controls: rename, load image, remove from library */
+                    if (is_custom_active) {
+                        ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                        int lib_idx = custom_cab_find(active_ir);
+
+                        /* Rename input — centered, width matches dropdown */
+                        {
+                            float input_w = 200.0f;
+                            float label_w = ImGui::CalcTextSize("Name").x;
+                            float row_w = label_w + 8.0f + input_w;
+                            float off = (avail_w - row_w) * 0.5f;
+                            if (off > 0.0f)
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + off);
+                            ImGui::AlignTextToFramePadding();
+                            ImGui::TextDisabled("Name");
+                            ImGui::SameLine(0, 8);
+                            char name_buf[64];
+                            strncpy(name_buf, fx_cab_get_custom_name(engine, cab_chain),
+                                    sizeof(name_buf) - 1);
+                            name_buf[sizeof(name_buf) - 1] = '\0';
+                            ImGui::SetNextItemWidth(input_w);
+                            char name_id[32];
+                            snprintf(name_id, sizeof(name_id), "##cabname_%d", sel.chain_id);
+                            if (ImGui::InputText(name_id, name_buf, sizeof(name_buf))) {
+                                fx_cab_set_custom_name(engine, cab_chain, name_buf);
+                                if (lib_idx >= 0) {
+                                    strncpy(s_custom_cabs[lib_idx].name, name_buf,
+                                            sizeof(s_custom_cabs[lib_idx].name) - 1);
+                                }
+                            }
+                            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                                custom_cabs_save();
+                            }
+                        }
+
+                        ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                        /* Row: [Load Image...] [Remove from library] */
+                        {
+                            float btn_a_w = 120.0f, btn_b_w = 160.0f, gap = 8.0f;
+                            float row_w = btn_a_w + gap + btn_b_w;
+                            float off = (avail_w - row_w) * 0.5f;
+                            if (off > 0.0f)
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + off);
+                            char img_id[32], rem_id[32];
+                            snprintf(img_id, sizeof(img_id), "Load Image...##img_%d", sel.chain_id);
+                            snprintf(rem_id, sizeof(rem_id), "Remove from library##rm_%d", sel.chain_id);
+                            if (ImGui::Button(img_id, ImVec2(btn_a_w, 24))) {
+                                char picked[1024];
+                                nfdu8filteritem_t filt[1] = { { "Image", "png,jpg,jpeg" } };
+                                if (open_file_picker(filt, 1, picked, sizeof(picked))) {
+                                    fx_cab_set_custom_image_path(engine, cab_chain, picked);
+                                    if (lib_idx >= 0) {
+                                        strncpy(s_custom_cabs[lib_idx].image_path, picked,
+                                                sizeof(s_custom_cabs[lib_idx].image_path) - 1);
+                                        custom_cabs_save();
+                                    }
+                                }
+                            }
+                            ImGui::SameLine(0, gap);
+                            if (ImGui::Button(rem_id, ImVec2(btn_b_w, 24))) {
+                                if (lib_idx >= 0) {
+                                    custom_cab_remove(lib_idx);
+                                    custom_cabs_save();
+                                }
+                                load_cab_for_type(engine, cab_chain,
+                                                  (fx_cab_type_t)cab_type_ref);
+                            }
+                        }
+                    }
+
                     ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
-                    /* Cabinet image — centered */
+                    /* Cab visual: user image if present, else procedural for custom,
+                     * else stock cab texture. */
                     {
-                        uintptr_t cab_tex = load_cab_texture(cab_type_ref);
+                        const char *img_path = is_custom_active
+                            ? fx_cab_get_custom_image_path(engine, cab_chain) : "";
+                        uintptr_t cab_tex = 0;
+                        if (img_path && *img_path) {
+                            cab_tex = fx_texture_load(img_path);
+                        } else if (!is_custom_active) {
+                            cab_tex = load_cab_texture(cab_type_ref);
+                        }
+
+                        float img_h = 220.0f;
+                        float img_w = img_h;
                         if (cab_tex) {
                             int cw = 0, ch = 0;
-                            float img_h = 220.0f;
-                            float img_w = img_h;
                             if (fx_texture_get_size(cab_tex, &cw, &ch) && ch > 0) {
                                 float aspect = (float)cw / (float)ch;
                                 img_w = img_h * aspect;
@@ -3803,6 +4241,17 @@ int main(int argc, char *argv[]) {
                             if (img_x > 0.0f)
                                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + img_x);
                             ImGui::Image((ImTextureID)cab_tex, ImVec2(img_w, img_h));
+                        } else if (is_custom_active) {
+                            /* Procedural cab — deterministic from IR path */
+                            img_w = img_h * 1.1f;
+                            float img_x = (avail_w - img_w) * 0.5f;
+                            if (img_x > 0.0f)
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + img_x);
+                            ImVec2 p0 = ImGui::GetCursorScreenPos();
+                            ImVec2 p1 = ImVec2(p0.x + img_w, p0.y + img_h);
+                            draw_procedural_cab(ImGui::GetWindowDrawList(), p0, p1,
+                                                fnv1a(active_ir));
+                            ImGui::Dummy(ImVec2(img_w, img_h));
                         }
                     }
 
@@ -4745,6 +5194,7 @@ int main(int argc, char *argv[]) {
 
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
+    NFD_Quit();
     SDL_Quit();
 
     fx_log_shutdown();

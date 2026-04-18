@@ -1157,6 +1157,102 @@ static void test_preset_roundtrip(void) {
     printf("  OK\n");
 }
 
+/* ── Test: custom cab IR round-trip (TASK-369) ─────────────────
+ * Covers: path+name+image are persisted, reload restores them, and a
+ * preset referencing a missing IR path falls back gracefully instead
+ * of crashing. Uses a bundled stock IR as the "user-supplied" file.
+ * Requires the test binary to run from the repo root so the relative
+ * path resolves. */
+
+static void test_preset_custom_ir_roundtrip(void) {
+    printf("test_preset_custom_ir_roundtrip...\n");
+
+    const char *ir_path   = "resources/ir/bundled/4x12_straight.wav";
+    const char *img_path  = "resources/cabs/4x12_straight.png";
+    const char *cab_name  = "My Test IR";
+    const char *tmpfile   = "/tmp/0xfx_test_custom_cab.0xfx";
+
+    /* Skip gracefully if the test binary wasn't run from repo root */
+    FILE *probe = fopen(ir_path, "rb");
+    if (!probe) {
+        printf("  SKIP: run from repo root — %s not found\n", ir_path);
+        return;
+    }
+    fclose(probe);
+
+    /* Engine A: load custom IR + set name/image, then save */
+    fx_engine_t *ea = fx_engine_create(48000.0f);
+    ASSERT(fx_cab_load_ir(ea, FX_CHAIN_DEFAULT, ir_path), "load custom IR");
+    fx_cab_set_custom_name(ea, FX_CHAIN_DEFAULT, cab_name);
+    fx_cab_set_custom_image_path(ea, FX_CHAIN_DEFAULT, img_path);
+
+    ASSERT(strcmp(fx_cab_get_custom_ir_path(ea, FX_CHAIN_DEFAULT), ir_path) == 0,
+           "ir path stored");
+    ASSERT(strcmp(fx_cab_get_custom_name(ea, FX_CHAIN_DEFAULT), cab_name) == 0,
+           "name stored");
+    ASSERT(strcmp(fx_cab_get_custom_image_path(ea, FX_CHAIN_DEFAULT), img_path) == 0,
+           "image path stored");
+
+    ASSERT(fx_preset_save(ea, tmpfile), "save preset with custom IR");
+
+    /* Engine B: fresh engine, load the preset, verify fields come back */
+    fx_engine_t *eb = fx_engine_create(48000.0f);
+    ASSERT(fx_preset_load(eb, tmpfile), "load preset");
+    ASSERT(strcmp(fx_cab_get_custom_ir_path(eb, FX_CHAIN_DEFAULT), ir_path) == 0,
+           "ir path restored");
+    ASSERT(strcmp(fx_cab_get_custom_name(eb, FX_CHAIN_DEFAULT), cab_name) == 0,
+           "name restored");
+    ASSERT(strcmp(fx_cab_get_custom_image_path(eb, FX_CHAIN_DEFAULT), img_path) == 0,
+           "image path restored");
+
+    /* Swapping to a stock/bundled cab clears custom metadata */
+    fx_cab_params_t synth = { FX_CAB_4X12_STRAIGHT, FX_MIC_ON_AXIS, 80.0f, 0.5f, 0.5f };
+    fx_cab_generate_ir(eb, FX_CHAIN_DEFAULT, &synth);
+    ASSERT(fx_cab_get_custom_ir_path(eb, FX_CHAIN_DEFAULT)[0] == '\0',
+           "synthetic IR clears custom path");
+    ASSERT(fx_cab_get_custom_name(eb, FX_CHAIN_DEFAULT)[0] == '\0',
+           "synthetic IR clears custom name");
+
+    /* Missing-file fallback: hand-edit the preset JSON to point at a bogus path */
+    {
+        FILE *fp = fopen(tmpfile, "rb");
+        fseek(fp, 0, SEEK_END);
+        long sz = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        char *buf = (char *)malloc((size_t)sz + 1);
+        fread(buf, 1, (size_t)sz, fp);
+        buf[sz] = '\0';
+        fclose(fp);
+
+        char *hit = strstr(buf, ir_path);
+        ASSERT(hit != NULL, "original path present in preset");
+        memcpy(hit, "/tmp/0xfx_does_not_exist.wav",
+               strlen("/tmp/0xfx_does_not_exist.wav"));
+        /* Pad the remainder with X to keep the JSON string terminator valid */
+        size_t orig_len = strlen(ir_path);
+        size_t new_len  = strlen("/tmp/0xfx_does_not_exist.wav");
+        for (size_t i = new_len; i < orig_len; i++) hit[i] = 'X';
+
+        fp = fopen(tmpfile, "wb");
+        fwrite(buf, 1, (size_t)sz, fp);
+        fclose(fp);
+        free(buf);
+    }
+
+    fx_engine_t *ec = fx_engine_create(48000.0f);
+    ASSERT(fx_preset_load(ec, tmpfile),
+           "preset with missing custom IR still loads (graceful fallback)");
+    ASSERT(fx_cab_get_custom_ir_path(ec, FX_CHAIN_DEFAULT)[0] == '\0',
+           "missing custom IR leaves engine in stock state");
+
+    fx_engine_destroy(ea);
+    fx_engine_destroy(eb);
+    fx_engine_destroy(ec);
+    remove(tmpfile);
+
+    printf("  OK\n");
+}
+
 /* ── Test: preset fuzzing (invalid inputs) ───────────────────── */
 
 static void test_preset_fuzz(void) {
@@ -1595,6 +1691,7 @@ int main(void) {
     test_cab_load_api();
     test_synthetic_ir();
     test_preset_roundtrip();
+    test_preset_custom_ir_roundtrip();
     test_preset_fuzz();
     test_default_presets();
     test_all_pedal_types();

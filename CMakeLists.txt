@@ -364,7 +364,7 @@ target_include_directories(fx_api_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src/engine
     ${CMAKE_SOURCE_DIR}/deps
 )
-target_link_libraries(fx_api_test PRIVATE fx_engine m)
+target_link_libraries(fx_api_test PRIVATE fx_engine fx_core m)
 
 enable_testing()
 add_test(NAME api_test COMMAND fx_api_test)
