@@ -3231,5 +3231,33 @@
       "scripts/packaging/0xfx_installer_arm64.nsi"
     ],
     "notes": "Dan asked 2026-04-18 \u2014 he'd rather use actual measured IRs than our parametric synth curves. The 650 Assorted pack on musical-artifacts.com is public domain; four of its files use original geographic names (cambridge/allston/northbridge/worcester) that match our no-trademark naming convention. Synthetic remains as an offline/testing fallback."
+  },
+  {
+    "id": "TASK-369",
+    "priority": "HIGH",
+    "title": "Custom cab IR upload button (bring-your-own .wav)",
+    "domain": "frontend",
+    "phase": 13,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 20000,
+    "release": "1.3.0",
+    "acceptanceCriteria": [
+      "File picker button next to the cab dropdown: 'Load Custom IR...' that opens a native file-open dialog filtered to *.wav",
+      "Uses fx_cab_load_ir(engine, chain, path) with the picked path \u2014 engine API already supports arbitrary paths, this is wiring + UI",
+      "Loaded custom IR name displays in the cab selector area so the user can tell a custom IR is active",
+      "Clicking a stock cab in the dropdown reverts to the bundled IR, discarding the custom one",
+      "Per-chain: dual-chain routing keeps independent custom IRs (chain A vs B)",
+      "Custom IR path is persisted in .0xfx presets \u2014 reloading a preset with a custom IR path that no longer exists falls back cleanly to the default synthetic cab (warn via FX_WARN, no crash)",
+      "Tested round-trip: load third-party IR, save preset, close app, reopen, preset reloads with the same custom IR",
+      "File dialog uses native OS picker on each platform \u2014 nativefiledialog-extended is the usual choice and it's a single-header-ish dep"
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "src/engine/internal/preset.c",
+      "deps/nfd/"
+    ],
+    "notes": "Dan asked 2026-04-18 after we finished TASK-368 (bundled IRs). The engine API already accepts an arbitrary wav path \u2014 just never exposed in the GUI. Users who own commercial IR packs (OwnHammer, Redwirez, 3 Sigma, etc.) should be able to drag/drop or file-pick their own .wav and hear it immediately. Same dialog pattern will also unblock import of NAM profiles and .0xfx presets later. Skip drag-and-drop for v1, file-picker is enough; we can add DnD as a separate polish task."
   }
 ]

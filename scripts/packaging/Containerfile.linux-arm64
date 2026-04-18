@@ -1,0 +1,52 @@
+# Containerfile — Build 0xFX Linux aarch64 artifacts inside an aarch64
+# Fedora container on an x86_64 host (via qemu-user-static emulation).
+#
+# Build the image:
+#   podman build --arch=arm64 -t 0xfx-build-linux-arm64 \
+#       -f scripts/packaging/Containerfile.linux-arm64 .
+#
+# Run a build (source is mounted, build dir is written to the host):
+#   podman run --rm --arch=arm64 -v "$PWD":/src:z -w /src \
+#       0xfx-build-linux-arm64 \
+#       bash -c "cmake -B build_linux_arm64_container -DCMAKE_BUILD_TYPE=Release && \
+#                cmake --build build_linux_arm64_container -j\$(nproc)"
+#
+# Requires on the host:
+#   sudo dnf install qemu-user-static-aarch64  # registers binfmt handler
+#   podman                                      # usually already installed
+#
+# Why a container instead of cross-compile:
+#   Fedora ships gcc-aarch64-linux-gnu without a target sysroot, and setting
+#   one up out of multilib packages is fiddly. Running the native aarch64
+#   toolchain inside a Fedora aarch64 container sidesteps the sysroot problem
+#   entirely — the container IS the sysroot. It's slower (qemu-user emulation)
+#   but deterministic and self-contained.
+
+FROM fedora:44
+
+# Build deps — mirror the Linux build command list from CLAUDE.md, plus
+# the extras we need for packaging (appimagetool runs on the host, not here).
+RUN dnf install -y --setopt=install_weak_deps=False \
+        gcc \
+        gcc-c++ \
+        cmake \
+        make \
+        python3 \
+        SDL2-devel \
+        mesa-libGL-devel \
+        mesa-libEGL-devel \
+        libX11-devel \
+        libXext-devel \
+        libXrandr-devel \
+        libXcursor-devel \
+        libXi-devel \
+        libXinerama-devel \
+        which \
+        tar \
+        gzip \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+# Default entrypoint is bash so the packaging script can pass in an arbitrary
+# build command. No ENTRYPOINT — we invoke bash -c explicitly from the host.
+WORKDIR /src

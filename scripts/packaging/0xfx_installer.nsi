@@ -5,8 +5,8 @@
 
 !include "MUI2.nsh"
 
-!define VER "1.1.0"
-!define VERFULL "1.1.0.0"
+!define VER "1.2.0"
+!define VERFULL "1.2.0.0"
 
 ; --- General ---
 Name "0xFX v${VER}"

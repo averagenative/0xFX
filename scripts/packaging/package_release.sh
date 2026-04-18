@@ -87,24 +87,41 @@ detect_llvm_mingw() {
 }
 
 HAVE_MINGW_X64=false
-HAVE_LINUX_ARM64=false
+HAVE_LINUX_ARM64_NATIVE=false
+HAVE_LINUX_ARM64_CONTAINER=false
 LLVM_MINGW_FOUND=""
 command -v x86_64-w64-mingw32-gcc &>/dev/null && HAVE_MINGW_X64=true
 # aarch64-linux-gnu-gcc alone isn't enough on Fedora — the compiler ships without
 # a target sysroot (no crt1.o/crti.o/libc). Require both the compiler AND a
-# detectable sysroot before enabling Linux arm64 builds, otherwise cmake
-# configure explodes halfway through packaging.
+# detectable sysroot before enabling the native Linux arm64 path.
 if command -v aarch64-linux-gnu-gcc &>/dev/null; then
     if aarch64-linux-gnu-gcc -print-file-name=crt1.o 2>/dev/null | grep -q '/'; then
-        HAVE_LINUX_ARM64=true
+        HAVE_LINUX_ARM64_NATIVE=true
     fi
+fi
+# Fallback: containerized build via podman + qemu-user-static. Slower (emulated)
+# but works out of the box — the container IS the sysroot. Requires the aarch64
+# binfmt handler registered on the host (pkg: qemu-user-static-aarch64).
+if command -v podman &>/dev/null && [ -r /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+    HAVE_LINUX_ARM64_CONTAINER=true
 fi
 LLVM_MINGW_FOUND="$(detect_llvm_mingw 2>/dev/null || true)"
 
+# Either path is enough for a build
+HAVE_LINUX_ARM64=false
+$HAVE_LINUX_ARM64_NATIVE    && HAVE_LINUX_ARM64=true
+$HAVE_LINUX_ARM64_CONTAINER && HAVE_LINUX_ARM64=true
+
 echo "Toolchains:"
 echo "  Linux x64   (native):              yes"
-$HAVE_LINUX_ARM64 && echo "  Linux arm64 (aarch64-linux-gnu):   yes" || echo "  Linux arm64:                       no (compiler AND arm64 sysroot required — see Skipping message below for details)"
-$HAVE_MINGW_X64   && echo "  Windows x64 (mingw-w64):           yes" || echo "  Windows x64:                       no (install mingw-w64 to enable)"
+if $HAVE_LINUX_ARM64_NATIVE; then
+    echo "  Linux arm64 (aarch64-linux-gnu):   yes (native cross-compile)"
+elif $HAVE_LINUX_ARM64_CONTAINER; then
+    echo "  Linux arm64 (podman + qemu-user):  yes (containerized, emulated)"
+else
+    echo "  Linux arm64:                       no (install qemu-user-static-aarch64 for containerized build)"
+fi
+$HAVE_MINGW_X64 && echo "  Windows x64 (mingw-w64):           yes" || echo "  Windows x64:                       no (install mingw-w64 to enable)"
 [ -n "$LLVM_MINGW_FOUND" ] && echo "  Windows arm64 (llvm-mingw):        yes ($LLVM_MINGW_FOUND)" || echo "  Windows arm64:                     no (install llvm-mingw to enable)"
 echo ""
 
@@ -258,16 +275,31 @@ fi
 # LINUX arm64
 # ══════════════════════════════════════════════════════════════════════
 if $BUILD_ARM64; then
-    if $HAVE_LINUX_ARM64; then
+    if $HAVE_LINUX_ARM64_NATIVE; then
         echo "--- Building Linux arm64 (aarch64-linux-gnu cross-compile) ---"
         rm -rf build_linux_arm64
         cmake -B build_linux_arm64 \
             -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
         cmake --build build_linux_arm64 -j$(nproc) 2>&1 | tail -5
+        LINUX_ARM64_BUILD_DIR="build_linux_arm64"
+    elif $HAVE_LINUX_ARM64_CONTAINER; then
+        echo "--- Building Linux arm64 (podman + qemu-user, emulated) ---"
+        echo "  (First run builds the image — 2-3 minutes; subsequent runs reuse it)"
+        rm -rf build_linux_arm64_container
+        podman build --arch=arm64 -t 0xfx-build-linux-arm64 \
+            -f scripts/packaging/Containerfile.linux-arm64 . 2>&1 | tail -5
+        podman run --rm --arch=arm64 \
+            -v "$PWD":/src:z -w /src \
+            0xfx-build-linux-arm64 \
+            bash -c "cmake -B build_linux_arm64_container -DCMAKE_BUILD_TYPE=Release && \
+                     cmake --build build_linux_arm64_container -j\$(nproc)" 2>&1 | tail -10
+        LINUX_ARM64_BUILD_DIR="build_linux_arm64_container"
+    fi
 
+    if [ -n "${LINUX_ARM64_BUILD_DIR:-}" ]; then
         LINUX_ARM64_DIR="release/0xFX-${VERSION}-linux-arm64"
-        populate_linux_tarball_dir "${LINUX_ARM64_DIR}" "build_linux_arm64"
+        populate_linux_tarball_dir "${LINUX_ARM64_DIR}" "${LINUX_ARM64_BUILD_DIR}"
         (cd release && tar czf "0xFX-${VERSION}-linux-arm64.tar.gz" "0xFX-${VERSION}-linux-arm64")
         echo "  -> release/0xFX-${VERSION}-linux-arm64.tar.gz"
 
@@ -275,7 +307,7 @@ if $BUILD_ARM64; then
             RUNTIME_AARCH64="$(ensure_type2_runtime aarch64)"
             APPDIR_ARM64="release/0xFX-aarch64.AppDir"
             rm -rf "${APPDIR_ARM64}"
-            populate_appdir "${APPDIR_ARM64}" "build_linux_arm64/0xfx_gui"
+            populate_appdir "${APPDIR_ARM64}" "${LINUX_ARM64_BUILD_DIR}/0xfx_gui"
             ARCH=aarch64 "$APPIMAGETOOL" \
                 --runtime-file "$RUNTIME_AARCH64" \
                 "${APPDIR_ARM64}" "release/0xFX-${VERSION}-aarch64.AppImage"
@@ -283,13 +315,10 @@ if $BUILD_ARM64; then
         fi
         echo ""
     else
-        echo "--- Skipping Linux arm64 (missing aarch64-linux-gnu compiler or sysroot) ---"
-        echo "  Install on Fedora: sudo dnf install gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu"
-        echo "  The compiler alone is NOT enough — it ships without a target sysroot."
-        echo "  Fedora needs glibc-devel.aarch64 from the aarch64 repos (multilib), which"
-        echo "  requires enabling an aarch64 koji tag or using dnf --forcearch=aarch64. For"
-        echo "  1.x releases, easier to build linux-arm64 on an actual aarch64 machine."
-        echo "  Install on Ubuntu: sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
+        echo "--- Skipping Linux arm64 (no native sysroot, no container support) ---"
+        echo "  Containerized build (recommended): sudo dnf install qemu-user-static-aarch64"
+        echo "  Native cross-compile needs gcc-aarch64-linux-gnu PLUS a sysroot, which Fedora"
+        echo "  doesn't ship — the container path is simpler and deterministic."
         echo ""
     fi
 fi
