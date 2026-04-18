@@ -10,8 +10,8 @@
 # they never fail the script.
 #
 # Produces (into release/):
-#   Linux x64:     0xFX-<ver>-linux-x64.tar.gz        + 0xFX-<ver>-x86_64.AppImage
-#   Linux arm64:   0xFX-<ver>-linux-arm64.tar.gz      + 0xFX-<ver>-aarch64.AppImage
+#   Linux x64:     0xFX-<ver>-linux-x64.tar.gz        + 0xFX-<ver>-linux-x86_64.AppImage
+#   Linux arm64:   0xFX-<ver>-linux-arm64.tar.gz      + 0xFX-<ver>-linux-aarch64.AppImage
 #   Windows x64:   0xFX-<ver>-windows-x64.zip         + 0xFX-<ver>-windows-x64-setup.exe
 #   Windows arm64: 0xFX-<ver>-windows-arm64.zip       + 0xFX-<ver>-windows-arm64-setup.exe
 #
@@ -263,10 +263,10 @@ if $BUILD_X64; then
         populate_appdir "${APPDIR}" "build/0xfx_gui"
         ARCH=x86_64 "$APPIMAGETOOL" \
             --runtime-file "$RUNTIME_X86_64" \
-            "${APPDIR}" "release/0xFX-${VERSION}-x86_64.AppImage"
-        echo "  -> release/0xFX-${VERSION}-x86_64.AppImage"
+            "${APPDIR}" "release/0xFX-${VERSION}-linux-x86_64.AppImage"
+        echo "  -> release/0xFX-${VERSION}-linux-x86_64.AppImage"
     else
-        echo "  WARN: appimagetool not found — skipping x86_64 AppImage"
+        echo "  WARN: appimagetool not found — skipping linux-x86_64 AppImage"
     fi
     echo ""
 fi
@@ -310,8 +310,8 @@ if $BUILD_ARM64; then
             populate_appdir "${APPDIR_ARM64}" "${LINUX_ARM64_BUILD_DIR}/0xfx_gui"
             ARCH=aarch64 "$APPIMAGETOOL" \
                 --runtime-file "$RUNTIME_AARCH64" \
-                "${APPDIR_ARM64}" "release/0xFX-${VERSION}-aarch64.AppImage"
-            echo "  -> release/0xFX-${VERSION}-aarch64.AppImage"
+                "${APPDIR_ARM64}" "release/0xFX-${VERSION}-linux-aarch64.AppImage"
+            echo "  -> release/0xFX-${VERSION}-linux-aarch64.AppImage"
         fi
         echo ""
     else

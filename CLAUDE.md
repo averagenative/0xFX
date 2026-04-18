@@ -293,7 +293,7 @@ When building release packages, always commit and push source changes first, the
 
 Artifact naming convention: `0xFX-<version>-<platform>-<arch>.<ext>`
 - `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-universal`
-- AppImages use `<arch>.AppImage` naming (`x86_64`, `aarch64`) — preserved for backwards compat.
+- AppImages follow the same convention: `linux-x86_64.AppImage`, `linux-aarch64.AppImage`.
 
 Packaging scripts:
 ```bash
