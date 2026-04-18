@@ -131,6 +131,8 @@ populate_appdir() {
 
     cp "$BINARY" "${APPDIR}/usr/bin/0xfx_gui"
     cp -r presets/factory "${APPDIR}/usr/bin/presets/"
+    mkdir -p "${APPDIR}/usr/bin/resources/ir"
+    cp -r resources/ir/bundled "${APPDIR}/usr/bin/resources/ir/"
 
     cp resources/icon/0xfx_256.png "${APPDIR}/0xfx.png"
     cp resources/icon/0xfx_256.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/0xfx.png"
@@ -196,6 +198,8 @@ cp resources/icon/0xfx.ico     "${WIN_DIR}/" 2>/dev/null || true
 cp build_win/0xFX.clap         "${WIN_DIR}/" 2>/dev/null || echo "  (no CLAP)"
 cp -r build_win/0xFX.vst3      "${WIN_DIR}/" 2>/dev/null || echo "  (no VST3 bundle)"
 cp -r presets/factory           "${WIN_DIR}/presets/"
+mkdir -p                        "${WIN_DIR}/resources/ir"
+cp -r resources/ir/bundled      "${WIN_DIR}/resources/ir/"
 cp README.md LICENSE            "${WIN_DIR}/"
 
 cat > "${WIN_DIR}/INSTALL.txt" << 'EOF'

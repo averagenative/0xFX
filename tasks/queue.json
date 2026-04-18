@@ -3186,5 +3186,35 @@
       "src/gui/gui_main.cpp"
     ],
     "notes": "Discovered 2026-04-18 during TASK-365 verification. Laptop mic arrays on Fedora 44 / PipeWire run at high system gain intended for far-field voice; plugging that into an amp-sim chain clips the input meter instantly. Real interfaces (iRig/Scarlett) won't have this issue but the app still needs a simple input trim so users can run off the laptop mic without re-digging pactl volumes. Keep it standalone-only — the plugin doesn't need pre-gain since the DAW supplies that."
+  },
+  {
+    "id": "TASK-368",
+    "priority": "HIGH",
+    "title": "Ship real public-domain cab IRs + wire up load-from-WAV",
+    "domain": "engine",
+    "phase": 12,
+    "status": "done",
+    "claimedBy": "agent-cab-ir",
+    "depends": [],
+    "estimatedTokens": 20000,
+    "release": "1.2.0",
+    "acceptanceCriteria": [
+      "Bundle 4 public-domain cab IRs from musical-artifacts.com (650 Assorted Cabinet Impulses pack) mapping 1:1 to the four cab types",
+      "Engine already exposes fx_cab_load_ir; GUI prefers bundled WAVs and falls back to synthetic if files are missing",
+      "Loaded WAVs are peak-normalized (0.4) by fx_cab_load_buffer so bundled and synthetic IRs sit at the same output level",
+      "Packaging (AppImage + Windows zip + both NSIS installers) ships resources/ir/bundled/",
+      "Attribution + license noted in resources/ir/bundled/README.md (public domain)",
+      "Tests still green"
+    ],
+    "files": [
+      "resources/ir/bundled/*.wav",
+      "resources/ir/bundled/README.md",
+      "src/engine/internal/cab_ir.c",
+      "src/gui/gui_main.cpp",
+      "scripts/packaging/package_release.sh",
+      "scripts/packaging/0xfx_installer.nsi",
+      "scripts/packaging/0xfx_installer_arm64.nsi"
+    ],
+    "notes": "Dan asked 2026-04-18 — he'd rather use actual measured IRs than our parametric synth curves. The 650 Assorted pack on musical-artifacts.com is public domain; four of its files use original geographic names (cambridge/allston/northbridge/worcester) that match our no-trademark naming convention. Synthetic remains as an offline/testing fallback."
   }
 ]

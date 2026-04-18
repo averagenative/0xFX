@@ -120,8 +120,16 @@ bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, i
         return false;
     }
 
-    /* Zero-pad IR and compute its FFT (using new buffers, cab untouched) */
-    memcpy(new_time, ir_data, sizeof(float) * (size_t)ir_len);
+    /* Zero-pad IR and compute its FFT (using new buffers, cab untouched).
+     * Peak-normalize to 0.4 so bundled/user WAVs sit at the same output
+     * level as synthetic cabs (which also peak-normalize to 0.4). */
+    float peak = 0.0f;
+    for (int i = 0; i < ir_len; i++) {
+        float v = fabsf(ir_data[i]);
+        if (v > peak) peak = v;
+    }
+    float ir_gain = (peak > 1e-6f) ? (0.4f / peak) : 1.0f;
+    for (int i = 0; i < ir_len; i++) new_time[i] = ir_data[i] * ir_gain;
     /* rest is already zeroed from calloc */
     kiss_fftr(new_fft_cfg, new_time, new_ir_fft);
 
@@ -430,16 +438,9 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
     int fade_len = 256;
     if (fade_len > ir_len / 2) fade_len = ir_len / 2;
 
-    /* Time-domain peak normalization. Industry-standard for cab IRs: each
-     * generated IR gets the same peak sample value, giving predictable
-     * output level when switching cabs. Target 0.4 leaves ~8dB of headroom
-     * before the engine's hard clip at 1.0. */
-    float peak_td = 0.0f;
-    for (int i = 0; i < ir_len; i++) {
-        float v = fabsf(time_buf[i]);
-        if (v > peak_td) peak_td = v;
-    }
-    float norm = (peak_td > 1e-6f) ? (0.4f / peak_td) : 1.0f;
+    /* Peak normalization happens in fx_cab_load_buffer so synthetic and
+     * WAV-loaded IRs land at the same level. Here we just apply the
+     * fade-out window and pass the raw time-domain IR through. */
     (void)mag_ref;
 
     for (int i = 0; i < ir_len; i++) {
@@ -449,7 +450,7 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
             float t = (float)(i - (ir_len - fade_len)) / (float)fade_len;
             w = 0.5f * (1.0f + cosf((float)M_PI * t));
         }
-        ir_out[i] = time_buf[i] * norm * w;
+        ir_out[i] = time_buf[i] * w;
     }
 
     free(mag);

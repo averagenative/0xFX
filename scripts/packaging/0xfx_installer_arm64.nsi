@@ -73,6 +73,10 @@ Section "0xFX Standalone (required)" SecMain
     SetOutPath "$INSTDIR\presets\factory"
     File /r "..\..\presets\factory\*.*"
 
+    ; Bundled cab impulse responses (public domain)
+    SetOutPath "$INSTDIR\resources\ir\bundled"
+    File /r "..\..\resources\ir\bundled\*.*"
+
     ; Start Menu
     CreateDirectory "$SMPROGRAMS\0xFX"
     CreateShortCut "$SMPROGRAMS\0xFX\0xFX.lnk" "$INSTDIR\0xfx_gui.exe" "" "$INSTDIR\0xfx.ico"

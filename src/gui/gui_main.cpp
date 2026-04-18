@@ -361,6 +361,9 @@ static float randf(float lo, float hi) {
     return lo + (float)rand() / (float)RAND_MAX * (hi - lo);
 }
 
+static void load_cab_for_type(fx_engine_t *engine, fx_chain_id chain,
+                              fx_cab_type_t cab_type);
+
 static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int name_sz) {
     srand((unsigned)time(NULL));
 
@@ -388,13 +391,7 @@ static void surprise_me_generate(fx_engine_t *engine, char *preset_name, int nam
 
     /* Random cab */
     fx_cab_type_t cab = (fx_cab_type_t)(rand() % FX_CAB_TYPE_COUNT);
-    fx_cab_params_t cab_params = {};
-    cab_params.cab_type = cab;
-    cab_params.mic_pos = FX_MIC_ON_AXIS;
-    cab_params.speaker_fs = 80.0f;
-    cab_params.brightness = randf(0.3f, 0.7f);
-    cab_params.resonance = randf(0.2f, 0.6f);
-    fx_cab_generate_ir(engine, FX_CHAIN_DEFAULT, &cab_params);
+    load_cab_for_type(engine, FX_CHAIN_DEFAULT, cab);
 
     /* Noise gate defaults */
     fx_gate_set_threshold(engine, randf(-55.0f, -42.0f));
@@ -795,6 +792,36 @@ static const char *node_label(NodeKind kind, fx_engine_t *engine, fx_pedal_id pi
 static const char *s_cab_type_names[] = {
     "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant"
 };
+
+/* Filename bases for bundled public-domain IRs in resources/ir/bundled/
+ * (loaded with a .wav suffix). Loaded in preference to synthetic; synthetic
+ * acts as a fallback if the WAV file is missing from the install. */
+static const char *s_cab_ir_filenames[] = {
+    "1x12_open",      /* FX_CAB_1X12_OPEN */
+    "2x12_closed",    /* FX_CAB_2X12_CLOSED */
+    "4x12_straight",  /* FX_CAB_4X12_STRAIGHT */
+    "4x12_slant",     /* FX_CAB_4X12_SLANT */
+};
+
+/* Load the cab IR for a given type: prefer the bundled WAV, fall back to
+ * the parametric synthesizer if the WAV isn't present. */
+static void load_cab_for_type(fx_engine_t *engine, fx_chain_id chain,
+                              fx_cab_type_t cab_type) {
+    if (cab_type >= 0 && cab_type < FX_CAB_TYPE_COUNT) {
+        char ir_path[256];
+        snprintf(ir_path, sizeof(ir_path),
+                 "resources/ir/bundled/%s.wav",
+                 s_cab_ir_filenames[cab_type]);
+        if (fx_cab_load_ir(engine, chain, ir_path)) return;
+    }
+    fx_cab_params_t params = {};
+    params.cab_type   = cab_type;
+    params.mic_pos    = FX_MIC_ON_AXIS;
+    params.speaker_fs = 80.0f;
+    params.brightness = 0.5f;
+    params.resonance  = 0.5f;
+    fx_cab_generate_ir(engine, chain, &params);
+}
 
 /* ── Pedal gallery: category-organized pedal browser ──────────── */
 
@@ -3732,13 +3759,7 @@ int main(int argc, char *argv[]) {
                     char cab_combo_id[32];
                     snprintf(cab_combo_id, sizeof(cab_combo_id), "##cab_sel_%d", sel.chain_id);
                     if (ImGui::Combo(cab_combo_id, &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
-                        fx_cab_params_t params;
-                        params.cab_type = (fx_cab_type_t)cab_type_ref;
-                        params.mic_pos  = FX_MIC_ON_AXIS;
-                        params.speaker_fs = 80.0f;
-                        params.brightness = 0.5f;
-                        params.resonance  = 0.5f;
-                        fx_cab_generate_ir(engine, cab_chain, &params);
+                        load_cab_for_type(engine, cab_chain, (fx_cab_type_t)cab_type_ref);
                     }
                     /* Scroll wheel to cycle cab types */
                     if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
@@ -3748,13 +3769,7 @@ int main(int argc, char *argv[]) {
                             if (next < 0) next = FX_CAB_TYPE_COUNT - 1;
                             if (next >= FX_CAB_TYPE_COUNT) next = 0;
                             cab_type_ref = next;
-                            fx_cab_params_t params;
-                            params.cab_type = (fx_cab_type_t)cab_type_ref;
-                            params.mic_pos  = FX_MIC_ON_AXIS;
-                            params.speaker_fs = 80.0f;
-                            params.brightness = 0.5f;
-                            params.resonance  = 0.5f;
-                            fx_cab_generate_ir(engine, cab_chain, &params);
+                            load_cab_for_type(engine, cab_chain, (fx_cab_type_t)cab_type_ref);
                         }
                     }
 
