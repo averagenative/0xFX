@@ -280,17 +280,43 @@ When building release packages, always commit and push source changes first, the
 
 1. **Commit + push source changes** before running packaging scripts. The release must correspond to a committed state.
 2. **Build the release**: run the appropriate packaging script(s).
-3. **Upload assets to GitHub release** immediately after building: `gh release upload v{VERSION} release/*`.
+3. **Upload assets to GitHub release** immediately after building: `./scripts/packaging/upload_release.sh {VERSION}`.
 4. **Update release notes** if the release gains new platforms or features: `gh release edit v{VERSION} --notes "..."`.
 
 **Every release MUST include Windows installers (.exe) alongside zip/tarball packages.** Standalone zips are for portable use; installers handle plugin paths, Start Menu shortcuts, and uninstall registry.
 
+Artifact naming convention: `0xFX-<version>-<platform>-<arch>.<ext>`
+- `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-universal`
+- AppImages use `<arch>.AppImage` naming (`x86_64`, `aarch64`) — preserved for backwards compat.
+
 Packaging scripts:
 ```bash
-./scripts/packaging/package_release.sh 1.0.0     # Linux + Windows x64
-./scripts/packaging/package_macos.sh 1.0.0        # macOS (.dmg + .zip)
+# Build every arch a toolchain is available for (Linux x64/arm64 + Windows x64/arm64):
+./scripts/packaging/package_release.sh 1.1.0
 
-# ARM64 builds (cross-compiled)
+# Or restrict to a single arch:
+./scripts/packaging/package_release.sh 1.1.0 --arch x64
+./scripts/packaging/package_release.sh 1.1.0 --arch arm64
+
+# macOS universal (arm64 + x86_64) — must run on a Mac:
+./scripts/packaging/package_macos.sh 1.1.0
+
+# Upload everything in release/ to the v1.1.0 GitHub release:
+./scripts/packaging/upload_release.sh 1.1.0
+```
+
+Toolchain prerequisites (Fedora; adjust for Ubuntu):
+```bash
+# Windows x64:    sudo dnf install mingw64-gcc mingw64-gcc-c++ mingw64-SDL2
+# Windows arm64:  download llvm-mingw from https://github.com/mstorsjo/llvm-mingw/releases
+#                 extract to ~/tools/ (auto-detected) or export LLVM_MINGW_PREFIX
+# Linux arm64:    sudo dnf install gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu
+# NSIS installer: sudo dnf install mingw32-nsis   # package name varies by distro
+# AppImage:       wget the appimagetool binary to ~/tools/appimagetool and chmod +x
+```
+
+Manual ARM64 builds (when not using package_release.sh):
+```bash
 LLVM_MINGW_PREFIX=~/tools/llvm-mingw-* cmake -B build_win_arm64 \
   -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw-arm64.cmake -DCMAKE_BUILD_TYPE=Release
 cmake --build build_win_arm64 -j$(nproc)

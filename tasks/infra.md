@@ -230,12 +230,12 @@
 - **Notes**: **Must be run on MacBook.** After TASK-349 lands the CMake changes, pull to MacBook and build: `cmake -B build -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n hw.ncpu)`. Verify with `lipo -info build/0xfx_gui`. Package with `./scripts/packaging/package_macos.sh 1.1.0`. Test standalone + plugins on M-series. DMG should have drag-to-Applications layout.
 
 ### TASK-352: Multi-arch release packaging and naming
-- **Status**: queued
+- **Status**: done
 - **Phase**: 9
 - **Priority**: P2
 - **Release**: 1.1.0
 - **Depends**: TASK-349, TASK-350, TASK-351
-- **Notes**: Unified release script that builds all arch variants. Naming: `0xFX-{ver}-{platform}-{arch}`. Platforms: `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-universal`. Update CLAUDE.md with ARM build commands.
+- **Notes**: `package_release.sh` now takes `--arch x64|arm64|all` (default all), auto-detects mingw-w64 / llvm-mingw / aarch64-linux-gnu toolchains, and gracefully skips missing ones. Produces `0xFX-{ver}-linux-{x64,arm64}.tar.gz`, `0xFX-{ver}-{x86_64,aarch64}.AppImage`, `0xFX-{ver}-windows-{x64,arm64}.zip`, and matching `-setup.exe` installers. `package_macos.sh` already produces `0xFX-{ver}-macos-universal.{dmg,zip}`. New `scripts/packaging/upload_release.sh {version}` uploads every matching artifact to the `v{version}` GitHub release via `gh release upload --clobber`. CLAUDE.md build docs updated with ARM commands, toolchain installs, and script usage.
 
 ### TASK-364: Linux AppImage packaging for 1.1.0 release
 - **Status**: queued
