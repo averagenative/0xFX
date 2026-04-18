@@ -3093,7 +3093,7 @@
     "title": "Linux AppImage packaging for 1.1.0 release",
     "domain": "infra",
     "phase": 11,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "agent-infra",
     "depends": [],
     "estimatedTokens": 15000,
