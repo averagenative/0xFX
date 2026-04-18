@@ -2584,7 +2584,7 @@
     "title": "Pedal stomp switch click area on image + LED toggle",
     "domain": "frontend",
     "phase": 3,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "agent-frontend",
     "depends": [],
     "estimatedTokens": 25000,
