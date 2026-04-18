@@ -3457,8 +3457,9 @@ int main(int argc, char *argv[]) {
                 /* Override cab label with actual cab type name (or custom IR
                  * name when the user has loaded their own). */
                 if (n.kind == NODE_CAB) {
-                    fx_chain_id cid = (n.chain_id == 0) ? FX_CHAIN_DEFAULT : FX_CHAIN_DEFAULT;
-                    const char *custom_ir = fx_cab_get_custom_ir_path(engine, cid);
+                    fx_chain_id cid = (n.chain_id == 0) ? FX_CHAIN_DEFAULT : s_chain_b;
+                    const char *custom_ir = (cid >= 0)
+                        ? fx_cab_get_custom_ir_path(engine, cid) : NULL;
                     if (custom_ir && custom_ir[0]) {
                         const char *cname = fx_cab_get_custom_name(engine, cid);
                         lbl = (cname && cname[0]) ? cname : "Custom";
