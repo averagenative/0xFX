@@ -106,14 +106,23 @@ exec "${HERE}/usr/bin/0xfx_gui" "$@"
 EOF
 chmod +x "${APPDIR}/AppRun"
 
-# Build AppImage if tool available
+# AppImage is required for every release. Locate appimagetool or fail.
+APPIMAGETOOL=""
 if command -v appimagetool &>/dev/null; then
-    ARCH=x86_64 appimagetool "${APPDIR}" "release/0xFX-${VERSION}-x86_64.AppImage" 2>/dev/null
-    echo "  -> release/0xFX-${VERSION}-x86_64.AppImage"
+    APPIMAGETOOL="appimagetool"
+elif [ -x "$HOME/tools/appimagetool" ]; then
+    APPIMAGETOOL="$HOME/tools/appimagetool"
 else
-    echo "  appimagetool not found — AppDir created at ${APPDIR}"
-    echo "  Install: wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+    echo "ERROR: appimagetool not found — AppImage is required for every release."
+    echo "Install:"
+    echo "  mkdir -p ~/tools && \\"
+    echo "  wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O ~/tools/appimagetool && \\"
+    echo "  chmod +x ~/tools/appimagetool"
+    exit 1
 fi
+
+ARCH=x86_64 "$APPIMAGETOOL" "${APPDIR}" "release/0xFX-${VERSION}-x86_64.AppImage"
+echo "  -> release/0xFX-${VERSION}-x86_64.AppImage"
 
 # ══════════════════════════════════════════════════════════════════════
 # WINDOWS BUILD (cross-compile)
