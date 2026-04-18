@@ -236,3 +236,31 @@
 - **Release**: 1.1.0
 - **Depends**: TASK-349, TASK-350, TASK-351
 - **Notes**: Unified release script that builds all arch variants. Naming: `0xFX-{ver}-{platform}-{arch}`. Platforms: `linux-x64`, `linux-arm64`, `windows-x64`, `windows-arm64`, `macos-universal`. Update CLAUDE.md with ARM build commands.
+
+### TASK-364: Linux AppImage packaging for 1.1.0 release
+- **Status**: queued
+- **Phase**: 11
+- **Priority**: HIGH
+- **Release**: 1.1.0
+- **Depends**: none
+- **Files**: `scripts/packaging/package_release.sh`, `scripts/packaging/package_appimage.sh`
+- **Notes**: AppImage was missing from 1.1.0. Sibling project 0x808 AppImage hits `dlopen(): error loading libfuse.so.2` on modern distros — FUSE 2 is not installed by default on Fedora 38+, Ubuntu 22.04+, etc.
+
+  **FUSE issue fix**: Use the fuse3-compatible runtime instead of the default fuse2 runtime:
+  ```bash
+  # Download fuse3 runtime (replaces default fuse2 runtime)
+  wget https://github.com/AppImage/type2-runtime/releases/latest/download/runtime-fuse3-x86_64
+  appimagetool --runtime-file runtime-fuse3-x86_64 AppDir 0xFX-1.1.0-x86_64.AppImage
+  ```
+
+  **End-user workaround** (document in release notes for systems without any FUSE):
+  ```bash
+  APPIMAGE_EXTRACT_AND_RUN=1 ./0xFX-1.1.0-x86_64.AppImage
+  ```
+
+  **Acceptance criteria**:
+  - AppImage for x86_64 built via `linuxdeploy` + `appimagetool` with fuse3 runtime
+  - AppImage for aarch64 built similarly (cross or native)
+  - Both added to `release/` and uploaded via `gh release upload`
+  - `package_release.sh` updated to include AppImage step
+  - Release notes include FUSE note + `APPIMAGE_EXTRACT_AND_RUN=1` workaround

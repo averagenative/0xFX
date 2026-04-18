@@ -3086,5 +3086,54 @@
       "Export loop to audio file"
     ],
     "files": []
+  },
+  {
+    "id": "TASK-364",
+    "priority": "HIGH",
+    "title": "Linux AppImage packaging for 1.1.0 release",
+    "domain": "infra",
+    "phase": 11,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 15000,
+    "release": "1.1.0",
+    "acceptanceCriteria": [
+      "AppImage produced for x86_64 via linuxdeploy + appimagetool",
+      "AppImage produced for aarch64 (ARM64) via linuxdeploy + appimagetool",
+      "FUSE 3 runtime used (appimagetool --runtime-file runtime-fuse3) to avoid libfuse.so.2 errors on modern distros",
+      "APPIMAGE_EXTRACT_AND_RUN=1 workaround documented in release notes for systems without FUSE",
+      "AppImages added to release/ output and uploaded via gh release upload",
+      "packaging script updated to include AppImage step alongside existing tar.gz"
+    ],
+    "files": [
+      "scripts/packaging/package_release.sh",
+      "scripts/packaging/package_appimage.sh"
+    ],
+    "notes": "PARTIAL (2026-04-18): x86_64 AppImage built with default runtime and uploaded to v1.1.0 release. Remaining: aarch64 AppImage, fuse3 runtime swap, release-notes FUSE workaround. Sibling project 0x808 AppImage hits libfuse.so.2 error on modern distros (FUSE 2 not installed). Fix: use fuse3 runtime from https://github.com/AppImage/type2-runtime/releases. Fallback workaround for end users: APPIMAGE_EXTRACT_AND_RUN=1 ./0xFX-x86_64.AppImage (extracts and runs without FUSE). Document both in release notes."
+  },
+  {
+    "id": "TASK-365",
+    "priority": "HIGH",
+    "title": "Mic / input device not detected on native Linux (Fedora 43, PipeWire)",
+    "domain": "audio",
+    "phase": 12,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 25000,
+    "release": "1.2.0",
+    "acceptanceCriteria": [
+      "Running the 1.1.0 AppImage (and native build) on Fedora 43 enumerates input devices via PipeWire/PulseAudio",
+      "USB interfaces (iRig, Scarlett) appear in the input device dropdown",
+      "Selecting an input and arming a chain passes signal end-to-end (verified with meter / recording)",
+      "miniaudio PipeWire/ALSA backend paths investigated — confirm whether miniaudio is picking a backend that excludes capture devices on Fedora 43",
+      "Regression test / logging added so device-enumeration failures surface clearly in fx_log output instead of an empty dropdown"
+    ],
+    "files": [
+      "src/audio/audio_device.c",
+      "src/audio/audio_device.h"
+    ],
+    "notes": "Reported 2026-04-18 on native Fedora 43 (Dan moved off WSL). The WSLg-audio-broken assumption in CLAUDE.md no longer applies — real Linux audio stack is available, but mic input is not being detected. miniaudio may be defaulting to a backend without capture support, or the device enumeration may need a PipeWire-aware path. Start by running the AppImage with FX_DEBUG enabled and checking which backend miniaudio selects and what devices it returns."
   }
 ]

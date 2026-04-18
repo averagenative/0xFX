@@ -241,3 +241,23 @@
 
 > Additional tasks TASK-047 through TASK-065. See openspec/changes/fx-engine/tasks.md for full details.
 > Will be expanded here as Phase 4 nears completion.
+
+## Phase 12: 1.2.0 Audio Fixes
+
+### TASK-365: Mic / input device not detected on native Linux (Fedora 43, PipeWire)
+- **Status**: queued
+- **Phase**: 12
+- **Priority**: HIGH
+- **Release**: 1.2.0
+- **Depends**: none
+- **Files**: `src/audio/audio_device.c`, `src/audio/audio_device.h`
+- **Notes**: Reported 2026-04-18 running the 1.1.0 AppImage on native Fedora 43 (Dan is off WSL now). The CLAUDE.md note about WSLg audio being broken no longer applies — we have a real Linux audio stack, but mic input is not being detected. Likely culprits: miniaudio backend selection (PipeWire vs PulseAudio vs ALSA), or the device-enumeration path returning an empty input list.
+
+  **Acceptance criteria**:
+  - Running the 1.1.0 AppImage + native build on Fedora 43 enumerates input devices (PipeWire/PulseAudio).
+  - USB interfaces (iRig, Scarlett) appear in the input device dropdown.
+  - Selecting an input and arming a chain passes signal end-to-end (verified via meter / recording).
+  - Investigate which miniaudio backend gets selected on Fedora 43; confirm it includes capture.
+  - Add logging so a missing/empty capture list surfaces clearly in `fx_log` instead of silently failing in the UI.
+
+  **First steps**: run the standalone with `FX_LOG_LEVEL=DEBUG` or add a one-shot `ma_context_get_devices` dump to see what miniaudio reports on this box. Compare against `pw-cli list-objects Node` to confirm PipeWire does see the mic.
