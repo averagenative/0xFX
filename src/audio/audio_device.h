@@ -27,4 +27,12 @@ bool        fx_audio_set_sample_rate(struct fx_engine *engine, float rate);
 /* Monitor mode: process engine (for tuner/meters) but mute output */
 void        fx_audio_set_mute_output(bool mute);
 
+/* Input gain trim (standalone only — DAW hosts provide their own channel gain).
+ * gain_db: continuous, -24.0 to +12.0 dB, default 0.0 dB.
+ * pad:     fixed -20 dB attenuation applied on top of gain_db when true.
+ * Both are applied in the capture callback before samples reach fx_engine_process.
+ * Real-time safe: reads an _Atomic float — no malloc, no lock. */
+void        fx_audio_set_input_gain_db(float gain_db);
+void        fx_audio_set_input_pad(bool pad_enabled);
+
 #endif /* FX_AUDIO_DEVICE_H */

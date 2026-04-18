@@ -8,6 +8,7 @@
 #include "../../deps/miniaudio.h"
 #include "../engine/fx_engine.h"
 #include "../core/log.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -51,6 +52,40 @@ void fx_audio_set_mute_output(bool mute) {
     s_mute_output = mute;
 }
 
+/* Input gain trim — standalone only.
+ * Written by the GUI thread, read by the audio callback thread.
+ * volatile float: aligned float store/load is naturally atomic on x86 and ARM
+ * (guaranteed single-instruction). volatile prevents the compiler from caching
+ * the value in a register across the callback boundary. This is a user-control
+ * update path (GUI knob at ~60 Hz), not parameter automation — volatile is
+ * sufficient and C99-compatible. No locks, no mallocs.
+ *
+ * s_input_gain_linear is the precomputed effective multiplier combining both
+ * the dB slider and the pad toggle. The callback reads only this one value. */
+static volatile float s_input_gain_linear = 1.0f;  /* default: 0 dB, no pad */
+
+/* Backing state for the setter helpers — GUI thread only. */
+static float s_input_gain_db_val = 0.0f;
+static int   s_input_pad_val     = 0;
+
+static void update_input_gain(void) {
+    float linear = powf(10.0f, s_input_gain_db_val / 20.0f);
+    if (s_input_pad_val) linear *= 0.1f;  /* -20 dB pad: 10^(-20/20) = 0.1 */
+    s_input_gain_linear = linear;          /* single float write, naturally atomic */
+}
+
+void fx_audio_set_input_gain_db(float gain_db) {
+    if (gain_db < -24.0f) gain_db = -24.0f;
+    if (gain_db >  12.0f) gain_db =  12.0f;
+    s_input_gain_db_val = gain_db;
+    update_input_gain();
+}
+
+void fx_audio_set_input_pad(bool pad_enabled) {
+    s_input_pad_val = pad_enabled ? 1 : 0;
+    update_input_gain();
+}
+
 static void audio_callback(ma_device *device, void *output,
                            const void *input, ma_uint32 frame_count) {
     audio_manager_t *mgr = (audio_manager_t *)device->pUserData;
@@ -59,8 +94,22 @@ static void audio_callback(ma_device *device, void *output,
         return;
     }
 
+    /* Apply input gain trim (set by GUI, real-time safe volatile read).
+     * We need a mutable copy of the input samples — use the output buffer as
+     * scratch before the engine overwrites it with processed audio. */
+    float gain = s_input_gain_linear;
+    const float *engine_input = (const float *)input;
+    if (gain != 1.0f) {
+        float *trimmed = (float *)output;
+        const float *src = (const float *)input;
+        for (ma_uint32 i = 0; i < frame_count; i++) {
+            trimmed[i] = src[i] * gain;
+        }
+        engine_input = trimmed;
+    }
+
     /* Mono input → engine → mono output */
-    fx_engine_process(mgr->engine, (const float *)input,
+    fx_engine_process(mgr->engine, engine_input,
                       (float *)output, (int)frame_count);
 
     /* Monitor mode: mute output but engine still processes (tuner + meters) */

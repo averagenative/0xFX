@@ -88,12 +88,14 @@ static const char *get_config_path(void) {
 }
 
 struct SessionConfig {
-    int  input_device_idx;
-    int  output_device_idx;
-    int  window_w;
-    int  window_h;
-    int  buf_size_idx;
-    int  sr_idx;
+    int   input_device_idx;
+    int   output_device_idx;
+    int   window_w;
+    int   window_h;
+    int   buf_size_idx;
+    int   sr_idx;
+    float input_gain_db;   /* -24..+12 dB, default 0.0 */
+    bool  input_pad;       /* -20 dB pad toggle, default false */
 };
 
 static void session_config_defaults(SessionConfig *cfg) {
@@ -103,6 +105,8 @@ static void session_config_defaults(SessionConfig *cfg) {
     cfg->window_h          = 800;
     cfg->buf_size_idx      = 2;
     cfg->sr_idx            = 0;
+    cfg->input_gain_db     = 0.0f;
+    cfg->input_pad         = false;
 }
 
 static bool session_config_load(SessionConfig *cfg) {
@@ -128,6 +132,8 @@ static bool session_config_load(SessionConfig *cfg) {
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "window_h"))      && cJSON_IsNumber(v)) cfg->window_h          = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "buf_size_idx"))  && cJSON_IsNumber(v)) cfg->buf_size_idx      = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "sr_idx"))        && cJSON_IsNumber(v)) cfg->sr_idx            = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_gain_db")) && cJSON_IsNumber(v)) cfg->input_gain_db     = (float)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_pad"))     && cJSON_IsBool(v))   cfg->input_pad         = (bool)cJSON_IsTrue(v);
     cJSON_Delete(root);
     return true;
 }
@@ -141,6 +147,8 @@ static void session_config_save(const SessionConfig *cfg) {
     cJSON_AddNumberToObject(root, "window_h",      cfg->window_h);
     cJSON_AddNumberToObject(root, "buf_size_idx",  cfg->buf_size_idx);
     cJSON_AddNumberToObject(root, "sr_idx",        cfg->sr_idx);
+    cJSON_AddNumberToObject(root, "input_gain_db", cfg->input_gain_db);
+    cJSON_AddBoolToObject  (root, "input_pad",     cfg->input_pad);
     char *json = cJSON_Print(root);
     cJSON_Delete(root);
     if (!json) return;
@@ -1050,14 +1058,18 @@ int main(int argc, char *argv[]) {
     int num_output_devices = fx_audio_get_output_count();
     int num_midi_devices = fx_midi_get_device_count();
     /* Apply saved device selections */
-    static int  s_selected_input   = -1;
-    static int  s_selected_output  = -1;
-    static int  s_selected_buf_idx = 2;    /* default: 256 frames */
-    static int  s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
-    static bool s_audio_active     = false;
-    static bool s_monitor_only    = false; /* device open for metering, output muted */
-    static int  s_selected_midi   = -1;
-    static bool s_midi_active     = false;
+    static int   s_selected_input   = -1;
+    static int   s_selected_output  = -1;
+    static int   s_selected_buf_idx = 2;    /* default: 256 frames */
+    static int   s_selected_sr_idx  = 0;    /* default: 44100 Hz  */
+    static bool  s_audio_active     = false;
+    static bool  s_monitor_only     = false; /* device open for metering, output muted */
+    static int   s_selected_midi    = -1;
+    static bool  s_midi_active      = false;
+
+    /* Input gain trim state (standalone only) */
+    static float s_input_gain_db  = 0.0f;   /* -24..+12 dB, default 0 dB */
+    static bool  s_input_pad      = false;  /* -20 dB pad toggle */
 
     /* Restore from session config */
     if (s_session_cfg.input_device_idx  >= 0 && s_session_cfg.input_device_idx  < num_input_devices)
@@ -1068,6 +1080,11 @@ int main(int argc, char *argv[]) {
         s_selected_buf_idx = s_session_cfg.buf_size_idx;
     if (s_session_cfg.sr_idx >= 0 && s_session_cfg.sr_idx < 2)
         s_selected_sr_idx = s_session_cfg.sr_idx;
+    /* Restore input gain — apply to audio layer immediately */
+    s_input_gain_db = s_session_cfg.input_gain_db;
+    s_input_pad     = s_session_cfg.input_pad;
+    fx_audio_set_input_gain_db(s_input_gain_db);
+    fx_audio_set_input_pad(s_input_pad);
 
     static const int   buf_sizes[]  = { 64, 128, 256, 512, 1024 };
     static const char *buf_labels[] = { "64", "128", "256", "512", "1024" };
@@ -1939,6 +1956,49 @@ int main(int argc, char *argv[]) {
                 ImGui::SetNextItemWidth(120);
                 if (ImGui::Combo("Rate", &s_selected_sr_idx, sr_labels, 2)) {
                     fx_audio_set_sample_rate(engine, (float)sr_values[s_selected_sr_idx]);
+                }
+
+                /* ── Input Gain Trim ──────────────────────────── */
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::TextDisabled("Input Gain Trim:");
+                ImGui::SetNextItemWidth(220);
+                if (ImGui::SliderFloat("##input_gain", &s_input_gain_db, -24.0f, 12.0f, "%.1f dB")) {
+                    fx_audio_set_input_gain_db(s_input_gain_db);
+                    s_session_cfg.input_gain_db = s_input_gain_db;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Pre-chain input gain trim: -24 to +12 dB\n"
+                                      "Use to compensate for hot/weak capture sources.\n"
+                                      "Stacks with the -20 dB pad.");
+                ImGui::SameLine();
+                /* Pad button: highlight amber when active */
+                if (s_input_pad) {
+                    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.65f, 0.42f, 0.05f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.55f, 0.10f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.50f, 0.32f, 0.03f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(1.00f, 0.90f, 0.50f, 1.0f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.18f, 0.16f, 0.13f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.24f, 0.18f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.60f, 0.55f, 0.45f, 1.0f));
+                }
+                if (ImGui::Button("-20 dB PAD", ImVec2(90, 0))) {
+                    s_input_pad = !s_input_pad;
+                    fx_audio_set_input_pad(s_input_pad);
+                    s_session_cfg.input_pad = s_input_pad;
+                }
+                ImGui::PopStyleColor(4);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Fixed -20 dB pad — attenuates the input by 20 dB.\n"
+                                      "Use for hot mic arrays or line-level sources with\n"
+                                      "too much headroom. Independent of the gain slider\n"
+                                      "(total gain = slider + pad).");
+                {
+                    float total_db = s_input_gain_db + (s_input_pad ? -20.0f : 0.0f);
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("= %.1f dB", total_db);
                 }
 
                 ImGui::Spacing();
@@ -4581,6 +4641,8 @@ int main(int argc, char *argv[]) {
         s_session_cfg.output_device_idx = s_selected_output;
         s_session_cfg.buf_size_idx      = s_selected_buf_idx;
         s_session_cfg.sr_idx            = s_selected_sr_idx;
+        s_session_cfg.input_gain_db     = s_input_gain_db;
+        s_session_cfg.input_pad         = s_input_pad;
         session_config_save(&s_session_cfg);
         FX_INFO("Config saved to %s", get_config_path());
     }
