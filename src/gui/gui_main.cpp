@@ -4131,6 +4131,9 @@ int main(int argc, char *argv[]) {
                         }
                         ImGui::EndCombo();
                     }
+                    /* Capture combo hover BEFORE emitting the button — otherwise
+                     * IsItemHovered() below would refer to the button instead. */
+                    bool combo_hovered = ImGui::IsItemHovered();
 
                     /* Visible "Load IR..." button next to the dropdown — primary entry
                      * point for users to upload a custom cabinet IR. */
@@ -4166,7 +4169,7 @@ int main(int argc, char *argv[]) {
                     }
 
                     /* Scroll wheel to cycle stock cabs only (no-op when custom active) */
-                    if (!is_custom_active && ImGui::IsItemHovered() &&
+                    if (!is_custom_active && combo_hovered &&
                         !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
                         float wheel = ImGui::GetIO().MouseWheel;
                         if (wheel != 0.0f) {

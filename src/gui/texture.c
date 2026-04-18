@@ -34,6 +34,43 @@
 
 #define MAX_TEXTURES 512  /* larger to support multiple plugin instances */
 
+/* Cap user-supplied images to this max dimension on either axis. The cab
+ * image renders at ~220px, pedal/amp at ~400px, so 1024 is plenty. Anything
+ * larger is downscaled with a box filter before GPU upload — saves VRAM,
+ * avoids GL_MAX_TEXTURE_SIZE issues on low-end GPUs, and prevents aliasing
+ * from no-mipmap downsampling. */
+#define FX_TEXTURE_MAX_DIM 1024
+
+/* Box-filter downscale from src (sw,sh) to dst (dw,dh), RGBA8. Averages the
+ * block of source pixels that map to each destination pixel. */
+static void tex_box_downscale(const unsigned char *src, int sw, int sh,
+                              unsigned char *dst, int dw, int dh)
+{
+    for (int y = 0; y < dh; y++) {
+        int y0 = (int)((long long)y * sh / dh);
+        int y1 = (int)((long long)(y + 1) * sh / dh);
+        if (y1 <= y0) y1 = y0 + 1;
+        for (int x = 0; x < dw; x++) {
+            int x0 = (int)((long long)x * sw / dw);
+            int x1 = (int)((long long)(x + 1) * sw / dw);
+            if (x1 <= x0) x1 = x0 + 1;
+            unsigned int r = 0, g = 0, b = 0, a = 0, n = 0;
+            for (int yy = y0; yy < y1; yy++) {
+                const unsigned char *row = src + (yy * sw + x0) * 4;
+                for (int xx = x0; xx < x1; xx++) {
+                    r += row[0]; g += row[1]; b += row[2]; a += row[3];
+                    row += 4; n++;
+                }
+            }
+            unsigned char *d = dst + (y * dw + x) * 4;
+            d[0] = (unsigned char)(r / n);
+            d[1] = (unsigned char)(g / n);
+            d[2] = (unsigned char)(b / n);
+            d[3] = (unsigned char)(a / n);
+        }
+    }
+}
+
 typedef struct {
     char      path[512];
     uintptr_t gl_id;
@@ -119,6 +156,28 @@ uintptr_t fx_texture_load(const char *path)
         return 0;
     }
 
+    /* Downscale oversized images before GPU upload. stb_image returns the
+     * full source resolution; we swap in a box-filtered copy if either axis
+     * exceeds FX_TEXTURE_MAX_DIM. */
+    int orig_w = w, orig_h = h;
+    int max_dim = (w > h) ? w : h;
+    if (max_dim > FX_TEXTURE_MAX_DIM) {
+        float scale = (float)FX_TEXTURE_MAX_DIM / (float)max_dim;
+        int nw = (int)(w * scale);
+        int nh = (int)(h * scale);
+        if (nw < 1) nw = 1;
+        if (nh < 1) nh = 1;
+        unsigned char *resized = (unsigned char *)malloc((size_t)nw * nh * 4);
+        if (resized) {
+            tex_box_downscale(data, w, h, resized, nw, nh);
+            stbi_image_free(data);
+            data = resized;
+            w = nw;
+            h = nh;
+        }
+        /* If malloc failed, upload original — GL may reject it, that's fine. */
+    }
+
     /* Upload to OpenGL */
     GLuint tex_id = 0;
     glGenTextures(1, &tex_id);
@@ -132,7 +191,14 @@ uintptr_t fx_texture_load(const char *path)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, data);
 
-    stbi_image_free(data);
+    /* The downscaled buffer was allocated with malloc; stb_image buffers with
+     * stbi_image_free. Both are free() under the hood in stb_image's default
+     * config, so either call is fine — use stbi_image_free for consistency. */
+    if (w == orig_w && h == orig_h) {
+        stbi_image_free(data);
+    } else {
+        free(data);
+    }
     glBindTexture(GL_TEXTURE_2D, 0);
 
     /* Store in cache with owner thread */
@@ -146,7 +212,12 @@ uintptr_t fx_texture_load(const char *path)
 
     tex_unlock();
 
-    FX_INFO("fx_texture_load: loaded '%s' (%dx%d) -> GL id %u", path, w, h, tex_id);
+    if (w != orig_w || h != orig_h) {
+        FX_INFO("fx_texture_load: loaded '%s' (%dx%d, downscaled from %dx%d) -> GL id %u",
+                path, w, h, orig_w, orig_h, tex_id);
+    } else {
+        FX_INFO("fx_texture_load: loaded '%s' (%dx%d) -> GL id %u", path, w, h, tex_id);
+    }
     return e->gl_id;
 }
 
