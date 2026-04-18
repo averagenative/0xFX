@@ -35,6 +35,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         SDL2-devel \
         mesa-libGL-devel \
         mesa-libEGL-devel \
+        dbus-devel \
         libX11-devel \
         libXext-devel \
         libXrandr-devel \

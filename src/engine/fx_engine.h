@@ -214,6 +214,17 @@ void         fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain,
                                bool bypass);
 bool         fx_cab_get_bypass(fx_engine_t *engine, fx_chain_id chain);
 
+/* Custom cab metadata. Non-empty on custom cabs; empty on synthetic/bundled.
+ * Presets persist all three so a reload can restore the same IR, display
+ * name, and image. Get returns an internal pointer — do not free or retain
+ * across subsequent set calls. */
+const char  *fx_cab_get_custom_ir_path(fx_engine_t *engine, fx_chain_id chain);
+const char  *fx_cab_get_custom_name(fx_engine_t *engine, fx_chain_id chain);
+const char  *fx_cab_get_custom_image_path(fx_engine_t *engine, fx_chain_id chain);
+void         fx_cab_set_custom_name(fx_engine_t *engine, fx_chain_id chain, const char *name);
+void         fx_cab_set_custom_image_path(fx_engine_t *engine, fx_chain_id chain, const char *path);
+void         fx_cab_clear_custom_ir_path(fx_engine_t *engine, fx_chain_id chain);
+
 /* ── Microphone simulation — post-cab, pre-post-pedals ───────── */
 
 /* Mic types */

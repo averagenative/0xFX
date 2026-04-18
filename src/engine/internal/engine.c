@@ -497,6 +497,48 @@ bool fx_cab_generate_ir(fx_engine_t *engine, fx_chain_id chain,
     #undef SYNTH_IR_GEN_LEN
 }
 
+const char *fx_cab_get_custom_ir_path(fx_engine_t *engine, fx_chain_id chain) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return "";
+    return engine->chains[chain].cab.custom_ir_path;
+}
+
+const char *fx_cab_get_custom_name(fx_engine_t *engine, fx_chain_id chain) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return "";
+    return engine->chains[chain].cab.custom_name;
+}
+
+const char *fx_cab_get_custom_image_path(fx_engine_t *engine, fx_chain_id chain) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return "";
+    return engine->chains[chain].cab.custom_image_path;
+}
+
+static void copy_bounded(char *dst, size_t dst_sz, const char *src) {
+    if (!dst || dst_sz == 0) return;
+    if (!src) { dst[0] = '\0'; return; }
+    size_t n = dst_sz - 1;
+    strncpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+void fx_cab_set_custom_name(fx_engine_t *engine, fx_chain_id chain, const char *name) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return;
+    copy_bounded(engine->chains[chain].cab.custom_name,
+                 sizeof(engine->chains[chain].cab.custom_name), name);
+}
+
+void fx_cab_set_custom_image_path(fx_engine_t *engine, fx_chain_id chain, const char *path) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return;
+    copy_bounded(engine->chains[chain].cab.custom_image_path,
+                 sizeof(engine->chains[chain].cab.custom_image_path), path);
+}
+
+void fx_cab_clear_custom_ir_path(fx_engine_t *engine, fx_chain_id chain) {
+    if (!engine || chain < 0 || chain >= engine->num_chains) return;
+    engine->chains[chain].cab.custom_ir_path[0] = '\0';
+    engine->chains[chain].cab.custom_name[0] = '\0';
+    engine->chains[chain].cab.custom_image_path[0] = '\0';
+}
+
 void fx_cab_set_bypass(fx_engine_t *engine, fx_chain_id chain, bool bypass) {
     if (!engine || chain < 0 || chain >= engine->num_chains) return;
     engine->chains[chain].cab.bypass = bypass;

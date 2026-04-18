@@ -103,6 +103,9 @@ typedef struct {
     int            fft_size;       /* FFT size (power of 2, >= block_size + ir_len - 1) */
     int            ir_len;         /* original IR length in samples */
     int            block_size;     /* processing block size */
+    char           custom_ir_path[1024];    /* non-empty when loaded from a user .wav; empty for synthetic/bundled */
+    char           custom_name[64];          /* display name for custom cabs; auto-set from IR filename, user-editable */
+    char           custom_image_path[1024];  /* optional user image for the custom cab; empty = use default cab art */
 } fx_cab_state_t;
 
 /* ── Microphone simulation state ──────────────────────────────── */

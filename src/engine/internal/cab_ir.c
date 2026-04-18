@@ -94,8 +94,15 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
 
     const float *ir_data = ir_mono ? ir_mono : ir_samples;
 
-    /* Load via fx_cab_load_buffer which handles thread-safe swap */
+    /* Load via fx_cab_load_buffer which handles thread-safe swap.
+     * load_buffer clears custom_ir_path, so record it after success. */
     bool ok = fx_cab_load_buffer(cab, ir_data, ir_len, block_size);
+
+    if (ok) {
+        size_t n = sizeof(cab->custom_ir_path) - 1;
+        strncpy(cab->custom_ir_path, wav_path, n);
+        cab->custom_ir_path[n] = '\0';
+    }
 
     /* Cleanup temp data */
     free(ir_mono);
@@ -172,6 +179,10 @@ bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, i
     cab->ir_len      = ir_len;
     cab->block_size  = block_size;
     cab->bypass      = false;
+    /* Clear custom-cab metadata — load_wav re-sets the path after calling us */
+    cab->custom_ir_path[0] = '\0';
+    cab->custom_name[0] = '\0';
+    cab->custom_image_path[0] = '\0';
 
     /* ── Step 5: Re-enable processing — new state is complete ── */
     cab->loaded = true;

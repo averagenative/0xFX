@@ -275,6 +275,23 @@ if(HAS_GUI)
         set(GUI_RC "")
     endif()
 
+    # ── Native file dialog (nfd-extended) — zlib licensed ──────────
+    if(WIN32)
+        set(NFD_SOURCES ${CMAKE_SOURCE_DIR}/deps/nfd/nfd_win.cpp)
+    elseif(APPLE)
+        set(NFD_SOURCES ${CMAKE_SOURCE_DIR}/deps/nfd/nfd_cocoa.m)
+    else()
+        set(NFD_SOURCES ${CMAKE_SOURCE_DIR}/deps/nfd/nfd_portal.cpp)
+    endif()
+    add_library(nfd STATIC ${NFD_SOURCES})
+    target_include_directories(nfd PUBLIC ${CMAKE_SOURCE_DIR}/deps/nfd/include)
+    if(UNIX AND NOT APPLE)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(DBUS REQUIRED dbus-1)
+        target_include_directories(nfd PRIVATE ${DBUS_INCLUDE_DIRS})
+        target_link_libraries(nfd PUBLIC ${DBUS_LIBRARIES})
+    endif()
+
     add_executable(0xfx_gui WIN32
         src/gui/gui_main.cpp
         src/gui/gui_render.cpp
@@ -292,7 +309,7 @@ if(HAS_GUI)
         ${CMAKE_SOURCE_DIR}/deps/imgui
         ${CMAKE_SOURCE_DIR}/deps/imgui/backends
     )
-    target_link_libraries(0xfx_gui PRIVATE fx_engine fx_core imgui shine m)
+    target_link_libraries(0xfx_gui PRIVATE fx_engine fx_core imgui nfd shine m)
     if(SDL2_FOUND)
         target_link_libraries(0xfx_gui PRIVATE ${SDL2_LIBRARIES})
     else()

@@ -12,7 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Linux
-sudo apt install libsdl2-dev libgl-dev g++
+sudo apt install libsdl2-dev libgl-dev libdbus-1-dev g++    # Debian/Ubuntu
+sudo dnf install SDL2-devel mesa-libGL-devel dbus-devel gcc-c++    # Fedora
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
