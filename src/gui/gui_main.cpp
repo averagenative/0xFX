@@ -4202,6 +4202,11 @@ int main(int argc, char *argv[]) {
                                     } else {
                                         FX_WARN("Custom IR load failed: %s",
                                                 s_custom_cabs[i].ir_path);
+                                        snprintf(s_save_toast, sizeof(s_save_toast),
+                                                 "Invalid IR: %s — must be mono/stereo "
+                                                 "44.1/48kHz WAV, under 2s",
+                                                 s_custom_cabs[i].name);
+                                        s_save_toast_timer = 4.0f;
                                     }
                                 }
                             }
@@ -4267,6 +4272,10 @@ int main(int argc, char *argv[]) {
                                         FX_WARN("Failed to load picked IR %s — removing from library",
                                                 picked);
                                         custom_cab_remove(idx);
+                                        snprintf(s_save_toast, sizeof(s_save_toast),
+                                                 "Invalid IR — must be mono/stereo "
+                                                 "44.1/48kHz WAV, under 2s");
+                                        s_save_toast_timer = 4.0f;
                                     }
                                 }
                             }
@@ -4288,16 +4297,43 @@ int main(int argc, char *argv[]) {
                         }
                     }
 
-                    /* Scroll wheel to cycle stock cabs only (no-op when custom active) */
-                    if (!is_custom_active && combo_hovered &&
+                    /* Scroll wheel cycles through ALL cabs in the dropdown —
+                     * stock first, then every custom entry in the library. */
+                    if (combo_hovered &&
                         !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
                         float wheel = ImGui::GetIO().MouseWheel;
                         if (wheel != 0.0f) {
-                            int next = cab_type_ref + (wheel < 0.0f ? 1 : -1);
-                            if (next < 0) next = FX_CAB_TYPE_COUNT - 1;
-                            if (next >= FX_CAB_TYPE_COUNT) next = 0;
-                            cab_type_ref = next;
-                            load_cab_for_type(engine, cab_chain, (fx_cab_type_t)cab_type_ref);
+                            int total = FX_CAB_TYPE_COUNT + s_custom_cab_count;
+                            int cur;
+                            if (is_custom_active) {
+                                int ci = custom_cab_find(active_ir);
+                                cur = (ci >= 0) ? (FX_CAB_TYPE_COUNT + ci)
+                                                : cab_type_ref;
+                            } else {
+                                cur = cab_type_ref;
+                            }
+                            int next = cur + (wheel < 0.0f ? 1 : -1);
+                            if (next < 0) next = total - 1;
+                            if (next >= total) next = 0;
+                            if (next < FX_CAB_TYPE_COUNT) {
+                                cab_type_ref = next;
+                                load_cab_for_type(engine, cab_chain,
+                                                  (fx_cab_type_t)cab_type_ref);
+                            } else {
+                                int ci = next - FX_CAB_TYPE_COUNT;
+                                if (fx_cab_load_ir(engine, cab_chain,
+                                                   s_custom_cabs[ci].ir_path)) {
+                                    fx_cab_set_custom_name(engine, cab_chain,
+                                                           s_custom_cabs[ci].name);
+                                    fx_cab_set_custom_image_path(engine, cab_chain,
+                                                                 s_custom_cabs[ci].image_path);
+                                } else {
+                                    snprintf(s_save_toast, sizeof(s_save_toast),
+                                             "Custom IR failed to load: %s",
+                                             s_custom_cabs[ci].name);
+                                    s_save_toast_timer = 4.0f;
+                                }
+                            }
                         }
                     }
 

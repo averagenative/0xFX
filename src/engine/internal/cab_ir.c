@@ -8,6 +8,7 @@
  * - All allocations happen at load time; process path is real-time safe
  */
 #include "engine_internal.h"
+#include "../../core/log.h"
 
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
@@ -53,6 +54,48 @@ void fx_cab_free(fx_cab_state_t *cab) {
 bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) {
     if (!cab || !wav_path || block_size <= 0) return false;
 
+    /* ── Pre-validate via header inspection ──────────────────────
+     * Real cabinet IRs are short (typically < 500ms). Someone dropping in
+     * a decoded song or field recording would otherwise burn RAM to decode
+     * 100+ MB of float samples just to throw away all but 4096 of them.
+     * Reject anything obviously-not-an-IR before the expensive decode. */
+    {
+        drwav probe;
+        if (!drwav_init_file(&probe, wav_path, NULL)) {
+            FX_WARN("IR load: failed to open %s as WAV", wav_path);
+            return false;
+        }
+        unsigned int sr   = probe.sampleRate;
+        unsigned int ch   = probe.channels;
+        drwav_uint64 f    = probe.totalPCMFrameCount;
+        drwav_uninit(&probe);
+
+        if (sr != 44100 && sr != 48000) {
+            FX_WARN("IR load: %s unsupported sample rate %u Hz "
+                    "(need 44100 or 48000)", wav_path, sr);
+            return false;
+        }
+        if (ch < 1 || ch > 8) {
+            FX_WARN("IR load: %s unsupported channel count %u", wav_path, ch);
+            return false;
+        }
+        /* Cap at 2 seconds. Engine truncates to 4096 samples (~85 ms @ 48k),
+         * so anything beyond a second is wasted anyway — and a multi-minute
+         * file is almost certainly music, not an IR. */
+        const drwav_uint64 max_frames = (drwav_uint64)sr * 2;
+        if (f == 0) {
+            FX_WARN("IR load: %s has zero frames", wav_path);
+            return false;
+        }
+        if (f > max_frames) {
+            FX_WARN("IR load: %s is %llu frames (%.1fs) — rejecting, "
+                    "cabinet IRs should be < 2s",
+                    wav_path, (unsigned long long)f,
+                    (double)f / (double)sr);
+            return false;
+        }
+    }
+
     /* Load WAV file — dr_wav handles 16/24/32-bit PCM and IEEE float,
      * converting everything to float32 for us */
     unsigned int channels = 0;
@@ -63,12 +106,6 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
 
     if (!ir_samples || total_frames == 0) {
         if (ir_samples) drwav_free(ir_samples, NULL);
-        return false;
-    }
-
-    /* Validate: mono only, 44.1 or 48kHz */
-    if (channels < 1 || (sample_rate != 44100 && sample_rate != 48000)) {
-        drwav_free(ir_samples, NULL);
         return false;
     }
 
