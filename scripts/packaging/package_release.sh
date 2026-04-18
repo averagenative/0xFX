@@ -19,6 +19,7 @@
 #
 
 set -e
+set -o pipefail  # propagate non-zero exit through pipes (e.g. `cmake ... | tail`)
 
 # ── Parse args ─────────────────────────────────────────────────────────
 VERSION=""
@@ -89,12 +90,20 @@ HAVE_MINGW_X64=false
 HAVE_LINUX_ARM64=false
 LLVM_MINGW_FOUND=""
 command -v x86_64-w64-mingw32-gcc &>/dev/null && HAVE_MINGW_X64=true
-command -v aarch64-linux-gnu-gcc  &>/dev/null && HAVE_LINUX_ARM64=true
+# aarch64-linux-gnu-gcc alone isn't enough on Fedora — the compiler ships without
+# a target sysroot (no crt1.o/crti.o/libc). Require both the compiler AND a
+# detectable sysroot before enabling Linux arm64 builds, otherwise cmake
+# configure explodes halfway through packaging.
+if command -v aarch64-linux-gnu-gcc &>/dev/null; then
+    if aarch64-linux-gnu-gcc -print-file-name=crt1.o 2>/dev/null | grep -q '/'; then
+        HAVE_LINUX_ARM64=true
+    fi
+fi
 LLVM_MINGW_FOUND="$(detect_llvm_mingw 2>/dev/null || true)"
 
 echo "Toolchains:"
 echo "  Linux x64   (native):              yes"
-$HAVE_LINUX_ARM64 && echo "  Linux arm64 (aarch64-linux-gnu):   yes" || echo "  Linux arm64:                       no (install gcc-aarch64-linux-gnu to enable)"
+$HAVE_LINUX_ARM64 && echo "  Linux arm64 (aarch64-linux-gnu):   yes" || echo "  Linux arm64:                       no (compiler AND arm64 sysroot required — see Skipping message below for details)"
 $HAVE_MINGW_X64   && echo "  Windows x64 (mingw-w64):           yes" || echo "  Windows x64:                       no (install mingw-w64 to enable)"
 [ -n "$LLVM_MINGW_FOUND" ] && echo "  Windows arm64 (llvm-mingw):        yes ($LLVM_MINGW_FOUND)" || echo "  Windows arm64:                     no (install llvm-mingw to enable)"
 echo ""
@@ -251,6 +260,7 @@ fi
 if $BUILD_ARM64; then
     if $HAVE_LINUX_ARM64; then
         echo "--- Building Linux arm64 (aarch64-linux-gnu cross-compile) ---"
+        rm -rf build_linux_arm64
         cmake -B build_linux_arm64 \
             -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
@@ -273,8 +283,12 @@ if $BUILD_ARM64; then
         fi
         echo ""
     else
-        echo "--- Skipping Linux arm64 (no aarch64-linux-gnu toolchain) ---"
+        echo "--- Skipping Linux arm64 (missing aarch64-linux-gnu compiler or sysroot) ---"
         echo "  Install on Fedora: sudo dnf install gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu"
+        echo "  The compiler alone is NOT enough — it ships without a target sysroot."
+        echo "  Fedora needs glibc-devel.aarch64 from the aarch64 repos (multilib), which"
+        echo "  requires enabling an aarch64 koji tag or using dnf --forcearch=aarch64. For"
+        echo "  1.x releases, easier to build linux-arm64 on an actual aarch64 machine."
         echo "  Install on Ubuntu: sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
         echo ""
     fi
@@ -286,6 +300,7 @@ fi
 if $BUILD_X64; then
     if $HAVE_MINGW_X64; then
         echo "--- Building Windows x64 (MinGW cross-compile) ---"
+        rm -rf build_win
         cmake -B build_win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
         cmake --build build_win -j$(nproc) 2>&1 | tail -5
 
@@ -318,6 +333,7 @@ fi
 if $BUILD_ARM64; then
     if [ -n "$LLVM_MINGW_FOUND" ]; then
         echo "--- Building Windows arm64 (llvm-mingw cross-compile) ---"
+        rm -rf build_win_arm64
         LLVM_MINGW_PREFIX="$LLVM_MINGW_FOUND" cmake -B build_win_arm64 \
             -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw-arm64.cmake \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
