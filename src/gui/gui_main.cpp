@@ -590,6 +590,204 @@ static bulk_import_result_t custom_cab_bulk_import(const char *folder) {
     return r;
 }
 
+/* ── Looper panel state ─────────────────────────────────────── */
+
+static bool s_looper_panel_open = false;
+
+static ImVec4 looper_state_color(fx_loop_state_t s, bool muted) {
+    if (muted)                return ImVec4(0.35f, 0.35f, 0.35f, 1.0f);
+    switch (s) {
+    case FX_LOOP_EMPTY:       return ImVec4(0.18f, 0.17f, 0.16f, 1.0f);
+    case FX_LOOP_ARMED:       return ImVec4(0.80f, 0.60f, 0.15f, 1.0f);
+    case FX_LOOP_RECORDING:   return ImVec4(0.85f, 0.15f, 0.15f, 1.0f);
+    case FX_LOOP_PLAYING:     return ImVec4(0.20f, 0.70f, 0.30f, 1.0f);
+    case FX_LOOP_OVERDUBBING: return ImVec4(0.85f, 0.55f, 0.20f, 1.0f);
+    }
+    return ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+}
+
+static const char *looper_state_label(fx_loop_state_t s) {
+    switch (s) {
+    case FX_LOOP_EMPTY:       return "empty";
+    case FX_LOOP_ARMED:       return "armed";
+    case FX_LOOP_RECORDING:   return "REC";
+    case FX_LOOP_PLAYING:     return "play";
+    case FX_LOOP_OVERDUBBING: return "DUB";
+    }
+    return "?";
+}
+
+static void looper_render_panel(fx_engine_t *engine) {
+    if (!s_looper_panel_open) return;
+    ImGui::SetNextWindowSize(ImVec2(520, 440), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Looper", &s_looper_panel_open,
+                      ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    /* ── Master row ─────────────────────────────────────────── */
+    bool playing = fx_looper_master_is_playing(engine);
+    ImGui::PushStyleColor(ImGuiCol_Button,
+        playing ? ImVec4(0.20f, 0.55f, 0.25f, 1.0f)
+                : ImVec4(0.55f, 0.22f, 0.20f, 1.0f));
+    if (ImGui::Button(playing ? "Pause (Space)" : "Play (Space)",
+                      ImVec2(120, 28))) {
+        fx_looper_master_toggle(engine);
+    }
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+    float level = fx_looper_get_master_level(engine);
+    ImGui::SetNextItemWidth(140);
+    if (ImGui::SliderFloat("##master", &level, 0.0f, 1.0f, "Vol %.2f")) {
+        fx_looper_set_master_level(engine, level);
+    }
+
+    ImGui::SameLine();
+    bool sync = fx_looper_get_sync(engine);
+    if (ImGui::Checkbox("Sync", &sync)) fx_looper_set_sync(engine, sync);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Quantize new slots to the first loop's length");
+
+    ImGui::SameLine();
+    bool pre = fx_looper_get_tap_pre_chain(engine);
+    if (ImGui::Checkbox("Pre-chain tap", &pre))
+        fx_looper_set_tap_pre_chain(engine, pre);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("ON: record raw input. OFF: record post-chain "
+                          "(processed tone — default).");
+
+    ImGui::Separator();
+
+    /* ── 3×3 slot grid ───────────────────────────────────────── */
+    const int focused = fx_looper_focused(engine);
+    const ImVec2 pad_size(140, 90);
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            int slot = row * 3 + col;
+            if (col > 0) ImGui::SameLine();
+
+            fx_loop_state_t st = fx_looper_get_slot_state(engine, slot);
+            bool muted = fx_looper_get_slot_muted(engine, slot);
+            int len    = fx_looper_get_slot_length_frames(engine, slot);
+            int pos    = fx_looper_get_slot_play_pos(engine, slot);
+            int layers = fx_looper_get_slot_layers(engine, slot);
+
+            ImVec4 c = looper_state_color(st, muted);
+            ImGui::PushStyleColor(ImGuiCol_Button, c);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                ImVec4(c.x * 1.2f, c.y * 1.2f, c.z * 1.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                ImVec4(c.x * 0.8f, c.y * 0.8f, c.z * 0.8f, 1.0f));
+
+            char label[64];
+            snprintf(label, sizeof(label), "%d  %s%s\n%.1fs  L%d",
+                     slot + 1,
+                     looper_state_label(st),
+                     muted ? " (m)" : "",
+                     len > 0 ? (float)len / 48000.0f : 0.0f,
+                     layers);
+            ImGui::PushID(slot);
+            if (ImGui::Button(label, pad_size)) {
+                fx_looper_slot_tap(engine, slot);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Slot %d\n"
+                    "  %d : tap cycle (rec/play/dub)\n"
+                    "  Shift+%d : mute/unmute\n"
+                    "  Alt+%d : clear\n"
+                    "  Ctrl+Z : undo last overdub",
+                    slot + 1, slot + 1, slot + 1, slot + 1);
+            }
+            ImGui::PopID();
+            ImGui::PopStyleColor(3);
+
+            /* Play position bar under the pad */
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+            ImVec2 p_min = ImGui::GetItemRectMin();
+            ImVec2 p_max = ImGui::GetItemRectMax();
+            if (len > 0 && (st == FX_LOOP_PLAYING || st == FX_LOOP_OVERDUBBING)) {
+                float t = (float)pos / (float)len;
+                float bar_x = p_min.x + 4 + t * (p_max.x - p_min.x - 8);
+                dl->AddLine(ImVec2(bar_x, p_max.y - 6),
+                            ImVec2(bar_x, p_max.y - 2),
+                            IM_COL32(255, 255, 255, 220), 2.0f);
+            }
+            if (slot == focused) {
+                dl->AddRect(p_min, p_max, IM_COL32(220, 190, 100, 255),
+                            2.0f, 0, 2.0f);
+            }
+        }
+    }
+
+    ImGui::Separator();
+
+    /* ── Bottom action row ──────────────────────────────────── */
+    if (ImGui::Button("Arm next (R)")) fx_looper_arm_next(engine);
+    ImGui::SameLine();
+    if (ImGui::Button("Clear focused")) fx_looper_slot_clear(engine, focused);
+    ImGui::SameLine();
+    if (ImGui::Button("Undo focused (Ctrl+Z)"))
+        fx_looper_slot_undo(engine, focused);
+    ImGui::SameLine();
+    if (ImGui::Button("Focus next (Tab)")) fx_looper_focus_next(engine);
+
+    ImGui::Spacing();
+
+    if (ImGui::Button("Export focused slot")) {
+        char path[512];
+        snprintf(path, sizeof(path), "loop_slot_%d.wav", focused + 1);
+        if (fx_looper_export_slot_wav(engine, focused, path))
+            FX_INFO("Looper: exported slot %d to %s", focused + 1, path);
+        else
+            FX_WARN("Looper: export failed (slot empty?)");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export mix")) {
+        const char *path = "loop_mix.wav";
+        if (fx_looper_export_mix_wav(engine, path))
+            FX_INFO("Looper: exported mix to %s", path);
+        else
+            FX_WARN("Looper: mix export failed (all slots empty?)");
+    }
+
+    ImGui::End();
+}
+
+/* Handle looper keyboard shortcuts. Only called when the panel is open
+ * and io.WantCaptureKeyboard is false. */
+static void looper_handle_keys(fx_engine_t *engine) {
+    ImGuiIO &io = ImGui::GetIO();
+    bool ctrl  = io.KeyCtrl;
+    bool shift = io.KeyShift;
+    bool alt   = io.KeyAlt;
+
+    /* 1..9 — mapped to slot 0..8. Shift=mute, Alt=clear. */
+    static const ImGuiKey num_keys[9] = {
+        ImGuiKey_1, ImGuiKey_2, ImGuiKey_3,
+        ImGuiKey_4, ImGuiKey_5, ImGuiKey_6,
+        ImGuiKey_7, ImGuiKey_8, ImGuiKey_9,
+    };
+    for (int i = 0; i < 9; i++) {
+        if (ImGui::IsKeyPressed(num_keys[i], false)) {
+            if (alt)        fx_looper_slot_clear(engine, i);
+            else if (shift) fx_looper_slot_mute(engine, i);
+            else            fx_looper_slot_tap(engine, i);
+        }
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !ctrl && !shift && !alt)
+        fx_looper_arm_next(engine);
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ctrl && !shift && !alt)
+        fx_looper_focus_next(engine);
+
+    if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+        fx_looper_slot_undo(engine, fx_looper_focused(engine));
+}
+
 /* ── Surprise Me — random preset generator ──────────────────── */
 
 static float randf(float lo, float hi) {
@@ -1800,6 +1998,27 @@ int main(int argc, char *argv[]) {
                     ImGui::SetTooltip("Browse factory and user presets");
             }
 
+            ImGui::SameLine(0, 6);
+
+            /* ── Looper panel toggle ──────────────────────────── */
+            {
+                ImVec4 btn_bg = s_looper_panel_open
+                    ? ImVec4(0.25f, 0.18f, 0.10f, 1.0f)
+                    : ImVec4(0.15f, 0.13f, 0.11f, 1.0f);
+                ImGui::PushStyleColor(ImGuiCol_Button, btn_bg);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.22f, 0.15f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.65f, 0.45f, 1.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                if (ImGui::Button("Looper", ImVec2(70.0f, 32.0f))) {
+                    s_looper_panel_open = !s_looper_panel_open;
+                }
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(4);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("9-slot looper (1-9 tap, R arm, Space play/pause, Tab focus)");
+            }
+
             /* ── Preset browser popup ────────────────────────── */
             if (ImGui::BeginPopup("preset_browser_popup")) {
                 if (s_browser_needs_scan) preset_browser_scan();
@@ -2654,9 +2873,11 @@ int main(int argc, char *argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             running = false;
         }
-        /* Space = toggle LIVE */
+        /* Space: looper play/pause when panel is open, otherwise LIVE toggle. */
         if (ImGui::IsKeyPressed(ImGuiKey_Space) && !ImGui::GetIO().WantCaptureKeyboard) {
-            if (s_audio_active) {
+            if (s_looper_panel_open) {
+                fx_looper_master_toggle(engine);
+            } else if (s_audio_active) {
                 fx_audio_shutdown(); fx_audio_init();
                 num_input_devices  = fx_audio_get_device_count();
                 num_output_devices = fx_audio_get_output_count();
@@ -2673,6 +2894,12 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
+        }
+
+        /* Looper panel — rendered above status bar, keys handled when open. */
+        looper_render_panel(engine);
+        if (s_looper_panel_open && !ImGui::GetIO().WantCaptureKeyboard) {
+            looper_handle_keys(engine);
         }
         /* Ctrl+S = quick-save preset */
         {
