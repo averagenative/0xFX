@@ -627,7 +627,7 @@ static void looper_render_panel(fx_engine_t *engine,
     ImGui::Begin("##looper_panel", NULL,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGuiWindowFlags_NoSavedSettings);
 
     /* Background gradient + bottom separator — matches toolbar. */
     {
@@ -648,6 +648,30 @@ static void looper_render_panel(fx_engine_t *engine,
     ImGui::SetCursorPos(ImVec2(10, 8));
     ImGui::Text("LOOPER");
     ImGui::PopStyleColor();
+
+    /* Keybinds help — ? button on the right edge of the strip. */
+    ImGui::SetCursorPos(ImVec2(w - 32, 6));
+    if (ImGui::SmallButton("?##looper_help"))
+        ImGui::OpenPopup("looper_keybinds");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Show looper keybinds");
+    if (ImGui::BeginPopup("looper_keybinds")) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+        ImGui::Text("Looper keybinds");
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+        ImGui::BulletText("1 – 9       tap slot (rec → play → overdub)");
+        ImGui::BulletText("Shift + 1-9 mute / unmute slot");
+        ImGui::BulletText("Alt + 1-9   clear slot");
+        ImGui::BulletText("Space       tap the FOCUSED slot");
+        ImGui::BulletText("R           arm next empty slot");
+        ImGui::BulletText("Tab         cycle focused slot");
+        ImGui::BulletText("Ctrl + Z    undo last overdub on focused");
+        ImGui::Separator();
+        ImGui::TextDisabled("Clicking a pad does the same as pressing 1-9.");
+        ImGui::TextDisabled("Click again while RECORDING to stop and play.");
+        ImGui::EndPopup();
+    }
 
     const int focused = fx_looper_focused(engine);
     bool playing = fx_looper_master_is_playing(engine);
@@ -3402,8 +3426,18 @@ int main(int argc, char *argv[]) {
                             fx_amp_get_model(engine, (fx_chain_id)n.chain_id));
                         tex = load_amp_body_texture(aname);
                     } else if (n.kind == NODE_CAB) {
-                        int ctype = (n.chain_id == 0) ? s_cab_type : s_cab_type_b;
-                        tex = load_cab_texture(ctype);
+                        fx_chain_id cab_cid = (n.chain_id == 0)
+                            ? FX_CHAIN_DEFAULT : s_chain_b;
+                        const char *cab_custom = (cab_cid >= 0)
+                            ? fx_cab_get_custom_ir_path(engine, cab_cid) : NULL;
+                        if (cab_custom && cab_custom[0]) {
+                            /* Custom IR — leave tex=0 so the procedural
+                             * painter below draws a cab scaled to the node. */
+                            tex = 0;
+                        } else {
+                            int ctype = (n.chain_id == 0) ? s_cab_type : s_cab_type_b;
+                            tex = load_cab_texture(ctype);
+                        }
                     } else if (n.kind == NODE_STUDIO) {
                         static const char *rack_fnames[] = {
                             "iron_squeeze", "glass_eq", "reel_warmth", "brick_wall",
@@ -3440,9 +3474,24 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 if (!drew_texture) {
-                    ImU32 bg_col = node_color(n.kind, is_bypassed);
-                    dl->AddRectFilled(ImVec2(nx, ny), ImVec2(nx + NODE_W, ny + NODE_H),
-                                      bg_col, 6.0f);
+                    if (n.kind == NODE_CAB) {
+                        /* Procedural cab for custom IRs — seed by IR path so
+                         * the same file always renders the same visual. */
+                        fx_chain_id cab_cid2 = (n.chain_id == 0)
+                            ? FX_CHAIN_DEFAULT : s_chain_b;
+                        const char *ir_path = (cab_cid2 >= 0)
+                            ? fx_cab_get_custom_ir_path(engine, cab_cid2) : NULL;
+                        unsigned seed = 1;
+                        if (ir_path) for (const char *s = ir_path; *s; s++)
+                            seed = seed * 131u + (unsigned)*s;
+                        draw_procedural_cab(dl, ImVec2(nx, ny),
+                                            ImVec2(nx + NODE_W, ny + NODE_H), seed);
+                    } else {
+                        ImU32 bg_col = node_color(n.kind, is_bypassed);
+                        dl->AddRectFilled(ImVec2(nx, ny),
+                                          ImVec2(nx + NODE_W, ny + NODE_H),
+                                          bg_col, 6.0f);
+                    }
                 }
 
                 /* Selection highlight */

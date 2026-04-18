@@ -1979,23 +1979,14 @@ static void test_looper_focus(void) {
     printf("test_looper_focus...\n");
     fx_engine_t *e = fx_engine_create(48000.0f);
 
-    /* With no recorded slots, focus_next leaves focus at 0 */
+    /* focus_next cycles through every slot, wrapping at the end. */
+    ASSERT(fx_looper_focused(e) == 0, "focus starts at 0");
+    for (int i = 1; i < FX_LOOPER_SLOT_COUNT; i++) {
+        fx_looper_focus_next(e);
+        ASSERT(fx_looper_focused(e) == i, "focus advances one slot");
+    }
     fx_looper_focus_next(e);
-    ASSERT(fx_looper_focused(e) == 0, "focus stays at 0 with no content");
-
-    /* Record slots 2 and 5 */
-    fx_looper_slot_tap(e, 2);
-    fx_looper_slot_tap(e, 5);
-    ASSERT(fx_looper_get_slot_state(e, 2) == FX_LOOP_RECORDING, "slot 2 recording");
-    ASSERT(fx_looper_get_slot_state(e, 5) == FX_LOOP_RECORDING, "slot 5 recording");
-
-    /* focus_next should hit slot 2 first, then 5, then wrap */
-    fx_looper_focus_next(e);
-    ASSERT(fx_looper_focused(e) == 2, "focus advances to slot 2");
-    fx_looper_focus_next(e);
-    ASSERT(fx_looper_focused(e) == 5, "focus advances to slot 5");
-    fx_looper_focus_next(e);
-    ASSERT(fx_looper_focused(e) == 2, "focus wraps back to slot 2");
+    ASSERT(fx_looper_focused(e) == 0, "focus wraps back to 0");
 
     fx_engine_destroy(e);
     printf("  OK\n");

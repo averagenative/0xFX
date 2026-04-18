@@ -278,13 +278,8 @@ void looper_master_toggle(fx_looper_t *l) {
 
 void looper_focus_next(fx_looper_t *l) {
     if (!l) return;
-    /* Advance to the next non-empty slot; wrap around. */
-    for (int tries = 0; tries < FX_LOOPER_SLOTS; tries++) {
-        l->focused_slot = (l->focused_slot + 1) % FX_LOOPER_SLOTS;
-        if (l->slots[l->focused_slot].state != FX_LOOP_EMPTY) return;
-    }
-    /* All empty — leave focus at 0 */
-    l->focused_slot = 0;
+    /* Cycle through every slot (Tab behaviour users expect). */
+    l->focused_slot = (l->focused_slot + 1) % FX_LOOPER_SLOTS;
 }
 
 /* ── WAV export ───────────────────────────────────────────────── */
