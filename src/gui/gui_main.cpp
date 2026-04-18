@@ -43,8 +43,11 @@ extern "C" {
 
 #ifdef _WIN32
 #include <io.h>
+#define fx_strcasecmp _stricmp
 #else
 #include <dirent.h>
+#include <strings.h>
+#define fx_strcasecmp strcasecmp
 #endif
 
 extern "C" {
@@ -358,7 +361,7 @@ static void preset_browser_scan(void) {
 
 /* ── Custom cab library ──────────────────────────────────────── */
 
-#define FX_MAX_CUSTOM_CABS 32
+#define FX_MAX_CUSTOM_CABS 512
 
 struct custom_cab_entry_t {
     char ir_path[1024];
@@ -489,6 +492,102 @@ static bool open_file_picker(const nfdu8filteritem_t *filters, int filters_n,
     out_path[out_sz - 1] = '\0';
     NFD_FreePathU8(picked);
     return true;
+}
+
+static bool open_folder_picker(char *out_path, size_t out_sz) {
+    nfdu8char_t *picked = NULL;
+    nfdresult_t r = NFD_PickFolderU8(&picked, NULL);
+    if (r != NFD_OKAY || !picked) return false;
+    strncpy(out_path, picked, out_sz - 1);
+    out_path[out_sz - 1] = '\0';
+    NFD_FreePathU8(picked);
+    return true;
+}
+
+/* Recursive WAV scanner. Appends matching files to `out`, stopping at
+ * `max_out` entries. Returns how many were written. */
+static int scan_wavs_recursive(const char *dir, char (*out)[1024],
+                               int *out_count, int max_out, int depth) {
+    if (depth > 16) return 0;  /* guard against symlink loops */
+#ifdef _WIN32
+    char pattern[1024];
+    snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    do {
+        const char *name = fd.cFileName;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
+        char full[1024];
+        snprintf(full, sizeof(full), "%s\\%s", dir, name);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            scan_wavs_recursive(full, out, out_count, max_out, depth + 1);
+        } else {
+            size_t len = strlen(name);
+            if (len > 4 &&
+                (fx_strcasecmp(name + len - 4, ".wav") == 0)) {
+                if (*out_count < max_out) {
+                    strncpy(out[*out_count], full, 1023);
+                    out[*out_count][1023] = '\0';
+                    (*out_count)++;
+                }
+            }
+        }
+    } while (FindNextFileA(h, &fd) && *out_count < max_out);
+    FindClose(h);
+#else
+    DIR *d = opendir(dir);
+    if (!d) return 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL && *out_count < max_out) {
+        const char *name = ent->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
+        char full[1024];
+        snprintf(full, sizeof(full), "%s/%s", dir, name);
+        struct stat st;
+        if (stat(full, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            scan_wavs_recursive(full, out, out_count, max_out, depth + 1);
+        } else if (S_ISREG(st.st_mode)) {
+            size_t len = strlen(name);
+            if (len > 4 && fx_strcasecmp(name + len - 4, ".wav") == 0) {
+                if (*out_count < max_out) {
+                    strncpy(out[*out_count], full, 1023);
+                    out[*out_count][1023] = '\0';
+                    (*out_count)++;
+                }
+            }
+        }
+    }
+    closedir(d);
+#endif
+    return *out_count;
+}
+
+/* Bulk import: scan `folder` recursively for .wav files, add each to the
+ * library (dedupe by path). Returns {added, skipped_existing, capacity_hit}. */
+struct bulk_import_result_t {
+    int added;
+    int skipped_existing;
+    int scanned;
+    bool capacity_hit;
+};
+
+static bulk_import_result_t custom_cab_bulk_import(const char *folder) {
+    bulk_import_result_t r = {};
+    static char paths[FX_MAX_CUSTOM_CABS][1024];
+    int found = 0;
+    scan_wavs_recursive(folder, paths, &found, FX_MAX_CUSTOM_CABS, 0);
+    r.scanned = found;
+    for (int i = 0; i < found; i++) {
+        if (custom_cab_find(paths[i]) >= 0) { r.skipped_existing++; continue; }
+        if (s_custom_cab_count >= FX_MAX_CUSTOM_CABS) {
+            r.capacity_hit = true;
+            break;
+        }
+        if (custom_cab_add(paths[i]) >= 0) r.added++;
+    }
+    return r;
 }
 
 /* ── Surprise Me — random preset generator ──────────────────── */
@@ -4135,36 +4234,57 @@ int main(int argc, char *argv[]) {
                      * IsItemHovered() below would refer to the button instead. */
                     bool combo_hovered = ImGui::IsItemHovered();
 
-                    /* Visible "Load IR..." button next to the dropdown — primary entry
-                     * point for users to upload a custom cabinet IR. */
+                    /* "Import IR..." button opens a popup with Single / Folder choices. */
                     ImGui::SameLine(0, 6);
                     {
-                        char load_btn_id[48];
+                        char load_btn_id[48], popup_id[48];
                         snprintf(load_btn_id, sizeof(load_btn_id),
-                                 "Load IR...##cab_load_%d", sel.chain_id);
+                                 "Import IR...##cab_import_%d", sel.chain_id);
+                        snprintf(popup_id, sizeof(popup_id),
+                                 "cab_import_popup_%d", sel.chain_id);
                         if (ImGui::Button(load_btn_id, ImVec2(cab_load_btn_w, 0))) {
-                            char picked[1024];
-                            nfdu8filteritem_t filt[1] = { { "Wav audio", "wav" } };
-                            if (open_file_picker(filt, 1, picked, sizeof(picked))) {
-                                int idx = custom_cab_add(picked);
-                                if (idx >= 0 &&
-                                    fx_cab_load_ir(engine, cab_chain,
-                                                   s_custom_cabs[idx].ir_path)) {
-                                    fx_cab_set_custom_name(engine, cab_chain,
-                                                           s_custom_cabs[idx].name);
-                                    fx_cab_set_custom_image_path(engine, cab_chain,
-                                                                 s_custom_cabs[idx].image_path);
-                                    custom_cabs_save();
-                                    FX_INFO("Custom IR added: %s", picked);
-                                } else if (idx >= 0) {
-                                    FX_WARN("Failed to load picked IR %s — removing from library",
-                                            picked);
-                                    custom_cab_remove(idx);
-                                }
-                            }
+                            ImGui::OpenPopup(popup_id);
                         }
                         if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("Upload a custom .wav cabinet IR");
+                            ImGui::SetTooltip("Upload a single IR or bulk-import a folder");
+                        }
+                        if (ImGui::BeginPopup(popup_id)) {
+                            if (ImGui::MenuItem("Single WAV file...")) {
+                                char picked[1024];
+                                nfdu8filteritem_t filt[1] = { { "Wav audio", "wav" } };
+                                if (open_file_picker(filt, 1, picked, sizeof(picked))) {
+                                    int idx = custom_cab_add(picked);
+                                    if (idx >= 0 &&
+                                        fx_cab_load_ir(engine, cab_chain,
+                                                       s_custom_cabs[idx].ir_path)) {
+                                        fx_cab_set_custom_name(engine, cab_chain,
+                                                               s_custom_cabs[idx].name);
+                                        fx_cab_set_custom_image_path(engine, cab_chain,
+                                                                     s_custom_cabs[idx].image_path);
+                                        custom_cabs_save();
+                                        FX_INFO("Custom IR added: %s", picked);
+                                    } else if (idx >= 0) {
+                                        FX_WARN("Failed to load picked IR %s — removing from library",
+                                                picked);
+                                        custom_cab_remove(idx);
+                                    }
+                                }
+                            }
+                            if (ImGui::MenuItem("Folder (bulk, recursive)...")) {
+                                char folder[1024];
+                                if (open_folder_picker(folder, sizeof(folder))) {
+                                    bulk_import_result_t r =
+                                        custom_cab_bulk_import(folder);
+                                    if (r.added > 0) custom_cabs_save();
+                                    FX_INFO("Bulk import from '%s': %d scanned, "
+                                            "%d added, %d already in library%s",
+                                            folder, r.scanned, r.added,
+                                            r.skipped_existing,
+                                            r.capacity_hit
+                                              ? " (library cap hit)" : "");
+                                }
+                            }
+                            ImGui::EndPopup();
                         }
                     }
 
