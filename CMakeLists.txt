@@ -75,6 +75,7 @@ add_library(fx_engine STATIC
     src/engine/internal/cab_ir.c
     src/engine/internal/mic_sim.c
     src/engine/internal/preset.c
+    src/engine/internal/looper.c
     deps/cJSON.c
     deps/kissfft/kiss_fft.c
     deps/kissfft/kiss_fftr.c

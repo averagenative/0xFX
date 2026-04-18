@@ -13,6 +13,7 @@
 #include <math.h>
 
 #include "kissfft/kiss_fftr.h"
+#include "looper.h"
 
 #define FX_MAX_PEDALS_PER_POS  16
 #define FX_MAX_CHAINS          4
@@ -191,6 +192,11 @@ struct fx_engine {
     /* Tuner */
     fx_tuner_state_t    tuner;
 
+    /* Looper module — lives outside the live chain. Records the
+     * post-chain output (or pre-chain input if toggled) and mixes its
+     * playback back into the final bus. */
+    fx_looper_t         looper;
+
     /* Level tracking — updated each process() call */
     float input_peak;   /* peak of last input block */
     float output_peak;  /* peak of last output block */
@@ -198,6 +204,8 @@ struct fx_engine {
     /* Scratch buffers for processing (pre-allocated) */
     float scratch_a[FX_MAX_BLOCK_SIZE];
     float scratch_b[FX_MAX_BLOCK_SIZE];
+    float scratch_loop[FX_MAX_BLOCK_SIZE];  /* looper playback buffer */
+    float scratch_tap[FX_MAX_BLOCK_SIZE];   /* looper record-tap copy */
 };
 
 /* ── Internal DSP functions ───────────────────────────────────── */

@@ -1669,6 +1669,338 @@ static void test_cab_distortion_freq_response(void) {
     free(output);
 }
 
+/* ── Looper tests ──────────────────────────────────────────────── */
+
+/* Helper: process N blocks of `block` frames with constant input value. */
+static void looper_feed_blocks(fx_engine_t *e, float in_value,
+                               int blocks, int block_size,
+                               float *out_accum_peak) {
+    float *in  = (float*)calloc((size_t)block_size, sizeof(float));
+    float *out = (float*)calloc((size_t)block_size, sizeof(float));
+    float peak = 0.0f;
+    for (int b = 0; b < blocks; b++) {
+        for (int i = 0; i < block_size; i++) in[i] = in_value;
+        fx_engine_process(e, in, out, block_size);
+        for (int i = 0; i < block_size; i++) {
+            float a = fabsf(out[i]);
+            if (a > peak) peak = a;
+        }
+    }
+    if (out_accum_peak) *out_accum_peak = peak;
+    free(in);
+    free(out);
+}
+
+static void test_looper_defaults(void) {
+    printf("test_looper_defaults...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+
+    ASSERT(fx_looper_master_is_playing(e), "master should start playing");
+    ASSERT(fx_looper_get_master_level(e) == 1.0f, "master_level default = 1.0");
+    ASSERT(!fx_looper_get_sync(e), "sync off by default");
+    ASSERT(!fx_looper_get_tap_pre_chain(e), "post-chain tap by default");
+    ASSERT(fx_looper_focused(e) == 0, "focus starts at slot 0");
+
+    for (int i = 0; i < FX_LOOPER_SLOT_COUNT; i++) {
+        ASSERT(fx_looper_get_slot_state(e, i) == FX_LOOP_EMPTY,
+               "every slot starts EMPTY");
+        ASSERT(fx_looper_get_slot_length_frames(e, i) == 0,
+               "every slot has length 0");
+        ASSERT(!fx_looper_get_slot_muted(e, i), "every slot unmuted");
+    }
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_state_machine(void) {
+    printf("test_looper_state_machine...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+
+    /* Tap EMPTY slot (free mode) → RECORDING */
+    fx_looper_slot_tap(e, 0);
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_RECORDING,
+           "EMPTY+tap → RECORDING");
+
+    /* Process some frames to accumulate length */
+    float peak = 0;
+    looper_feed_blocks(e, 0.0f, 4, 256, &peak);
+    ASSERT(fx_looper_get_slot_length_frames(e, 0) == 4 * 256,
+           "RECORDING accumulates block frames");
+
+    /* Tap again → PLAYING, play_pos resets to 0 */
+    fx_looper_slot_tap(e, 0);
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_PLAYING,
+           "RECORDING+tap → PLAYING");
+
+    /* Tap PLAYING → OVERDUBBING */
+    fx_looper_slot_tap(e, 0);
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_OVERDUBBING,
+           "PLAYING+tap → OVERDUBBING");
+    ASSERT(fx_looper_get_slot_layers(e, 0) == 1, "overdub bumps layers to 1");
+
+    /* Tap OVERDUBBING → PLAYING */
+    fx_looper_slot_tap(e, 0);
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_PLAYING,
+           "OVERDUBBING+tap → PLAYING");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_record_and_play(void) {
+    printf("test_looper_record_and_play...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+
+    /* Tap pre-chain so we record the raw input (easy to predict). */
+    fx_looper_set_tap_pre_chain(e, true);
+
+    /* Record slot 0 with a constant signal */
+    fx_looper_slot_tap(e, 0);
+    looper_feed_blocks(e, 0.3f, 8, 512, NULL);
+    fx_looper_slot_tap(e, 0);  /* close → PLAYING */
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_PLAYING,
+           "slot is PLAYING after close");
+    ASSERT(fx_looper_get_slot_length_frames(e, 0) == 8 * 512,
+           "slot length = recorded frames");
+    ASSERT(fx_looper_get_slot_play_pos(e, 0) == 0,
+           "play_pos resets to 0 when loop closes");
+
+    /* Verify the recorded buffer contains the input via export round-trip */
+    const char *path = "/tmp/fx_looper_record_test.wav";
+    unlink(path);
+    ASSERT(fx_looper_export_slot_wav(e, 0, path), "export recorded slot");
+    drwav w;
+    if (drwav_init_file(&w, path, NULL)) {
+        ASSERT((int)w.totalPCMFrameCount == 8 * 512,
+               "WAV frame count matches recorded length");
+        float *samples = (float*)malloc(w.totalPCMFrameCount * sizeof(float));
+        drwav_read_pcm_frames_f32(&w, w.totalPCMFrameCount, samples);
+        float peak = 0, sum = 0;
+        for (drwav_uint64 i = 0; i < w.totalPCMFrameCount; i++) {
+            float a = fabsf(samples[i]);
+            if (a > peak) peak = a;
+            sum += samples[i];
+        }
+        float avg = sum / (float)w.totalPCMFrameCount;
+        ASSERT(peak > 0.25f && peak < 0.35f,
+               "recorded peak ≈ 0.3 (pre-chain input value)");
+        ASSERT(avg > 0.25f,
+               "recorded signal has DC component matching constant input");
+        free(samples);
+        drwav_uninit(&w);
+    } else {
+        ASSERT(0, "could not reopen exported WAV");
+    }
+    unlink(path);
+
+    /* Advance playback — play_pos should move forward */
+    looper_feed_blocks(e, 0.0f, 2, 512, NULL);
+    int pos_after = fx_looper_get_slot_play_pos(e, 0);
+    ASSERT(pos_after == 2 * 512,
+           "play_pos advances by processed frames");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_clear(void) {
+    printf("test_looper_clear...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+    fx_looper_set_tap_pre_chain(e, true);
+
+    fx_looper_slot_tap(e, 0);
+    looper_feed_blocks(e, 0.2f, 2, 256, NULL);
+    fx_looper_slot_tap(e, 0);
+    ASSERT(fx_looper_get_slot_length_frames(e, 0) > 0, "slot has content");
+
+    fx_looper_slot_clear(e, 0);
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_EMPTY,
+           "cleared slot is EMPTY");
+    ASSERT(fx_looper_get_slot_length_frames(e, 0) == 0,
+           "cleared slot length = 0");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_mute(void) {
+    printf("test_looper_mute...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+    fx_looper_set_tap_pre_chain(e, true);
+
+    fx_looper_slot_tap(e, 0);
+    looper_feed_blocks(e, 0.4f, 4, 256, NULL);
+    fx_looper_slot_tap(e, 0);
+
+    /* Muting toggles the flag; play_pos still advances (for sync tracking). */
+    fx_looper_slot_mute(e, 0);
+    ASSERT(fx_looper_get_slot_muted(e, 0), "slot muted");
+    int pos_before = fx_looper_get_slot_play_pos(e, 0);
+    looper_feed_blocks(e, 0.0f, 2, 256, NULL);
+    int pos_after = fx_looper_get_slot_play_pos(e, 0);
+    ASSERT(pos_after != pos_before,
+           "muted slot still advances play_pos for sync tracking");
+
+    fx_looper_slot_mute(e, 0);  /* unmute */
+    ASSERT(!fx_looper_get_slot_muted(e, 0), "slot unmuted");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_arm_next(void) {
+    printf("test_looper_arm_next...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+
+    int a = fx_looper_arm_next(e);
+    ASSERT(a == 0, "first arm returns slot 0");
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_RECORDING,
+           "armed slot in RECORDING (free mode)");
+
+    int b = fx_looper_arm_next(e);
+    ASSERT(b == 1, "second arm returns slot 1");
+
+    /* Clear slot 0 and re-arm → should pick slot 0 again (lowest empty) */
+    fx_looper_slot_clear(e, 0);
+    int c = fx_looper_arm_next(e);
+    ASSERT(c == 0, "after clear, arm returns lowest empty slot");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_undo(void) {
+    printf("test_looper_undo...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+    fx_looper_set_tap_pre_chain(e, true);
+
+    /* Record base layer */
+    fx_looper_slot_tap(e, 0);
+    looper_feed_blocks(e, 0.2f, 4, 256, NULL);
+    fx_looper_slot_tap(e, 0);
+    int len_before = fx_looper_get_slot_length_frames(e, 0);
+    ASSERT(fx_looper_get_slot_layers(e, 0) == 0, "layers=0 after record");
+
+    /* Start overdub, process, close */
+    fx_looper_slot_tap(e, 0);  /* PLAYING → OVERDUBBING */
+    ASSERT(fx_looper_get_slot_layers(e, 0) == 1, "layers=1 after overdub");
+    looper_feed_blocks(e, 0.4f, 2, 256, NULL);
+    fx_looper_slot_tap(e, 0);  /* → PLAYING */
+
+    /* Undo should restore layers=0 and length unchanged */
+    fx_looper_slot_undo(e, 0);
+    ASSERT(fx_looper_get_slot_layers(e, 0) == 0, "undo restores layers=0");
+    ASSERT(fx_looper_get_slot_length_frames(e, 0) == len_before,
+           "undo preserves length");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_sync_snap(void) {
+    printf("test_looper_sync_snap...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+    fx_looper_set_sync(e, true);
+    fx_looper_set_tap_pre_chain(e, true);
+
+    /* In sync mode with no sync_length yet, first tap on EMPTY → RECORDING */
+    fx_looper_slot_tap(e, 0);
+    ASSERT(fx_looper_get_slot_state(e, 0) == FX_LOOP_RECORDING,
+           "first slot records immediately in sync mode");
+    looper_feed_blocks(e, 0.2f, 4, 512, NULL);  /* 2048 frames */
+    fx_looper_slot_tap(e, 0);  /* closes → PLAYING, sets sync_length=2048 */
+    int sync_len = fx_looper_get_slot_length_frames(e, 0);
+    ASSERT(sync_len == 2048, "first closed slot defines sync length");
+
+    /* Second slot: with sync_length set, EMPTY+tap → ARMED */
+    fx_looper_slot_tap(e, 1);
+    ASSERT(fx_looper_get_slot_state(e, 1) == FX_LOOP_ARMED,
+           "subsequent EMPTY+tap in sync → ARMED");
+    /* For this simple test, ARMED is enough to verify the state change.
+     * (A real-world sync handoff would happen on the next bar boundary.) */
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_master_level(void) {
+    printf("test_looper_master_level...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+
+    fx_looper_set_master_level(e, 0.0f);
+    ASSERT(fx_looper_get_master_level(e) == 0.0f, "level set to 0");
+    fx_looper_set_master_level(e, 0.5f);
+    ASSERT(fx_looper_get_master_level(e) == 0.5f, "level set to 0.5");
+    fx_looper_set_master_level(e, 1.0f);
+    ASSERT(fx_looper_get_master_level(e) == 1.0f, "level set to 1.0");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_export(void) {
+    printf("test_looper_export...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+    fx_looper_set_tap_pre_chain(e, true);
+
+    fx_looper_slot_tap(e, 0);
+    looper_feed_blocks(e, 0.3f, 4, 256, NULL);
+    fx_looper_slot_tap(e, 0);
+
+    const char *path = "/tmp/fx_looper_test_slot.wav";
+    unlink(path);
+    bool ok = fx_looper_export_slot_wav(e, 0, path);
+    ASSERT(ok, "export slot wav succeeds");
+
+    /* Verify file exists and is a valid WAV */
+    drwav w;
+    if (drwav_init_file(&w, path, NULL)) {
+        ASSERT(w.sampleRate == 48000, "exported WAV is 48kHz");
+        ASSERT(w.channels == 1, "exported WAV is mono");
+        ASSERT((int)w.totalPCMFrameCount == 4 * 256,
+               "exported frame count matches recorded length");
+        drwav_uninit(&w);
+    } else {
+        ASSERT(0, "drwav failed to open exported WAV");
+    }
+    unlink(path);
+
+    /* Exporting an empty slot should fail gracefully */
+    const char *path2 = "/tmp/fx_looper_test_empty.wav";
+    bool empty_ok = fx_looper_export_slot_wav(e, 8, path2);
+    ASSERT(!empty_ok, "export of empty slot returns false");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+static void test_looper_focus(void) {
+    printf("test_looper_focus...\n");
+    fx_engine_t *e = fx_engine_create(48000.0f);
+
+    /* With no recorded slots, focus_next leaves focus at 0 */
+    fx_looper_focus_next(e);
+    ASSERT(fx_looper_focused(e) == 0, "focus stays at 0 with no content");
+
+    /* Record slots 2 and 5 */
+    fx_looper_slot_tap(e, 2);
+    fx_looper_slot_tap(e, 5);
+    ASSERT(fx_looper_get_slot_state(e, 2) == FX_LOOP_RECORDING, "slot 2 recording");
+    ASSERT(fx_looper_get_slot_state(e, 5) == FX_LOOP_RECORDING, "slot 5 recording");
+
+    /* focus_next should hit slot 2 first, then 5, then wrap */
+    fx_looper_focus_next(e);
+    ASSERT(fx_looper_focused(e) == 2, "focus advances to slot 2");
+    fx_looper_focus_next(e);
+    ASSERT(fx_looper_focused(e) == 5, "focus advances to slot 5");
+    fx_looper_focus_next(e);
+    ASSERT(fx_looper_focused(e) == 2, "focus wraps back to slot 2");
+
+    fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
 int main(void) {
     printf("═══ 0xFX API Test ═══\n\n");
 
@@ -1696,6 +2028,18 @@ int main(void) {
     test_default_presets();
     test_all_pedal_types();
     test_cab_distortion_freq_response();
+
+    test_looper_defaults();
+    test_looper_state_machine();
+    test_looper_record_and_play();
+    test_looper_clear();
+    test_looper_mute();
+    test_looper_arm_next();
+    test_looper_undo();
+    test_looper_sync_snap();
+    test_looper_master_level();
+    test_looper_export();
+    test_looper_focus();
 
     printf("\n═══ Results: %d passed, %d failed ═══\n",
            tests_passed, tests_failed);

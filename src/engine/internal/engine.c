@@ -37,6 +37,9 @@ fx_engine_t *fx_engine_create(float sample_rate) {
     /* Initialize tuner */
     fx_tuner_init(&e->tuner);
 
+    /* Initialize looper */
+    looper_init(&e->looper, sample_rate);
+
     return e;
 }
 
@@ -57,6 +60,9 @@ void fx_engine_destroy(fx_engine_t *engine) {
     for (int i = 0; i < engine->num_chains; i++) {
         fx_cab_free(&engine->chains[i].cab);
     }
+
+    /* Free looper slot buffers */
+    looper_free(&engine->looper);
 
     free(engine);
 }
@@ -97,6 +103,13 @@ void fx_engine_process(fx_engine_t *engine,
     fx_tuner_feed(&engine->tuner, input, num_frames, engine->sample_rate);
 
     float sr = engine->sample_rate;
+
+    /* If looper is set to pre-chain tap mode, snapshot the raw input
+     * before the live chain mangles it. */
+    if (engine->looper.tap_pre_chain) {
+        memcpy(engine->scratch_tap, input,
+               (size_t)num_frames * sizeof(float));
+    }
 
     /* ── Input stage: noise gate ─────────────────────────────── */
     fx_gate_process(&engine->gate, buf, num_frames, sr);
@@ -162,16 +175,37 @@ void fx_engine_process(fx_engine_t *engine,
         fx_studio_process_dsp(&engine->studio[i], buf, num_frames, sr);
     }
 
-    /* ── Master volume + output cleanup ──────────────────────── */
+    /* ── Master volume on the live chain ─────────────────────── */
     float master_vol = engine->master_volume;
     for (int i = 0; i < num_frames; i++) {
         float s = buf[i];
         /* Kill NaN and infinity — prevents engine crash from feedback runaway */
         if (s != s || s > 1e6f || s < -1e6f) { buf[i] = 0.0f; continue; }
         if (s > -1e-20f && s < 1e-20f) s = 0.0f;
-        /* Apply master volume before clip */
         s *= master_vol;
-        /* Hard clip safety */
+        buf[i] = s;
+    }
+
+    /* ── Looper record tap + playback mix ─────────────────────
+     * Record tap: in POST mode we feed the fully-processed live signal
+     * (post-chain, post-master-volume, pre-clip). In PRE mode we feed
+     * the raw input snapshotted at the top of this block. This means
+     * loop playback captures whatever the user hears going out live. */
+    {
+        const float *tap_src = engine->looper.tap_pre_chain
+                                   ? engine->scratch_tap
+                                   : buf;
+        looper_tap(&engine->looper, tap_src, num_frames);
+        looper_process(&engine->looper, engine->scratch_loop, num_frames);
+        /* Sum looper output into the live bus. */
+        for (int i = 0; i < num_frames; i++) {
+            buf[i] += engine->scratch_loop[i];
+        }
+    }
+
+    /* ── Final clip (covers live + looper mix) ───────────────── */
+    for (int i = 0; i < num_frames; i++) {
+        float s = buf[i];
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         buf[i] = s;
@@ -623,6 +657,116 @@ void fx_gate_set_hold(fx_engine_t *engine, float ms) {
 
 float fx_gate_get_hold(fx_engine_t *engine) {
     return engine ? engine->gate.hold * 1000.0f : 10.0f;
+}
+
+/* ── Looper public API — thin wrappers over looper.c ──────────── */
+
+void fx_looper_slot_tap(fx_engine_t *engine, int slot) {
+    if (!engine) return;
+    looper_slot_tap(&engine->looper, slot);
+}
+
+void fx_looper_slot_mute(fx_engine_t *engine, int slot) {
+    if (!engine) return;
+    looper_slot_mute(&engine->looper, slot);
+}
+
+void fx_looper_slot_clear(fx_engine_t *engine, int slot) {
+    if (!engine) return;
+    looper_slot_clear(&engine->looper, slot);
+}
+
+void fx_looper_slot_undo(fx_engine_t *engine, int slot) {
+    if (!engine) return;
+    looper_slot_undo(&engine->looper, slot);
+}
+
+int fx_looper_arm_next(fx_engine_t *engine) {
+    if (!engine) return -1;
+    return looper_arm_next(&engine->looper);
+}
+
+void fx_looper_master_toggle(fx_engine_t *engine) {
+    if (!engine) return;
+    looper_master_toggle(&engine->looper);
+}
+
+bool fx_looper_master_is_playing(fx_engine_t *engine) {
+    return engine ? engine->looper.master_playing : false;
+}
+
+void fx_looper_focus_next(fx_engine_t *engine) {
+    if (!engine) return;
+    looper_focus_next(&engine->looper);
+}
+
+int fx_looper_focused(fx_engine_t *engine) {
+    return engine ? engine->looper.focused_slot : 0;
+}
+
+void fx_looper_set_sync(fx_engine_t *engine, bool on) {
+    if (!engine) return;
+    engine->looper.sync_mode = on;
+}
+
+bool fx_looper_get_sync(fx_engine_t *engine) {
+    return engine ? engine->looper.sync_mode : false;
+}
+
+void fx_looper_set_tap_pre_chain(fx_engine_t *engine, bool on) {
+    if (!engine) return;
+    engine->looper.tap_pre_chain = on;
+}
+
+bool fx_looper_get_tap_pre_chain(fx_engine_t *engine) {
+    return engine ? engine->looper.tap_pre_chain : false;
+}
+
+void fx_looper_set_master_level(fx_engine_t *engine, float v) {
+    if (!engine) return;
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    engine->looper.master_level = v;
+}
+
+float fx_looper_get_master_level(fx_engine_t *engine) {
+    return engine ? engine->looper.master_level : 1.0f;
+}
+
+fx_loop_state_t fx_looper_get_slot_state(fx_engine_t *engine, int slot) {
+    if (!engine || slot < 0 || slot >= FX_LOOPER_SLOT_COUNT)
+        return FX_LOOP_EMPTY;
+    return engine->looper.slots[slot].state;
+}
+
+bool fx_looper_get_slot_muted(fx_engine_t *engine, int slot) {
+    if (!engine || slot < 0 || slot >= FX_LOOPER_SLOT_COUNT) return false;
+    return engine->looper.slots[slot].muted;
+}
+
+int fx_looper_get_slot_length_frames(fx_engine_t *engine, int slot) {
+    if (!engine || slot < 0 || slot >= FX_LOOPER_SLOT_COUNT) return 0;
+    return engine->looper.slots[slot].length;
+}
+
+int fx_looper_get_slot_play_pos(fx_engine_t *engine, int slot) {
+    if (!engine || slot < 0 || slot >= FX_LOOPER_SLOT_COUNT) return 0;
+    return engine->looper.slots[slot].play_pos;
+}
+
+int fx_looper_get_slot_layers(fx_engine_t *engine, int slot) {
+    if (!engine || slot < 0 || slot >= FX_LOOPER_SLOT_COUNT) return 0;
+    return engine->looper.slots[slot].layers;
+}
+
+bool fx_looper_export_slot_wav(fx_engine_t *engine, int slot, const char *path) {
+    if (!engine) return false;
+    return looper_export_slot_wav(&engine->looper, slot, path);
+}
+
+bool fx_looper_export_mix_wav(fx_engine_t *engine, const char *path) {
+    if (!engine) return false;
+    return looper_export_mix_wav(&engine->looper, path);
 }
 
 /* ── Presets are implemented in preset.c ──────────────────────── */

@@ -307,6 +307,54 @@ float        fx_gate_get_hold(fx_engine_t *engine);
 bool         fx_preset_save(fx_engine_t *engine, const char *path);
 bool         fx_preset_load(fx_engine_t *engine, const char *path);
 
+/* ── Looper — 9-slot keyboard-driven live loop module ─────────
+ *
+ * The looper lives OUTSIDE the live signal chain. It taps the processed
+ * output (or the dry input, if toggled) into active slots, and mixes its
+ * playback back into the final output AFTER the live chain. This means
+ * loop playback never re-processes through reverb/delay on each repeat.
+ *
+ * Each of the 9 slots has an independent state machine and buffer
+ * (120 s max, lazy-allocated on first record). Tap the same slot again
+ * to advance it through: EMPTY → ARMED → RECORDING → PLAYING ⇄ OVERDUBBING.
+ */
+
+typedef enum {
+    FX_LOOP_EMPTY = 0,
+    FX_LOOP_ARMED,         /* waiting for sync boundary before recording */
+    FX_LOOP_RECORDING,
+    FX_LOOP_PLAYING,
+    FX_LOOP_OVERDUBBING,
+} fx_loop_state_t;
+
+#define FX_LOOPER_SLOT_COUNT 9
+
+void            fx_looper_slot_tap   (fx_engine_t *engine, int slot);    /* advance state */
+void            fx_looper_slot_mute  (fx_engine_t *engine, int slot);    /* toggle mute */
+void            fx_looper_slot_clear (fx_engine_t *engine, int slot);    /* erase slot */
+void            fx_looper_slot_undo  (fx_engine_t *engine, int slot);    /* revert last overdub */
+int             fx_looper_arm_next   (fx_engine_t *engine);              /* arm first EMPTY, returns slot or -1 */
+void            fx_looper_master_toggle(fx_engine_t *engine);            /* play/pause all */
+bool            fx_looper_master_is_playing(fx_engine_t *engine);
+void            fx_looper_focus_next (fx_engine_t *engine);              /* Tab cycles focus */
+int             fx_looper_focused    (fx_engine_t *engine);
+
+void            fx_looper_set_sync       (fx_engine_t *engine, bool on);
+bool            fx_looper_get_sync       (fx_engine_t *engine);
+void            fx_looper_set_tap_pre_chain(fx_engine_t *engine, bool on);
+bool            fx_looper_get_tap_pre_chain(fx_engine_t *engine);
+void            fx_looper_set_master_level(fx_engine_t *engine, float v); /* 0..1 */
+float           fx_looper_get_master_level(fx_engine_t *engine);
+
+fx_loop_state_t fx_looper_get_slot_state (fx_engine_t *engine, int slot);
+bool            fx_looper_get_slot_muted (fx_engine_t *engine, int slot);
+int             fx_looper_get_slot_length_frames(fx_engine_t *engine, int slot);
+int             fx_looper_get_slot_play_pos     (fx_engine_t *engine, int slot);
+int             fx_looper_get_slot_layers       (fx_engine_t *engine, int slot);
+
+bool            fx_looper_export_slot_wav(fx_engine_t *engine, int slot, const char *path);
+bool            fx_looper_export_mix_wav (fx_engine_t *engine, const char *path);
+
 /* ── Master volume ───────────────────────────────────────────── */
 
 void         fx_engine_set_master_volume(fx_engine_t *engine, float volume);  /* 0.0 to 1.0 */
