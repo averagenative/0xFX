@@ -12,6 +12,17 @@
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
 
+#ifdef _WIN32
+#include <windows.h>
+static void cab_brief_wait(void) { Sleep(20); }
+#else
+#include <time.h>
+static void cab_brief_wait(void) {
+    struct timespec ts = { 0, 20 * 1000 * 1000 };  /* 20 ms */
+    nanosleep(&ts, NULL);
+}
+#endif
+
 /* ── Helpers ─────────────────────────────────────────────────── */
 
 static int next_power_of_2(int n) {
@@ -135,6 +146,12 @@ bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, i
 
     /* ── Step 2: Disable cab processing (audio thread will pass through) ── */
     cab->loaded = false;
+
+    /* Brief wait so any in-flight fx_cab_process() call finishes with the
+     * old pointers before we swap or free them. Without this, rapid cab
+     * swaps (e.g. mouse-wheel scrolling the cab list) can double-free or
+     * corrupt the heap. 20 ms covers any reasonable audio block. */
+    cab_brief_wait();
 
     /* ── Step 3: Save old pointers for deferred free ── */
     kiss_fft_cpx  *old_ir_fft  = cab->ir_fft;
