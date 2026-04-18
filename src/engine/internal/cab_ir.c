@@ -289,17 +289,9 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
             m *= 1.0f + 0.25f * expf(-pres_ratio * pres_ratio);
             break;
         }
-        case FX_CAB_DIRECT:
-        default: {
-            /* Flat/direct: gentle highpass + gentle lowpass */
-            if (freq < 60.0f) {
-                m *= freq / 60.0f;
-            }
-            if (freq > 16000.0f) {
-                m *= 16000.0f / freq;
-            }
+        default:
+            /* Unknown cab type: leave magnitude unchanged */
             break;
-        }
         }
 
         /* Microphone modeling: SM57-style */
@@ -438,22 +430,16 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
     int fade_len = 256;
     if (fade_len > ir_len / 2) fade_len = ir_len / 2;
 
-    /* Level-match cabs by time-domain RMS. A single-bin reference (e.g. 200 Hz)
-     * over-attenuates cabs that happen to resonate at the reference frequency
-     * and under-attenuates cabs that dip there — giving an audibly muted
-     * result for many preset cabs. RMS across the IR is robust to spectral
-     * shape. Peak-safety scaler keeps convolution output below clip. */
-    float sum_sq = 0.0f;
-    for (int i = 0; i < ir_len; i++) sum_sq += time_buf[i] * time_buf[i];
-    float rms = sqrtf(sum_sq / (float)ir_len);
-    float norm = (rms > 1e-6f) ? (0.15f / rms) : 1.0f;
-
+    /* Time-domain peak normalization. Industry-standard for cab IRs: each
+     * generated IR gets the same peak sample value, giving predictable
+     * output level when switching cabs. Target 0.4 leaves ~8dB of headroom
+     * before the engine's hard clip at 1.0. */
     float peak_td = 0.0f;
     for (int i = 0; i < ir_len; i++) {
-        float v = fabsf(time_buf[i]) * norm;
+        float v = fabsf(time_buf[i]);
         if (v > peak_td) peak_td = v;
     }
-    if (peak_td > 0.98f) norm *= (0.98f / peak_td);
+    float norm = (peak_td > 1e-6f) ? (0.4f / peak_td) : 1.0f;
     (void)mag_ref;
 
     for (int i = 0; i < ir_len; i++) {
@@ -475,7 +461,7 @@ void fx_cab_synth_ir_generate(const fx_cab_params_t *params, float *ir_out, int 
 
 /* ── Bundled preset IRs ─────────────────────────────────────── */
 
-static const fx_cab_params_t bundled_presets[5] = {
+static const fx_cab_params_t bundled_presets[4] = {
     /* 0: 1x12 open back — bright, chimey */
     { FX_CAB_1X12_OPEN,    FX_MIC_ON_AXIS,  75.0f, 0.8f, 0.6f },
     /* 1: 2x12 closed — tighter, more focused */
@@ -484,12 +470,10 @@ static const fx_cab_params_t bundled_presets[5] = {
     { FX_CAB_4X12_STRAIGHT, FX_MIC_ON_AXIS, 70.0f, 0.5f, 0.6f },
     /* 3: 4x12 slant — slightly brighter top */
     { FX_CAB_4X12_SLANT,   FX_MIC_ON_AXIS,  70.0f, 0.65f, 0.5f },
-    /* 4: direct/flat — bypass-like, minimal coloring */
-    { FX_CAB_DIRECT,       FX_MIC_ON_AXIS,  80.0f, 0.5f, 0.3f },
 };
 
 bool fx_cab_load_bundled(fx_cab_state_t *cab, int preset_idx, int block_size) {
-    if (!cab || preset_idx < 0 || preset_idx >= 5 || block_size <= 0)
+    if (!cab || preset_idx < 0 || preset_idx >= 4 || block_size <= 0)
         return false;
 
     float ir_buf[SYNTH_IR_LEN];

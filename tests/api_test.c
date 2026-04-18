@@ -1486,7 +1486,7 @@ static void test_cab_distortion_freq_response(void) {
     }
 
     /* Test each cab type with a moderate gain Fullerton Clean */
-    const char *cab_names[] = {"1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant", "Direct"};
+    const char *cab_names[] = {"1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant"};
 
     for (int cab_idx = 0; cab_idx < FX_CAB_TYPE_COUNT; cab_idx++) {
         fx_engine_t *e = fx_engine_create(sr);

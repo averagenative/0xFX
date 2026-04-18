@@ -1512,8 +1512,7 @@ void cplug_parameterValueToString(void *ptr, uint32_t param_id,
         if (cab < 0) cab = 0;
         if (cab >= FX_CAB_TYPE_COUNT) cab = FX_CAB_TYPE_COUNT - 1;
         static const char *cab_names[] = {
-            "1x12 Open", "2x12 Closed", "4x12 Straight",
-            "4x12 Slant", "Direct"
+            "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant"
         };
         snprintf(buf, bufsize, "%s", cab_names[cab]);
         return;

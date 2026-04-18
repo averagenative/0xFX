@@ -186,7 +186,6 @@ typedef enum {
     FX_CAB_2X12_CLOSED,      /* 2x12 closed back — tighter, focused */
     FX_CAB_4X12_STRAIGHT,    /* 4x12 straight — classic rock, full */
     FX_CAB_4X12_SLANT,       /* 4x12 slant — slightly brighter top */
-    FX_CAB_DIRECT,           /* direct/flat — minimal coloring */
     FX_CAB_TYPE_COUNT
 } fx_cab_type_t;
 

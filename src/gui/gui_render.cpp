@@ -173,7 +173,7 @@ static const char *node_label(NodeKind kind, fx_engine_t *engine, fx_pedal_id pi
 }
 
 static const char *s_cab_type_names[] = {
-    "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant", "Direct"
+    "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant"
 };
 
 /* ── Pedal gallery ──────────────────────────────────────────── */
@@ -298,7 +298,7 @@ static void type_to_filename(const char *type_name, char *out, int out_size) {
 }
 
 static const char *s_cab_filenames[] = {
-    "1x12_open", "2x12_closed", "4x12_straight", "4x12_slant", "direct_flat",
+    "1x12_open", "2x12_closed", "4x12_straight", "4x12_slant",
 };
 
 static uintptr_t load_pedal_texture(const char *type_name) {

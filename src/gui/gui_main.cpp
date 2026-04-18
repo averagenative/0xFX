@@ -793,7 +793,7 @@ static const char *node_label(NodeKind kind, fx_engine_t *engine, fx_pedal_id pi
 
 /* Cab type names (engine doesn't expose these) */
 static const char *s_cab_type_names[] = {
-    "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant", "Direct"
+    "1x12 Open", "2x12 Closed", "4x12 Straight", "4x12 Slant"
 };
 
 /* ── Pedal gallery: category-organized pedal browser ──────────── */
@@ -925,7 +925,6 @@ static const char *s_cab_filenames[] = {
     "2x12_closed",    /* FX_CAB_2X12_CLOSED */
     "4x12_straight",  /* FX_CAB_4X12_STRAIGHT */
     "4x12_slant",     /* FX_CAB_4X12_SLANT */
-    "direct_flat",    /* FX_CAB_DIRECT */
 };
 
 /* Special-case pedal name overrides where type_to_filename doesn't match the asset */
