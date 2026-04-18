@@ -3118,7 +3118,7 @@
     "title": "Mic / input device not detected on native Linux (Fedora 44, PipeWire)",
     "domain": "audio",
     "phase": 12,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "agent-audio",
     "depends": [],
     "estimatedTokens": 25000,
