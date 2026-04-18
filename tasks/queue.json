@@ -2584,8 +2584,8 @@
     "title": "Pedal stomp switch click area on image + LED toggle",
     "domain": "frontend",
     "phase": 3,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "agent-frontend",
     "depends": [],
     "estimatedTokens": 25000,
     "acceptanceCriteria": [
@@ -3093,8 +3093,8 @@
     "title": "Linux AppImage packaging for 1.1.0 release",
     "domain": "infra",
     "phase": 11,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "agent-infra",
     "depends": [],
     "estimatedTokens": 15000,
     "release": "1.1.0",
@@ -3115,11 +3115,11 @@
   {
     "id": "TASK-365",
     "priority": "HIGH",
-    "title": "Mic / input device not detected on native Linux (Fedora 43, PipeWire)",
+    "title": "Mic / input device not detected on native Linux (Fedora 44, PipeWire)",
     "domain": "audio",
     "phase": 12,
-    "status": "queued",
-    "claimedBy": null,
+    "status": "in_progress",
+    "claimedBy": "agent-audio",
     "depends": [],
     "estimatedTokens": 25000,
     "release": "1.2.0",
@@ -3134,6 +3134,30 @@
       "src/audio/audio_device.c",
       "src/audio/audio_device.h"
     ],
-    "notes": "Reported 2026-04-18 on native Fedora 43 (Dan moved off WSL). The WSLg-audio-broken assumption in CLAUDE.md no longer applies — real Linux audio stack is available, but mic input is not being detected. miniaudio may be defaulting to a backend without capture support, or the device enumeration may need a PipeWire-aware path. Start by running the AppImage with FX_DEBUG enabled and checking which backend miniaudio selects and what devices it returns."
+    "notes": "Reported 2026-04-18 on native Fedora 44 (Dan moved off WSL). The WSLg-audio-broken assumption in CLAUDE.md no longer applies — real Linux audio stack is available, but mic input is not being detected. miniaudio may be defaulting to a backend without capture support, or the device enumeration may need a PipeWire-aware path. Start by running the AppImage with FX_DEBUG enabled and checking which backend miniaudio selects and what devices it returns."
+  },
+  {
+    "id": "TASK-366",
+    "priority": "MEDIUM",
+    "title": "Set up Wine bottle for testing Windows builds from Linux",
+    "domain": "infra",
+    "phase": 12,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 20000,
+    "release": "1.2.0",
+    "acceptanceCriteria": [
+      "Bottle / prefix script that installs a Windows target (wine + winetricks dependencies) capable of running our NSIS installer",
+      "0xFX-1.1.0-windows-x64-setup.exe installs cleanly in the bottle",
+      "0xfx_gui.exe launches under the bottle and responds to input (even if audio is limited)",
+      "Reaper-for-Windows (or another DAW) installs under the bottle and can scan / load the VST3 plugin and CLAP plugin",
+      "Short README (scripts/wine/README.md or similar) documenting bottle setup steps for reproducibility",
+      "Optional: mark Wine-specific caveats — e.g. no real audio device in the bottle, use output-only for smoke testing"
+    ],
+    "files": [
+      "scripts/wine/"
+    ],
+    "notes": "Dan is on native Fedora 44 and wants to validate Windows artifacts (standalone .exe, NSIS installer, VST3/CLAP plugins) without dual-booting. Wine bottle gives reproducible test surface. Not a release blocker, but greatly reduces release-test friction. Bottles (flatpak app) or plain wineprefix both acceptable — pick whichever is simplest to script."
   }
 ]
