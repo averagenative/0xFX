@@ -617,142 +617,159 @@ static const char *looper_state_label(fx_loop_state_t s) {
     return "?";
 }
 
-static void looper_render_panel(fx_engine_t *engine) {
+/* Docked horizontal strip below the toolbar. Stays on top while open;
+ * no close button (toolbar Looper toggle is the only way to hide it). */
+static void looper_render_panel(fx_engine_t *engine,
+                                float x, float y, float w, float h) {
     if (!s_looper_panel_open) return;
-    ImGui::SetNextWindowSize(ImVec2(520, 440), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Looper", &s_looper_panel_open,
-                      ImGuiWindowFlags_NoCollapse)) {
-        ImGui::End();
-        return;
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::SetNextWindowSize(ImVec2(w, h));
+    ImGui::Begin("##looper_panel", NULL,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    /* Background gradient + bottom separator — matches toolbar. */
+    {
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        ImVec2 p0 = ImGui::GetWindowPos();
+        ImVec2 p1 = ImVec2(p0.x + w, p0.y + h);
+        dl->AddRectFilledMultiColor(
+            p0, p1,
+            IM_COL32(28, 24, 20, 255), IM_COL32(28, 24, 20, 255),
+            IM_COL32(16, 14, 12, 255), IM_COL32(16, 14, 12, 255));
+        dl->AddLine(ImVec2(p0.x, p1.y - 1.0f),
+                    ImVec2(p1.x, p1.y - 1.0f),
+                    IM_COL32(60, 50, 35, 255), 1.0f);
     }
 
-    /* ── Master row ─────────────────────────────────────────── */
+    /* Panel title + master controls on the left. */
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.55f, 1.0f));
+    ImGui::SetCursorPos(ImVec2(10, 8));
+    ImGui::Text("LOOPER");
+    ImGui::PopStyleColor();
+
+    const int focused = fx_looper_focused(engine);
     bool playing = fx_looper_master_is_playing(engine);
+
+    /* Row 1: Play/Pause, master vol, sync, pre-chain tap */
+    ImGui::SetCursorPos(ImVec2(10, 28));
     ImGui::PushStyleColor(ImGuiCol_Button,
         playing ? ImVec4(0.20f, 0.55f, 0.25f, 1.0f)
                 : ImVec4(0.55f, 0.22f, 0.20f, 1.0f));
-    if (ImGui::Button(playing ? "Pause (Space)" : "Play (Space)",
-                      ImVec2(120, 28))) {
+    if (ImGui::Button(playing ? "Pause" : "Play", ImVec2(72, 26))) {
         fx_looper_master_toggle(engine);
     }
     ImGui::PopStyleColor();
 
     ImGui::SameLine();
     float level = fx_looper_get_master_level(engine);
-    ImGui::SetNextItemWidth(140);
+    ImGui::SetNextItemWidth(130);
     if (ImGui::SliderFloat("##master", &level, 0.0f, 1.0f, "Vol %.2f")) {
         fx_looper_set_master_level(engine, level);
     }
 
-    ImGui::SameLine();
+    /* Row 2: options */
+    ImGui::SetCursorPos(ImVec2(10, 62));
     bool sync = fx_looper_get_sync(engine);
     if (ImGui::Checkbox("Sync", &sync)) fx_looper_set_sync(engine, sync);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Quantize new slots to the first loop's length");
-
     ImGui::SameLine();
     bool pre = fx_looper_get_tap_pre_chain(engine);
-    if (ImGui::Checkbox("Pre-chain tap", &pre))
+    if (ImGui::Checkbox("Pre-chain", &pre))
         fx_looper_set_tap_pre_chain(engine, pre);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("ON: record raw input. OFF: record post-chain "
-                          "(processed tone — default).");
+        ImGui::SetTooltip("ON: record raw input. OFF: record post-chain (processed tone).");
 
-    ImGui::Separator();
-
-    /* ── 3×3 slot grid ───────────────────────────────────────── */
-    const int focused = fx_looper_focused(engine);
-    const ImVec2 pad_size(140, 90);
-    for (int row = 0; row < 3; row++) {
-        for (int col = 0; col < 3; col++) {
-            int slot = row * 3 + col;
-            if (col > 0) ImGui::SameLine();
-
-            fx_loop_state_t st = fx_looper_get_slot_state(engine, slot);
-            bool muted = fx_looper_get_slot_muted(engine, slot);
-            int len    = fx_looper_get_slot_length_frames(engine, slot);
-            int pos    = fx_looper_get_slot_play_pos(engine, slot);
-            int layers = fx_looper_get_slot_layers(engine, slot);
-
-            ImVec4 c = looper_state_color(st, muted);
-            ImGui::PushStyleColor(ImGuiCol_Button, c);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                ImVec4(c.x * 1.2f, c.y * 1.2f, c.z * 1.2f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                ImVec4(c.x * 0.8f, c.y * 0.8f, c.z * 0.8f, 1.0f));
-
-            char label[64];
-            snprintf(label, sizeof(label), "%d  %s%s\n%.1fs  L%d",
-                     slot + 1,
-                     looper_state_label(st),
-                     muted ? " (m)" : "",
-                     len > 0 ? (float)len / 48000.0f : 0.0f,
-                     layers);
-            ImGui::PushID(slot);
-            if (ImGui::Button(label, pad_size)) {
-                fx_looper_slot_tap(engine, slot);
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "Slot %d\n"
-                    "  %d : tap cycle (rec/play/dub)\n"
-                    "  Shift+%d : mute/unmute\n"
-                    "  Alt+%d : clear\n"
-                    "  Ctrl+Z : undo last overdub",
-                    slot + 1, slot + 1, slot + 1, slot + 1);
-            }
-            ImGui::PopID();
-            ImGui::PopStyleColor(3);
-
-            /* Play position bar under the pad */
-            ImDrawList *dl = ImGui::GetWindowDrawList();
-            ImVec2 p_min = ImGui::GetItemRectMin();
-            ImVec2 p_max = ImGui::GetItemRectMax();
-            if (len > 0 && (st == FX_LOOP_PLAYING || st == FX_LOOP_OVERDUBBING)) {
-                float t = (float)pos / (float)len;
-                float bar_x = p_min.x + 4 + t * (p_max.x - p_min.x - 8);
-                dl->AddLine(ImVec2(bar_x, p_max.y - 6),
-                            ImVec2(bar_x, p_max.y - 2),
-                            IM_COL32(255, 255, 255, 220), 2.0f);
-            }
-            if (slot == focused) {
-                dl->AddRect(p_min, p_max, IM_COL32(220, 190, 100, 255),
-                            2.0f, 0, 2.0f);
-            }
-        }
-    }
-
-    ImGui::Separator();
-
-    /* ── Bottom action row ──────────────────────────────────── */
-    if (ImGui::Button("Arm next (R)")) fx_looper_arm_next(engine);
+    /* Row 3: focus + action buttons */
+    ImGui::SetCursorPos(ImVec2(10, 92));
+    ImGui::Text("Focus:%d", focused + 1);
     ImGui::SameLine();
-    if (ImGui::Button("Clear focused")) fx_looper_slot_clear(engine, focused);
+    if (ImGui::SmallButton("R arm"))    fx_looper_arm_next(engine);
     ImGui::SameLine();
-    if (ImGui::Button("Undo focused (Ctrl+Z)"))
-        fx_looper_slot_undo(engine, focused);
+    if (ImGui::SmallButton("Tab"))      fx_looper_focus_next(engine);
     ImGui::SameLine();
-    if (ImGui::Button("Focus next (Tab)")) fx_looper_focus_next(engine);
+    if (ImGui::SmallButton("Undo"))     fx_looper_slot_undo(engine, focused);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear"))    fx_looper_slot_clear(engine, focused);
 
-    ImGui::Spacing();
-
-    if (ImGui::Button("Export focused slot")) {
+    /* Row 4: export */
+    ImGui::SetCursorPos(ImVec2(10, 116));
+    if (ImGui::SmallButton("Export slot")) {
         char path[512];
         snprintf(path, sizeof(path), "loop_slot_%d.wav", focused + 1);
         if (fx_looper_export_slot_wav(engine, focused, path))
             FX_INFO("Looper: exported slot %d to %s", focused + 1, path);
-        else
-            FX_WARN("Looper: export failed (slot empty?)");
+        else FX_WARN("Looper: export failed (slot empty?)");
     }
     ImGui::SameLine();
-    if (ImGui::Button("Export mix")) {
-        const char *path = "loop_mix.wav";
-        if (fx_looper_export_mix_wav(engine, path))
-            FX_INFO("Looper: exported mix to %s", path);
-        else
-            FX_WARN("Looper: mix export failed (all slots empty?)");
+    if (ImGui::SmallButton("Export mix")) {
+        if (fx_looper_export_mix_wav(engine, "loop_mix.wav"))
+            FX_INFO("Looper: exported mix to loop_mix.wav");
+        else FX_WARN("Looper: mix export failed");
     }
 
+    /* 9 pads in a horizontal row on the right side of the strip. */
+    const float pads_left = 260.0f;
+    const float pad_gap   = 6.0f;
+    const float pads_avail = w - pads_left - 12.0f;
+    float pad_w = (pads_avail - pad_gap * 8) / 9.0f;
+    if (pad_w < 56.0f) pad_w = 56.0f;
+    if (pad_w > 110.0f) pad_w = 110.0f;
+    const float pad_h = h - 20.0f;
+
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    ImVec2 win_pos = ImGui::GetWindowPos();
+
+    for (int slot = 0; slot < 9; slot++) {
+        float px = pads_left + slot * (pad_w + pad_gap);
+        ImGui::SetCursorPos(ImVec2(px, 10));
+
+        fx_loop_state_t st = fx_looper_get_slot_state(engine, slot);
+        bool muted = fx_looper_get_slot_muted(engine, slot);
+        int len    = fx_looper_get_slot_length_frames(engine, slot);
+        int pos    = fx_looper_get_slot_play_pos(engine, slot);
+        int layers = fx_looper_get_slot_layers(engine, slot);
+
+        ImVec4 c = looper_state_color(st, muted);
+        ImGui::PushStyleColor(ImGuiCol_Button, c);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            ImVec4(c.x * 1.25f + 0.05f, c.y * 1.25f + 0.05f, c.z * 1.25f + 0.05f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+            ImVec4(c.x * 0.8f, c.y * 0.8f, c.z * 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+
+        char label[64];
+        snprintf(label, sizeof(label), "%d\n%s%s\n%.1fs L%d",
+                 slot + 1, looper_state_label(st),
+                 muted ? " m" : "",
+                 len > 0 ? (float)len / 48000.0f : 0.0f, layers);
+
+        ImGui::PushID(slot);
+        if (ImGui::Button(label, ImVec2(pad_w, pad_h))) {
+            fx_looper_slot_tap(engine, slot);
+        }
+        ImGui::PopID();
+        ImGui::PopStyleColor(4);
+
+        /* Position indicator + focus highlight drawn on top of the pad. */
+        ImVec2 p_min = ImGui::GetItemRectMin();
+        ImVec2 p_max = ImGui::GetItemRectMax();
+        if (len > 0 && (st == FX_LOOP_PLAYING || st == FX_LOOP_OVERDUBBING)) {
+            float t = (float)pos / (float)len;
+            float bar_x = p_min.x + 3 + t * (p_max.x - p_min.x - 6);
+            dl->AddLine(ImVec2(bar_x, p_max.y - 6),
+                        ImVec2(bar_x, p_max.y - 2),
+                        IM_COL32(255, 255, 255, 220), 2.0f);
+        }
+        if (slot == focused) {
+            dl->AddRect(p_min, p_max, IM_COL32(220, 190, 100, 255),
+                        3.0f, 0, 2.0f);
+        }
+    }
+
+    (void)win_pos;
     ImGui::End();
 }
 
@@ -1786,6 +1803,7 @@ int main(int argc, char *argv[]) {
 
     /* Layout constants */
     static const float TOOLBAR_H      = 64.0f;
+    static const float LOOPER_H       = 140.0f;
     static const float STATUS_H       = 50.0f;
     static const float NODE_W         = 80.0f;
     static const float NODE_H         = 60.0f;
@@ -2873,10 +2891,11 @@ int main(int argc, char *argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             running = false;
         }
-        /* Space: looper play/pause when panel is open, otherwise LIVE toggle. */
+        /* Space: tap focused looper slot when panel is open (start/stop rec,
+         * then overdub), otherwise LIVE toggle. */
         if (ImGui::IsKeyPressed(ImGuiKey_Space) && !ImGui::GetIO().WantCaptureKeyboard) {
             if (s_looper_panel_open) {
-                fx_looper_master_toggle(engine);
+                fx_looper_slot_tap(engine, fx_looper_focused(engine));
             } else if (s_audio_active) {
                 fx_audio_shutdown(); fx_audio_init();
                 num_input_devices  = fx_audio_get_device_count();
@@ -2896,8 +2915,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Looper panel — rendered above status bar, keys handled when open. */
-        looper_render_panel(engine);
+        /* Looper key handler (Space above handles the focused-slot tap). */
         if (s_looper_panel_open && !ImGui::GetIO().WantCaptureKeyboard) {
             looper_handle_keys(engine);
         }
@@ -3069,11 +3087,21 @@ int main(int argc, char *argv[]) {
         if (s_selected_node >= chain_len) s_selected_node = -1;
 
         /* ============================================================
-         * SIGNAL CHAIN VIEW (~35% of window, below toolbar)
+         * LOOPER PANEL (docked strip between toolbar and signal chain)
+         * ============================================================ */
+        if (s_looper_panel_open) {
+            looper_render_panel(engine, 0.0f, TOOLBAR_H,
+                                (float)win_w, LOOPER_H);
+        }
+
+        /* ============================================================
+         * SIGNAL CHAIN VIEW (~35% of window, below toolbar + looper)
          * ============================================================ */
         {
-            float chain_area_h = (win_h - TOOLBAR_H - STATUS_H) * 0.35f;
-            ImGui::SetNextWindowPos(ImVec2(0, TOOLBAR_H));
+            float looper_h = s_looper_panel_open ? LOOPER_H : 0.0f;
+            float chain_top = TOOLBAR_H + looper_h;
+            float chain_area_h = (win_h - chain_top - STATUS_H) * 0.35f;
+            ImGui::SetNextWindowPos(ImVec2(0, chain_top));
             ImGui::SetNextWindowSize(ImVec2(win_w, chain_area_h));
             ImGui::Begin("##signal_chain", NULL,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -3426,11 +3454,19 @@ int main(int argc, char *argv[]) {
 
                 /* Node label (centered below node) */
                 const char *lbl = node_label(n.kind, engine, n.pedal_id, n.chain_id);
-                /* Override cab label with actual cab type name */
+                /* Override cab label with actual cab type name (or custom IR
+                 * name when the user has loaded their own). */
                 if (n.kind == NODE_CAB) {
-                    int ctype = (n.chain_id == 0) ? s_cab_type : s_cab_type_b;
-                    if (ctype >= 0 && ctype < FX_CAB_TYPE_COUNT)
-                        lbl = s_cab_type_names[ctype];
+                    fx_chain_id cid = (n.chain_id == 0) ? FX_CHAIN_DEFAULT : FX_CHAIN_DEFAULT;
+                    const char *custom_ir = fx_cab_get_custom_ir_path(engine, cid);
+                    if (custom_ir && custom_ir[0]) {
+                        const char *cname = fx_cab_get_custom_name(engine, cid);
+                        lbl = (cname && cname[0]) ? cname : "Custom";
+                    } else {
+                        int ctype = (n.chain_id == 0) ? s_cab_type : s_cab_type_b;
+                        if (ctype >= 0 && ctype < FX_CAB_TYPE_COUNT)
+                            lbl = s_cab_type_names[ctype];
+                    }
                 }
                 char short_lbl[16];
                 ImVec2 lbl_size = ImGui::CalcTextSize(lbl);
@@ -3827,8 +3863,10 @@ int main(int argc, char *argv[]) {
          * Shows knobs/controls for the selected node
          * ============================================================ */
         {
-            float chain_area_h = (win_h - TOOLBAR_H - STATUS_H) * 0.35f;
-            float detail_y = TOOLBAR_H + chain_area_h;
+            float looper_h = s_looper_panel_open ? LOOPER_H : 0.0f;
+            float chain_top = TOOLBAR_H + looper_h;
+            float chain_area_h = (win_h - chain_top - STATUS_H) * 0.35f;
+            float detail_y = chain_top + chain_area_h;
             float detail_h = win_h - detail_y - STATUS_H;
 
             ImGui::SetNextWindowPos(ImVec2(0, detail_y));
@@ -4525,7 +4563,9 @@ int main(int argc, char *argv[]) {
                     }
 
                     /* Scroll wheel cycles through ALL cabs in the dropdown —
-                     * stock first, then every custom entry in the library. */
+                     * stock first, then every custom entry in the library.
+                     * Invalid IRs (too long, wrong SR, etc.) are skipped
+                     * automatically so the user isn't stuck on a bad file. */
                     if (combo_hovered &&
                         !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
                         float wheel = ImGui::GetIO().MouseWheel;
@@ -4539,14 +4579,22 @@ int main(int argc, char *argv[]) {
                             } else {
                                 cur = cab_type_ref;
                             }
-                            int next = cur + (wheel < 0.0f ? 1 : -1);
-                            if (next < 0) next = total - 1;
-                            if (next >= total) next = 0;
-                            if (next < FX_CAB_TYPE_COUNT) {
-                                cab_type_ref = next;
-                                load_cab_for_type(engine, cab_chain,
-                                                  (fx_cab_type_t)cab_type_ref);
-                            } else {
+                            int dir = (wheel < 0.0f ? 1 : -1);
+                            int next = cur;
+                            int skipped = 0;
+                            bool loaded = false;
+                            for (int attempt = 0; attempt < total; attempt++) {
+                                next += dir;
+                                if (next < 0) next = total - 1;
+                                if (next >= total) next = 0;
+                                if (next == cur) break;
+                                if (next < FX_CAB_TYPE_COUNT) {
+                                    cab_type_ref = next;
+                                    load_cab_for_type(engine, cab_chain,
+                                                      (fx_cab_type_t)cab_type_ref);
+                                    loaded = true;
+                                    break;
+                                }
                                 int ci = next - FX_CAB_TYPE_COUNT;
                                 if (fx_cab_load_ir(engine, cab_chain,
                                                    s_custom_cabs[ci].ir_path)) {
@@ -4554,12 +4602,21 @@ int main(int argc, char *argv[]) {
                                                            s_custom_cabs[ci].name);
                                     fx_cab_set_custom_image_path(engine, cab_chain,
                                                                  s_custom_cabs[ci].image_path);
-                                } else {
-                                    snprintf(s_save_toast, sizeof(s_save_toast),
-                                             "Custom IR failed to load: %s",
-                                             s_custom_cabs[ci].name);
-                                    s_save_toast_timer = 4.0f;
+                                    loaded = true;
+                                    break;
                                 }
+                                skipped++;
+                            }
+                            if (!loaded && skipped > 0) {
+                                snprintf(s_save_toast, sizeof(s_save_toast),
+                                         "Skipped %d invalid IR%s (all remaining rejected)",
+                                         skipped, skipped == 1 ? "" : "s");
+                                s_save_toast_timer = 4.0f;
+                            } else if (skipped > 0) {
+                                snprintf(s_save_toast, sizeof(s_save_toast),
+                                         "Skipped %d invalid IR%s", skipped,
+                                         skipped == 1 ? "" : "s");
+                                s_save_toast_timer = 2.5f;
                             }
                         }
                     }
