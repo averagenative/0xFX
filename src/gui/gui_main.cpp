@@ -4052,11 +4052,12 @@ int main(int argc, char *argv[]) {
                     }
                     ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-                    /* Cab type selector — "Cab Type | [dropdown]" centered */
+                    /* Cab type selector — "Cab Type | [dropdown] [Load IR...]" centered */
+                    const float cab_combo_width = 200.0f;
+                    const float cab_load_btn_w  = 110.0f;
                     {
                         float label_w = ImGui::CalcTextSize("Cab Type").x;
-                        float combo_w = 200.0f;
-                        float total_w = label_w + 8.0f + combo_w;
+                        float total_w = label_w + 8.0f + cab_combo_width + 6.0f + cab_load_btn_w;
                         float combo_off = (avail_w - total_w) * 0.5f;
                         if (combo_off > 0.0f)
                             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + combo_off);
@@ -4073,7 +4074,7 @@ int main(int argc, char *argv[]) {
                         : s_cab_type_names[cab_type_ref];
                     if (!preview || !*preview) preview = "(unnamed)";
 
-                    ImGui::SetNextItemWidth(200);
+                    ImGui::SetNextItemWidth(cab_combo_width);
                     char cab_combo_id[32];
                     snprintf(cab_combo_id, sizeof(cab_combo_id), "##cab_sel_%d", sel.chain_id);
                     if (ImGui::BeginCombo(cab_combo_id, preview)) {
@@ -4129,6 +4130,39 @@ int main(int argc, char *argv[]) {
                             }
                         }
                         ImGui::EndCombo();
+                    }
+
+                    /* Visible "Load IR..." button next to the dropdown — primary entry
+                     * point for users to upload a custom cabinet IR. */
+                    ImGui::SameLine(0, 6);
+                    {
+                        char load_btn_id[48];
+                        snprintf(load_btn_id, sizeof(load_btn_id),
+                                 "Load IR...##cab_load_%d", sel.chain_id);
+                        if (ImGui::Button(load_btn_id, ImVec2(cab_load_btn_w, 0))) {
+                            char picked[1024];
+                            nfdu8filteritem_t filt[1] = { { "Wav audio", "wav" } };
+                            if (open_file_picker(filt, 1, picked, sizeof(picked))) {
+                                int idx = custom_cab_add(picked);
+                                if (idx >= 0 &&
+                                    fx_cab_load_ir(engine, cab_chain,
+                                                   s_custom_cabs[idx].ir_path)) {
+                                    fx_cab_set_custom_name(engine, cab_chain,
+                                                           s_custom_cabs[idx].name);
+                                    fx_cab_set_custom_image_path(engine, cab_chain,
+                                                                 s_custom_cabs[idx].image_path);
+                                    custom_cabs_save();
+                                    FX_INFO("Custom IR added: %s", picked);
+                                } else if (idx >= 0) {
+                                    FX_WARN("Failed to load picked IR %s — removing from library",
+                                            picked);
+                                    custom_cab_remove(idx);
+                                }
+                            }
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Upload a custom .wav cabinet IR");
+                        }
                     }
 
                     /* Scroll wheel to cycle stock cabs only (no-op when custom active) */
