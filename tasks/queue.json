@@ -3071,21 +3071,36 @@
   {
     "id": "TASK-363",
     "priority": "LOW",
-    "title": "BACKLOG: Looper pedal for multi-take recording",
+    "title": "BACKLOG: Looper module with keyboard-driven live-performance control",
     "domain": "engine",
     "phase": 11,
     "status": "queued",
     "claimedBy": null,
     "depends": [],
-    "estimatedTokens": 40000,
+    "estimatedTokens": 50000,
     "release": "1.2.0",
     "acceptanceCriteria": [
-      "Looper pedal in signal chain with record/play/overdub/undo",
-      "Multiple takes can be layered",
-      "Visual feedback showing loop position and layers",
-      "Export loop to audio file"
+      "Looper is a dedicated module (NOT a single pedal in the chain) — separate panel addressable via keyboard for hands-free live use",
+      "9 independent loop slots (keys 1-9), each with its own record/play/overdub/mute state machine",
+      "Keybind: 1-9 tap cycles that slot through arm -> record -> play -> overdub",
+      "Keybind: Shift+1..9 mutes/unmutes a slot",
+      "Keybind: Alt+1..9 (or long-press) clears a slot",
+      "Keybind: Space is master play/pause — freezes all loops simultaneously",
+      "Keybind: Ctrl+Z undoes the last overdub on the focused/most-recent slot",
+      "Keybind: Tab cycles focus through active slots for visual feedback",
+      "Keybind: R arms the next empty slot (quick-capture without picking a number)",
+      "Sync mode: toggleable quantize — slots lock to the first recorded loop's length; free-form when disabled",
+      "Visual: 9-pad grid showing per-slot state (empty / recording / playing / overdub / muted), current position, layer count",
+      "Routing: default taps post-chain (captures processed signal); toggle to tap pre-chain",
+      "Export: bounce individual slot to WAV, or mix all slots down to a single WAV"
     ],
-    "files": []
+    "files": [
+      "src/engine/fx_engine.h",
+      "src/engine/internal/looper.c",
+      "src/engine/internal/looper.h",
+      "src/gui/looper_panel.cpp"
+    ],
+    "notes": "Scope revised 2026-04-18 after feedback from Dan: a single looper pedal is boring; a keyboard-driven looper module lends itself to live playing and practicing. Think Ableton clip grid crossed with a stompbox looper. State machine per slot is the classic boss-style tap cycle (arm -> rec -> play -> overdub), but number keys make any slot reachable instantly instead of cycling a single footswitch. Sync mode is what makes it musical — quantizing later slots to the first loop's length turns it into a usable live-backing-track tool. Keep the module visually distinct from the pedal chain so users don't confuse it for yet another stompbox."
   },
   {
     "id": "TASK-364",
