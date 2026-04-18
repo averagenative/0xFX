@@ -12,6 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* ── Forward decls ────────────────────────────────────────────── */
+
+static bool open_audio_device(fx_engine_t *engine);
+
 /* ── State ────────────────────────────────────────────────────── */
 
 #define MAX_DEVICES 64
@@ -242,8 +246,13 @@ const char *fx_audio_get_output_name(int index) {
 }
 
 void fx_audio_set_output(int index) {
-    if (index >= 0 && index < g_audio.num_playback) {
-        g_audio.selected_playback = index;
+    if (index < 0 || index >= g_audio.num_playback) return;
+    if (g_audio.selected_playback == index) return;
+    g_audio.selected_playback = index;
+    /* If a device is currently running, reopen it on the new output so the
+     * switch takes effect immediately. No-op before the first open. */
+    if (g_audio.device_init && g_audio.engine) {
+        open_audio_device(g_audio.engine);
     }
 }
 
