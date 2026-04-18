@@ -3159,5 +3159,32 @@
       "scripts/wine/"
     ],
     "notes": "Dan is on native Fedora 44 and wants to validate Windows artifacts (standalone .exe, NSIS installer, VST3/CLAP plugins) without dual-booting. Wine bottle gives reproducible test surface. Not a release blocker, but greatly reduces release-test friction. Bottles (flatpak app) or plain wineprefix both acceptable — pick whichever is simplest to script."
+  },
+  {
+    "id": "TASK-367",
+    "priority": "HIGH",
+    "title": "Input gain trim + pad control on standalone audio settings",
+    "domain": "audio",
+    "phase": 12,
+    "status": "in_progress",
+    "claimedBy": "agent-audio-gain",
+    "depends": [],
+    "estimatedTokens": 25000,
+    "release": "1.2.0",
+    "acceptanceCriteria": [
+      "Input gain slider (continuous, -24 dB to +12 dB, default 0 dB) in the audio settings UI",
+      "-20 dB Pad toggle button next to the slider for quick attenuation of hot sources (laptop mic arrays, line-level signals)",
+      "Gain is applied in the standalone audio capture path BEFORE samples reach fx_engine_process (pre-engine, not a new engine API)",
+      "Plugin build path is unaffected — hosts provide their own channel gain, the plugin does not need this",
+      "Input meter in GUI reflects the post-gain signal so users see the effect of the slider",
+      "Setting persists between runs — saved to the user-config / last-session file so relaunching keeps the level",
+      "Real-time safe: multiplication is a simple scalar in the capture callback, no mallocs, no locks"
+    ],
+    "files": [
+      "src/audio/audio_device.c",
+      "src/audio/audio_device.h",
+      "src/gui/gui_main.cpp"
+    ],
+    "notes": "Discovered 2026-04-18 during TASK-365 verification. Laptop mic arrays on Fedora 44 / PipeWire run at high system gain intended for far-field voice; plugging that into an amp-sim chain clips the input meter instantly. Real interfaces (iRig/Scarlett) won't have this issue but the app still needs a simple input trim so users can run off the laptop mic without re-digging pactl volumes. Keep it standalone-only — the plugin doesn't need pre-gain since the DAW supplies that."
   }
 ]
