@@ -109,10 +109,11 @@ Default: DI (direct inject, no mic coloration).
 
 ## Cabinet IR
 
-- 5 built-in synthetic IRs: 1x12 open, 2x12 closed, 4x12 straight, 4x12 slant, direct
-- Load any `.wav` impulse response
+- 4 bundled real cab impulse responses (public-domain CC0): 1x12 open, 2x12 closed, 4x12 straight, 4x12 slant
+- Load any `.wav` impulse response (import your own or third-party IR packs)
+- Synthetic IR generation as fallback when no WAV is available
 - FFT overlap-add convolution (KissFFT)
-- Unity-gain normalization — shapes tone without changing volume
+- Peak normalization to consistent output level — shapes tone without surprising volume jumps when switching cabs
 
 ## GUI Features
 
@@ -127,7 +128,8 @@ Default: DI (direct inject, no mic coloration).
 - **Chromatic tuner** — MPM algorithm for accurate fundamental detection
 - **Input monitoring** — VU meters and tuner work without audio output (LIVE off)
 - **MIDI CC control** with MIDI learn mode
-- **Scroll-wheel** amp model and cab type cycling
+- **Scroll-wheel** cycling for amp model and cab type, fine-adjust for input gain and master volume faders
+- **Right-click faders** to reset to default (0 dB input gain, 100% master)
 
 ## Additional Features
 

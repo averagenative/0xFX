@@ -1993,10 +1993,23 @@ int main(int argc, char *argv[]) {
                     fx_audio_set_input_gain_db(s_input_gain_db);
                     s_session_cfg.input_gain_db = s_input_gain_db;
                 }
+                if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0.0f) {
+                    s_input_gain_db += ImGui::GetIO().MouseWheel * 0.5f;
+                    if (s_input_gain_db < -24.0f) s_input_gain_db = -24.0f;
+                    if (s_input_gain_db >  12.0f) s_input_gain_db =  12.0f;
+                    fx_audio_set_input_gain_db(s_input_gain_db);
+                    s_session_cfg.input_gain_db = s_input_gain_db;
+                }
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    s_input_gain_db = 0.0f;
+                    fx_audio_set_input_gain_db(s_input_gain_db);
+                    s_session_cfg.input_gain_db = s_input_gain_db;
+                }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Pre-chain input gain trim: -24 to +12 dB\n"
                                       "Use to compensate for hot/weak capture sources.\n"
-                                      "Stacks with the -20 dB pad.");
+                                      "Stacks with the -20 dB pad.\n"
+                                      "Scroll to adjust (0.5 dB/notch). Right-click to reset to 0 dB.");
                 ImGui::SameLine();
                 /* Pad button: highlight amber when active */
                 if (s_input_pad) {
@@ -4569,9 +4582,21 @@ int main(int argc, char *argv[]) {
                 fx_audio_set_input_gain_db(s_input_gain_db);
                 s_session_cfg.input_gain_db = s_input_gain_db;
             }
+            if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0.0f) {
+                s_input_gain_db += ImGui::GetIO().MouseWheel * 0.5f;
+                if (s_input_gain_db < -24.0f) s_input_gain_db = -24.0f;
+                if (s_input_gain_db >  12.0f) s_input_gain_db =  12.0f;
+                fx_audio_set_input_gain_db(s_input_gain_db);
+                s_session_cfg.input_gain_db = s_input_gain_db;
+            }
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                s_input_gain_db = 0.0f;
+                fx_audio_set_input_gain_db(s_input_gain_db);
+                s_session_cfg.input_gain_db = s_input_gain_db;
+            }
             ImGui::PopStyleColor(3);
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Input gain trim: -24 to +12 dB\nPre-chain, stacks with PAD.");
+                ImGui::SetTooltip("Input gain trim: -24 to +12 dB\nPre-chain, stacks with PAD.\nScroll to adjust (0.5 dB/notch). Right-click to reset to 0 dB.");
 
             ImGui::SameLine(0, 4);
             ImGui::SetCursorPosY((STATUS_H - bar_h) * 0.5f);
@@ -4625,9 +4650,19 @@ int main(int argc, char *argv[]) {
                 if (ImGui::SliderFloat("##master_vol", &s_master_vol, 0.0f, 1.0f, "")) {
                     fx_engine_set_master_volume(engine, s_master_vol);
                 }
+                if (ImGui::IsItemHovered() && ImGui::GetIO().MouseWheel != 0.0f) {
+                    s_master_vol += ImGui::GetIO().MouseWheel * 0.02f;
+                    if (s_master_vol < 0.0f) s_master_vol = 0.0f;
+                    if (s_master_vol > 1.0f) s_master_vol = 1.0f;
+                    fx_engine_set_master_volume(engine, s_master_vol);
+                }
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                    s_master_vol = 1.0f;
+                    fx_engine_set_master_volume(engine, s_master_vol);
+                }
                 ImGui::PopStyleColor(3);
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Master Volume: %.0f%%", s_master_vol * 100.0f);
+                    ImGui::SetTooltip("Master Volume: %.0f%%\nScroll to adjust (2%%/notch). Right-click to reset to 100%%.", s_master_vol * 100.0f);
                 }
             }
 
