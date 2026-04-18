@@ -24,7 +24,7 @@ so the app, plugins, and DAW end up in one place.
 
 ```bash
 # Fedora
-sudo dnf install wine wine-core wine-desktop winetricks
+sudo dnf install wine wine-core wine-common wine-desktop winetricks
 
 # Ubuntu / Debian
 sudo apt install wine winetricks
@@ -32,6 +32,13 @@ sudo apt install wine winetricks
 
 `winetricks` is optional but recommended — `setup.sh` will use it to pull
 in `corefonts` and `vcrun2019`, which Reaper and some VST3 plugins expect.
+
+**Fedora gotcha:** `wine-common` is NOT pulled in by `wine` alone and
+ships the `/usr/share/wine/winmd/*.winmd` files. Without it, `wineboot
+--init` hangs forever in `setupapi:do_file_copyW` trying to copy missing
+WinRT metadata. Symptom: two stuck `wineboot` dialogs at 99% CPU with no
+error output. If you see this, `dnf install wine-common` and nuke the
+prefix: `rm -rf ~/.local/share/0xfx-wine-test && ./scripts/wine/setup.sh`.
 
 ## Workflow
 
