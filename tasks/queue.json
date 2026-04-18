@@ -3166,7 +3166,7 @@
     "title": "Input gain trim + pad control on standalone audio settings",
     "domain": "audio",
     "phase": 12,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "agent-audio-gain",
     "depends": [],
     "estimatedTokens": 25000,
