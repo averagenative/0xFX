@@ -77,36 +77,8 @@ echo "  -> release/0xFX-${VERSION}-linux-x64.tar.gz"
 # ── Linux AppImage ──
 echo ""
 echo "--- Packaging Linux AppImage ---"
-APPDIR="release/0xFX.AppDir"
-mkdir -p "${APPDIR}/usr/bin"
-mkdir -p "${APPDIR}/usr/bin/presets"
-mkdir -p "${APPDIR}/usr/share/applications"
-mkdir -p "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
 
-cp build/0xfx_gui "${APPDIR}/usr/bin/" 2>/dev/null || true
-cp -r presets/factory "${APPDIR}/usr/bin/presets/"
-
-# Icon
-cp resources/icon/0xfx_256.png "${APPDIR}/0xfx.png"
-cp resources/icon/0xfx_256.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/0xfx.png"
-ln -sf 0xfx.png "${APPDIR}/.DirIcon"
-
-# Desktop entry — copy from resources and override Exec for AppImage context
-cp resources/0xFX.desktop "${APPDIR}/0xfx.desktop"
-sed -i 's/^Exec=.*/Exec=0xfx_gui/' "${APPDIR}/0xfx.desktop"
-cp "${APPDIR}/0xfx.desktop" "${APPDIR}/usr/share/applications/"
-
-# AppRun
-cat > "${APPDIR}/AppRun" << 'EOF'
-#!/bin/bash
-SELF="$(readlink -f "$0")"
-HERE="${SELF%/*}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/0xfx_gui" "$@"
-EOF
-chmod +x "${APPDIR}/AppRun"
-
-# AppImage is required for every release. Locate appimagetool or fail.
+# ── Locate appimagetool ──
 APPIMAGETOOL=""
 if command -v appimagetool &>/dev/null; then
     APPIMAGETOOL="appimagetool"
@@ -121,8 +93,89 @@ else
     exit 1
 fi
 
-ARCH=x86_64 "$APPIMAGETOOL" "${APPDIR}" "release/0xFX-${VERSION}-x86_64.AppImage"
+# ── Fuse3 runtimes (download once to ~/tools/, reuse on subsequent runs) ──
+# Uses the type2-runtime which supports both FUSE 2 and FUSE 3, unlike the old
+# AppImageKit runtime which required libfuse.so.2 (missing on Fedora 34+, Ubuntu 22.04+).
+TYPE2_RUNTIME_BASE="https://github.com/AppImage/type2-runtime/releases/download/continuous"
+mkdir -p "$HOME/tools"
+
+RUNTIME_X86_64="$HOME/tools/runtime-fuse3-x86_64"
+if [ ! -f "$RUNTIME_X86_64" ]; then
+    echo "  Downloading type2-runtime for x86_64..."
+    wget -q "${TYPE2_RUNTIME_BASE}/runtime-x86_64" -O "$RUNTIME_X86_64"
+    chmod +x "$RUNTIME_X86_64"
+    echo "  -> $RUNTIME_X86_64"
+else
+    echo "  Using cached type2-runtime: $RUNTIME_X86_64"
+fi
+
+RUNTIME_AARCH64="$HOME/tools/runtime-fuse3-aarch64"
+if [ ! -f "$RUNTIME_AARCH64" ]; then
+    echo "  Downloading type2-runtime for aarch64..."
+    wget -q "${TYPE2_RUNTIME_BASE}/runtime-aarch64" -O "$RUNTIME_AARCH64"
+    chmod +x "$RUNTIME_AARCH64"
+    echo "  -> $RUNTIME_AARCH64"
+else
+    echo "  Using cached type2-runtime: $RUNTIME_AARCH64"
+fi
+
+# ── Helper: populate an AppDir ──
+populate_appdir() {
+    local APPDIR="$1"
+    local BINARY="$2"
+
+    mkdir -p "${APPDIR}/usr/bin"
+    mkdir -p "${APPDIR}/usr/bin/presets"
+    mkdir -p "${APPDIR}/usr/share/applications"
+    mkdir -p "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+
+    cp "$BINARY" "${APPDIR}/usr/bin/0xfx_gui"
+    cp -r presets/factory "${APPDIR}/usr/bin/presets/"
+
+    cp resources/icon/0xfx_256.png "${APPDIR}/0xfx.png"
+    cp resources/icon/0xfx_256.png "${APPDIR}/usr/share/icons/hicolor/256x256/apps/0xfx.png"
+    ln -sf 0xfx.png "${APPDIR}/.DirIcon"
+
+    cp resources/0xFX.desktop "${APPDIR}/0xfx.desktop"
+    sed -i 's/^Exec=.*/Exec=0xfx_gui/' "${APPDIR}/0xfx.desktop"
+    cp "${APPDIR}/0xfx.desktop" "${APPDIR}/usr/share/applications/"
+
+    cat > "${APPDIR}/AppRun" << 'APPRUN_EOF'
+#!/bin/bash
+SELF="$(readlink -f "$0")"
+HERE="${SELF%/*}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+exec "${HERE}/usr/bin/0xfx_gui" "$@"
+APPRUN_EOF
+    chmod +x "${APPDIR}/AppRun"
+}
+
+# ── x86_64 AppImage ──
+APPDIR="release/0xFX.AppDir"
+rm -rf "${APPDIR}"
+populate_appdir "${APPDIR}" "build/0xfx_gui"
+
+ARCH=x86_64 "$APPIMAGETOOL" \
+    --runtime-file "$RUNTIME_X86_64" \
+    "${APPDIR}" "release/0xFX-${VERSION}-x86_64.AppImage"
 echo "  -> release/0xFX-${VERSION}-x86_64.AppImage"
+
+# ── aarch64 AppImage (cross-compiled binary from build_linux_arm64/) ──
+echo ""
+echo "--- Packaging Linux aarch64 AppImage ---"
+if [ -x "build_linux_arm64/0xfx_gui" ]; then
+    APPDIR_ARM64="release/0xFX-aarch64.AppDir"
+    rm -rf "${APPDIR_ARM64}"
+    populate_appdir "${APPDIR_ARM64}" "build_linux_arm64/0xfx_gui"
+
+    ARCH=aarch64 "$APPIMAGETOOL" \
+        --runtime-file "$RUNTIME_AARCH64" \
+        "${APPDIR_ARM64}" "release/0xFX-${VERSION}-aarch64.AppImage"
+    echo "  -> release/0xFX-${VERSION}-aarch64.AppImage"
+else
+    echo "  WARN: build_linux_arm64/0xfx_gui not found — skipping aarch64 AppImage."
+    echo "  To build: cmake -B build_linux_arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build_linux_arm64 -j\$(nproc)"
+fi
 
 # ══════════════════════════════════════════════════════════════════════
 # WINDOWS BUILD (cross-compile)
@@ -188,6 +241,10 @@ fi
 echo ""
 echo "=== Release artifacts ==="
 ls -lh release/*.tar.gz release/*.zip release/*.exe release/*.AppImage 2>/dev/null
+echo ""
+echo "Upload to GitHub release:"
+echo "  gh release upload v${VERSION} --clobber release/0xFX-${VERSION}-x86_64.AppImage release/0xFX-${VERSION}-aarch64.AppImage 2>/dev/null || \\"
+echo "  gh release upload v${VERSION} --clobber release/0xFX-${VERSION}-x86_64.AppImage"
 echo ""
 echo "To create a GitHub release:"
 echo "  git tag v${VERSION}"
