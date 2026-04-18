@@ -17,8 +17,14 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
 # macOS
-brew install sdl2 cmake python3
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+brew install cmake python3
+# For universal binaries (arm64 + x86_64), use the official SDL2 framework instead of Homebrew:
+#   curl -LO https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.dmg
+#   hdiutil attach SDL2-2.32.10.dmg
+#   sudo cp -R /Volumes/SDL2/SDL2.framework /Library/Frameworks/
+#   hdiutil detach /Volumes/SDL2
+# Homebrew SDL2 (`brew install sdl2`) works but produces x86_64-only builds.
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 cmake --build build -j$(sysctl -n hw.ncpu)
 
 # Windows (cross-compile from Linux via MinGW)
@@ -299,6 +305,7 @@ Packaging scripts:
 ./scripts/packaging/package_release.sh 1.1.0 --arch arm64
 
 # macOS universal (arm64 + x86_64) — must run on a Mac:
+# Requires SDL2.framework in /Library/Frameworks/ (see Build Commands above)
 ./scripts/packaging/package_macos.sh 1.1.0
 
 # Upload everything in release/ to the v1.1.0 GitHub release:
