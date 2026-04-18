@@ -7,6 +7,7 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "../../deps/miniaudio.h"
 #include "../engine/fx_engine.h"
+#include "../core/log.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -76,8 +77,40 @@ static void audio_callback(ma_device *device, void *output,
 
 /* ── Device enumeration ───────────────────────────────────────── */
 
+/*
+ * On PipeWire (via PulseAudio compatibility shim), pa_context_get_source_info_list
+ * returns both real hardware sources AND "monitor" sources — software loopbacks of
+ * the playback sinks. Monitor sources have ".monitor" appended to their pulse ID and
+ * "Monitor of" in their human-readable description. They are useless as guitar inputs
+ * and appear first, hiding actual hardware interfaces (iRig, Scarlett, etc.) at higher
+ * indices. This filter drops them.
+ */
+static bool is_monitor_source(const ma_device_info *info) {
+    /*
+     * On PulseAudio backend (including PipeWire's PulseAudio compatibility shim),
+     * monitor sources have ".monitor" at the end of their pulse source name ID.
+     * Check id.pulse directly — this is only called when backend == pulseaudio.
+     */
+    const char *id = info->id.pulse;
+    size_t id_len = strlen(id);
+    const char monitor_suffix[] = ".monitor";
+    const size_t sfx_len = sizeof(monitor_suffix) - 1;
+    if (id_len >= sfx_len &&
+        strcmp(id + id_len - sfx_len, monitor_suffix) == 0) {
+        return true;
+    }
+    /* Belt-and-suspenders: description starts with "Monitor of" */
+    if (strncmp(info->name, "Monitor of", 10) == 0) {
+        return true;
+    }
+    return false;
+}
+
 static void enumerate_devices(void) {
     if (!g_audio.context_init) return;
+
+    /* Log which backend miniaudio selected */
+    FX_INFO("Audio backend: %s", ma_get_backend_name(g_audio.context.backend));
 
     ma_device_info *playback_infos;
     ma_uint32 playback_count;
@@ -87,14 +120,35 @@ static void enumerate_devices(void) {
     if (ma_context_get_devices(&g_audio.context,
                                &playback_infos, &playback_count,
                                &capture_infos, &capture_count) != MA_SUCCESS) {
+        FX_ERROR("ma_context_get_devices failed — no devices will be available");
         return;
     }
 
-    /* Store capture devices (guitar input interfaces) */
-    g_audio.num_capture = (int)(capture_count < MAX_DEVICES ? capture_count : MAX_DEVICES);
-    for (int i = 0; i < g_audio.num_capture; i++) {
-        g_audio.capture_devices[i] = capture_infos[i];
-        snprintf(g_audio.capture_names[i], 256, "%s", capture_infos[i].name);
+    FX_DEBUG("Raw device counts from miniaudio: %u capture, %u playback",
+             capture_count, playback_count);
+
+    /* Store capture devices (guitar input interfaces).
+     * On the PulseAudio backend (used by PipeWire's compatibility shim on Fedora/Ubuntu),
+     * pa_context_get_source_info_list returns both real hardware sources AND "monitor"
+     * sources — software loopbacks of the output sinks. Monitor sources are useless as
+     * guitar inputs and appear first in the list, hiding the actual interface (iRig,
+     * Scarlett, etc.) at higher indices. Filter them when using PulseAudio backend. */
+    const bool filter_monitors = (g_audio.context.backend == ma_backend_pulseaudio);
+    g_audio.num_capture = 0;
+    for (ma_uint32 i = 0; i < capture_count && g_audio.num_capture < MAX_DEVICES; i++) {
+        if (filter_monitors && is_monitor_source(&capture_infos[i])) {
+            FX_DEBUG("Skipping PulseAudio monitor source: \"%s\" (id: %s)",
+                     capture_infos[i].name, capture_infos[i].id.pulse);
+            continue;
+        }
+        g_audio.capture_devices[g_audio.num_capture] = capture_infos[i];
+        snprintf(g_audio.capture_names[g_audio.num_capture], 256,
+                 "%s", capture_infos[i].name);
+        FX_DEBUG("  Capture [%d]: \"%s\"%s",
+                 g_audio.num_capture,
+                 g_audio.capture_names[g_audio.num_capture],
+                 capture_infos[i].isDefault ? " [default]" : "");
+        g_audio.num_capture++;
     }
 
     /* Store playback devices (speakers, headphones, monitors) */
@@ -102,6 +156,15 @@ static void enumerate_devices(void) {
     for (int i = 0; i < g_audio.num_playback; i++) {
         g_audio.playback_devices[i] = playback_infos[i];
         snprintf(g_audio.playback_names[i], 256, "%s", playback_infos[i].name);
+        FX_DEBUG("  Playback [%d]: \"%s\"%s",
+                 i, g_audio.playback_names[i],
+                 playback_infos[i].isDefault ? " [default]" : "");
+    }
+
+    if (g_audio.num_capture == 0) {
+        FX_WARN("No hardware capture devices found after filtering monitors. "
+                "Connect an audio interface (iRig, Scarlett, etc.) and check that "
+                "pipewire-pulseaudio (or pulseaudio) is running.");
     }
 }
 
@@ -167,25 +230,25 @@ static bool open_audio_device(fx_engine_t *engine) {
     config.pUserData          = &g_audio;
 
     if (ma_device_init(&g_audio.context, &config, &g_audio.device) != MA_SUCCESS) {
-        fprintf(stderr, "[0xFX] Failed to init audio device: in=%s out=%s\n",
-                g_audio.capture_names[cap_idx],
-                play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)");
+        FX_ERROR("Failed to init audio device: in=%s out=%s",
+                 g_audio.capture_names[cap_idx],
+                 play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)");
         return false;
     }
 
     g_audio.device_init = true;
 
     if (ma_device_start(&g_audio.device) != MA_SUCCESS) {
-        fprintf(stderr, "[0xFX] Failed to start audio device\n");
+        FX_ERROR("Failed to start audio device");
         ma_device_uninit(&g_audio.device);
         g_audio.device_init = false;
         return false;
     }
 
-    printf("[0xFX] Audio started: in=%s out=%s (%.0f Hz, %d frames)\n",
-           g_audio.capture_names[cap_idx],
-           play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)",
-           g_audio.sample_rate, g_audio.buffer_frames);
+    FX_INFO("Audio started: in=%s out=%s (%.0f Hz, %d frames)",
+            g_audio.capture_names[cap_idx],
+            play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)",
+            g_audio.sample_rate, g_audio.buffer_frames);
     return true;
 }
 
@@ -213,7 +276,7 @@ bool fx_audio_set_sample_rate(fx_engine_t *engine, float rate) {
 
 bool fx_audio_init(void) {
     if (ma_context_init(NULL, 0, NULL, &g_audio.context) != MA_SUCCESS) {
-        fprintf(stderr, "[0xFX] Failed to init audio context\n");
+        FX_ERROR("Failed to init audio context — no audio backend available");
         return false;
     }
     g_audio.context_init = true;
@@ -222,15 +285,14 @@ bool fx_audio_init(void) {
 
     enumerate_devices();
 
-    printf("[0xFX] Audio initialized. Found %d input, %d output device(s):\n",
-           g_audio.num_capture, g_audio.num_playback);
-    printf("  Input devices:\n");
+    FX_INFO("Audio initialized (%s). Found %d input, %d output device(s)",
+            ma_get_backend_name(g_audio.context.backend),
+            g_audio.num_capture, g_audio.num_playback);
     for (int i = 0; i < g_audio.num_capture; i++) {
-        printf("    [%d] %s\n", i, g_audio.capture_names[i]);
+        FX_INFO("  Input  [%d]: %s", i, g_audio.capture_names[i]);
     }
-    printf("  Output devices:\n");
     for (int i = 0; i < g_audio.num_playback; i++) {
-        printf("    [%d] %s\n", i, g_audio.playback_names[i]);
+        FX_INFO("  Output [%d]: %s", i, g_audio.playback_names[i]);
     }
 
     return true;
