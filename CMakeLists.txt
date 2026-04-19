@@ -292,6 +292,19 @@ if(HAS_GUI)
         target_include_directories(nfd PRIVATE ${DBUS_INCLUDE_DIRS})
         target_link_libraries(nfd PUBLIC ${DBUS_LIBRARIES})
     endif()
+    if(APPLE)
+        # nfd_cocoa.m uses AppKit for NSOpenPanel/NSSavePanel and
+        # UniformTypeIdentifiers (UTType) when targeting macOS >= 11.0.
+        find_library(APPKIT_LIBRARY AppKit)
+        find_library(UNIFORMTYPEIDENTIFIERS_LIBRARY UniformTypeIdentifiers)
+        target_link_libraries(nfd PUBLIC ${APPKIT_LIBRARY})
+        if(UNIFORMTYPEIDENTIFIERS_LIBRARY)
+            target_link_libraries(nfd PUBLIC ${UNIFORMTYPEIDENTIFIERS_LIBRARY})
+            target_compile_definitions(nfd PRIVATE NFD_MACOS_ALLOWEDCONTENTTYPES=1)
+        else()
+            target_compile_definitions(nfd PRIVATE NFD_MACOS_ALLOWEDCONTENTTYPES=0)
+        endif()
+    endif()
 
     add_executable(0xfx_gui WIN32
         src/gui/gui_main.cpp
