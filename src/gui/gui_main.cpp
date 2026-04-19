@@ -17,9 +17,11 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <windowsx.h>  /* GET_X_LPARAM, GET_Y_LPARAM */
+#include <shellapi.h>  /* ShellExecuteA for Open Folder */
 #endif
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
 
@@ -190,6 +192,27 @@ static char s_rec_dir[512] = "";
 static bool s_rec_dir_modal = false;
 static char s_rec_dir_edit[512] = "";
 static bool s_rec_dir_inited = false;
+
+/* Last finished recording — shown in the "Recording saved" popup. */
+static char s_last_rec_path[768] = "";
+static bool s_rec_saved_popup_open = false;
+
+/* Launch the OS file browser for a directory. */
+static void fx_open_folder(const char *path) {
+    if (!path || !*path) return;
+#ifdef _WIN32
+    ShellExecuteA(NULL, "open", path, NULL, NULL, SW_SHOWDEFAULT);
+#else
+    char cmd[1024];
+#  ifdef __APPLE__
+    snprintf(cmd, sizeof(cmd), "open \"%s\" &", path);
+#  else
+    snprintf(cmd, sizeof(cmd), "xdg-open \"%s\" >/dev/null 2>&1 &", path);
+#  endif
+    int rc = system(cmd);
+    (void)rc;
+#endif
+}
 
 /* Scan a single .0xfx file and extract metadata via cJSON */
 static bool preset_scan_file(const char *path, PresetEntry *entry, bool is_factory) {
@@ -676,11 +699,22 @@ static void looper_render_panel(fx_engine_t *engine,
     }
 
     /* Keybinds help — ? button on the right edge of the strip. */
-    ImGui::SetCursorPos(ImVec2(w - 32, 6));
+    ImGui::SetCursorPos(ImVec2(w - 56, 6));
     if (ImGui::SmallButton("?##looper_help"))
         ImGui::OpenPopup("looper_keybinds");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Show looper keybinds");
+
+    /* Close (X) — hides the looper panel. */
+    ImGui::SetCursorPos(ImVec2(w - 28, 6));
+    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+    if (ImGui::SmallButton("X##looper_close"))
+        s_looper_panel_open = false;
+    ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Close looper panel");
     if (ImGui::BeginPopup("looper_keybinds")) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
         ImGui::Text("Looper keybinds");
@@ -1184,6 +1218,47 @@ static void pop_toolbar_button_colors(void) {
 /* ── Borderless window support (Win32) ─────────────────────────── */
 
 #define RESIZE_BORDER 8
+#define FX_TOOLBAR_HIT_H 64   /* must match TOOLBAR_H in main() */
+
+/* Published each frame by the toolbar pass: true if the mouse currently sits
+ * over any interactive toolbar widget. The SDL hit-test reads this to decide
+ * whether a toolbar click should become a window drag (empty space) or pass
+ * through to ImGui (button/dropdown/etc). Same-thread access — SDL event
+ * dispatch and GUI submit both run on main. One frame of staleness is fine:
+ * the click position equals the current hover position. */
+static bool g_toolbar_pointer_on_widget = false;
+
+/* SDL hit-test: lets the OS/WM handle window drag and edge resize for our
+ * borderless window. If we return RESIZE_* or DRAGGABLE, SDL handles the
+ * click as a system operation and ImGui never sees it. */
+static SDL_HitTestResult SDLCALL fx_window_hit_test(SDL_Window *win,
+                                                    const SDL_Point *pt,
+                                                    void *data) {
+    (void)data;
+    int w = 0, h = 0;
+    SDL_GetWindowSize(win, &w, &h);
+    bool maximized = (SDL_GetWindowFlags(win) & SDL_WINDOW_MAXIMIZED) != 0;
+
+    if (!maximized) {
+        const int edge = RESIZE_BORDER;
+        bool left   = pt->x <  edge;
+        bool right_ = pt->x >= w - edge;
+        bool top    = pt->y <  edge;
+        bool bot    = pt->y >= h - edge;
+        if (top && left)    return SDL_HITTEST_RESIZE_TOPLEFT;
+        if (top && right_)  return SDL_HITTEST_RESIZE_TOPRIGHT;
+        if (bot && left)    return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+        if (bot && right_)  return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+        if (top)            return SDL_HITTEST_RESIZE_TOP;
+        if (bot)            return SDL_HITTEST_RESIZE_BOTTOM;
+        if (left)           return SDL_HITTEST_RESIZE_LEFT;
+        if (right_)         return SDL_HITTEST_RESIZE_RIGHT;
+    }
+    /* Whole toolbar is draggable unless the pointer is over a widget. */
+    if (pt->y < FX_TOOLBAR_HIT_H && !g_toolbar_pointer_on_widget)
+        return SDL_HITTEST_DRAGGABLE;
+    return SDL_HITTEST_NORMAL;
+}
 
 #ifdef _WIN32
 static WNDPROC g_orig_wndproc = NULL;
@@ -1721,6 +1796,7 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_SetWindowMinimumSize(window, 800, 500);
+    SDL_SetWindowHitTest(window, fx_window_hit_test, NULL);
 #ifdef _WIN32
     install_borderless_wndproc(window);
 #endif
@@ -1967,9 +2043,15 @@ int main(int argc, char *argv[]) {
                 if (s_logo_tex) {
                     float logo_h = TOOLBAR_H - 8.0f;
                     float logo_w = logo_h * s_logo_aspect;
-                    ImGui::Image((ImTextureID)s_logo_tex, ImVec2(logo_w, logo_h));
+                    /* Draw via DrawList (not ImGui::Image) so the logo doesn't
+                     * register as a hovered item and block toolbar drag. */
+                    ImVec2 cp = ImGui::GetCursorScreenPos();
+                    cp.y += 4.0f;
+                    ImGui::GetWindowDrawList()->AddImage(
+                        (ImTextureID)s_logo_tex, cp,
+                        ImVec2(cp.x + logo_w, cp.y + logo_h));
                 } else {
-                    ImGui::Text("0xFX");
+                    ImGui::TextUnformatted("0xFX");
                 }
             }
             ImGui::SameLine(130);
@@ -2016,7 +2098,9 @@ int main(int argc, char *argv[]) {
                 ImGui::Text("%s", note);
                 ImGui::SetWindowFontScale(1.0f);
                 ImGui::PopStyleColor();
-                ImGui::SameLine();
+                /* Lock the bar to a fixed X so a 1-char ("E") vs 2-char
+                 * ("D#") note doesn't shove the tuner sideways. */
+                ImGui::SameLine(175.0f);
 
                 /* Cents bar */
                 {
@@ -2054,9 +2138,11 @@ int main(int argc, char *argv[]) {
                         dl->AddCircleFilled(ImVec2(dot_x, bar_cx_y), dot_r, dot_col);
                     }
 
-                    ImGui::Dummy(ImVec2(bar_w + padding * 2.0f, bar_h + dot_r * 2.0f));
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Chromatic tuner -- detects pitch of input signal");
+                    /* Advance the cursor without submitting a hoverable item —
+                     * an invisible Dummy here would register as "hovered" and
+                     * block the SDL hit-test's window-drag path over the tuner
+                     * strip. The next widget anchors absolutely via SameLine. */
+                    ImGui::SetCursorScreenPos(ImVec2(bar_x1 + padding, cursor.y));
 
                     /* TUNER label */
                     {
@@ -2072,7 +2158,7 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            ImGui::SameLine(380);
+            ImGui::SameLine(405);
 
             /* ── Preset name display ──────────────────────────── */
             {
@@ -2128,12 +2214,25 @@ int main(int argc, char *argv[]) {
             }
 
             /* ── Preset browser popup ────────────────────────── */
+            ImGui::SetNextWindowSizeConstraints(ImVec2(640.0f, 0.0f),
+                                                ImVec2(640.0f, FLT_MAX));
             if (ImGui::BeginPopup("preset_browser_popup")) {
                 if (s_browser_needs_scan) preset_browser_scan();
 
+                const float pb_popup_w = 640.0f;
+                const float pb_btn_w   = 22.0f;
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
                 ImGui::Text("Preset Library");
                 ImGui::PopStyleColor();
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(pb_popup_w - pb_btn_w - ImGui::GetStyle().WindowPadding.x);
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+                if (ImGui::Button("X##preset_close", ImVec2(pb_btn_w, 0))) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(3);
                 ImGui::Separator();
 
                 /* ── Surprise Me button with rainbow border ──── */
@@ -2534,6 +2633,8 @@ int main(int argc, char *argv[]) {
                 if (ImGui::Button(rec_label, ImVec2(recording ? 56.0f : 48.0f, 32.0f))) {
                     if (recording) {
                         fx_recorder_stop();
+                        ImGui::OpenPopup("rec_saved_popup");
+                        s_rec_saved_popup_open = true;
                     } else {
                         const char *exts[] = { ".wav", ".wav", ".mp3", ".mp3", ".flac", ".flac" };
                         char rec_path[768];
@@ -2553,6 +2654,8 @@ int main(int argc, char *argv[]) {
                             t->tm_hour, t->tm_min, t->tm_sec,
                             exts[rec_format_idx]);
                         fx_recorder_start(rec_path, (fx_record_format_t)rec_format_idx, 44100.0f);
+                        strncpy(s_last_rec_path, rec_path, sizeof(s_last_rec_path) - 1);
+                        s_last_rec_path[sizeof(s_last_rec_path) - 1] = '\0';
                     }
                 }
                 ImGui::PopStyleColor(4);
@@ -2565,6 +2668,44 @@ int main(int argc, char *argv[]) {
                         ImGui::SetTooltip("Record processed output (%s)",
                             fx_recorder_format_name((fx_record_format_t)rec_format_idx));
                     }
+                }
+
+                /* Folder icon — opens the recording directory in the OS
+                 * file browser. Always shown next to REC. */
+                ImGui::SameLine();
+                {
+                    ImVec2 fld_sz(30.0f, 30.0f);
+                    ImVec2 p0 = ImGui::GetCursorScreenPos();
+                    bool clicked = ImGui::InvisibleButton("##rec_folder", fld_sz);
+                    bool hov = ImGui::IsItemHovered();
+                    ImDrawList *dl = ImGui::GetWindowDrawList();
+                    const fx_theme_t *thf = fx_theme_get(s_theme);
+                    ImU32 fg = theme_col32(hov ? thf->text : thf->text_dim);
+
+                    /* Simple manila-folder glyph: tab + body. */
+                    float cx = p0.x + fld_sz.x * 0.5f;
+                    float cy = p0.y + fld_sz.y * 0.5f;
+                    float w2 = 9.0f;   /* half-width of folder body */
+                    float h2 = 6.0f;   /* half-height of folder body */
+                    /* Tab on top-left */
+                    ImVec2 tab[4] = {
+                        ImVec2(cx - w2,        cy - h2 - 3.0f),
+                        ImVec2(cx - w2 + 6.0f, cy - h2 - 3.0f),
+                        ImVec2(cx - w2 + 8.0f, cy - h2),
+                        ImVec2(cx - w2,        cy - h2),
+                    };
+                    dl->AddConvexPolyFilled(tab, 4, fg);
+                    /* Body */
+                    dl->AddRectFilled(ImVec2(cx - w2, cy - h2),
+                                      ImVec2(cx + w2, cy + h2), fg, 1.5f);
+                    /* Inner slit for folder look */
+                    dl->AddRectFilled(ImVec2(cx - w2 + 1.0f, cy - h2 + 2.0f),
+                                      ImVec2(cx + w2 - 1.0f, cy - h2 + 3.0f),
+                                      theme_col32(thf->bg));
+
+                    if (clicked) fx_open_folder(s_rec_dir);
+                    if (hov)
+                        ImGui::SetTooltip("Open recording folder\n%s", s_rec_dir);
                 }
 
                 /* Format dropdown after REC button */
@@ -2636,6 +2777,54 @@ int main(int argc, char *argv[]) {
                         if (hov)
                             ImGui::SetTooltip("Recordings save to:\n%s", s_rec_dir);
                     }
+                }
+
+                /* ── Recording saved popup ────────────────────────
+                 * Shown after fx_recorder_stop() to confirm where the file
+                 * landed and offer a one-click path to the OS file browser. */
+                ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 0.0f),
+                                                    ImVec2(520.0f, FLT_MAX));
+                if (ImGui::BeginPopup("rec_saved_popup")) {
+                    const float rs_popup_w = 520.0f;
+                    const float rs_btn_w   = 22.0f;
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+                    ImGui::Text("Recording saved");
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    ImGui::SetCursorPosX(rs_popup_w - rs_btn_w - ImGui::GetStyle().WindowPadding.x);
+                    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+                    if (ImGui::Button("X##rec_saved_close", ImVec2(rs_btn_w, 0))) {
+                        ImGui::CloseCurrentPopup();
+                        s_rec_saved_popup_open = false;
+                    }
+                    ImGui::PopStyleColor(3);
+                    ImGui::Separator();
+
+                    /* Split file from dir for readable display. */
+                    const char *slash = strrchr(s_last_rec_path, '/');
+#ifdef _WIN32
+                    const char *bslash = strrchr(s_last_rec_path, '\\');
+                    if (bslash && (!slash || bslash > slash)) slash = bslash;
+#endif
+                    const char *fname = slash ? slash + 1 : s_last_rec_path;
+
+                    ImGui::TextDisabled("File");
+                    ImGui::TextWrapped("%s", fname);
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("Folder");
+                    ImGui::TextWrapped("%s", s_rec_dir);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Open Folder", ImVec2(140, 28))) {
+                        fx_open_folder(s_rec_dir);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Close", ImVec2(80, 28))) {
+                        ImGui::CloseCurrentPopup();
+                        s_rec_saved_popup_open = false;
+                    }
+                    ImGui::EndPopup();
                 }
             }
 
@@ -2717,9 +2906,25 @@ int main(int argc, char *argv[]) {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Audio device and buffer settings");
 
-            /* Audio settings popup */
+            /* Audio settings popup — fixed width so the X button can anchor
+             * to the right edge without auto-size feedback. */
+            ImGui::SetNextWindowSizeConstraints(ImVec2(370.0f, 0.0f),
+                                                ImVec2(370.0f, FLT_MAX));
             if (ImGui::BeginPopup("audio_settings_popup")) {
+                const float popup_w = 370.0f;
+                const float btn_w   = 22.0f;
                 ImGui::Text("Audio Settings");
+                /* Close (X) button in top-right — positioned absolutely so the
+                 * popup width does not depend on content-region math. */
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(popup_w - btn_w - ImGui::GetStyle().WindowPadding.x);
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+                if (ImGui::Button("X##audio_close", ImVec2(btn_w, 0))) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(3);
                 ImGui::Separator();
 
                 ImGui::TextDisabled("Input Device (Guitar):");
@@ -2753,13 +2958,18 @@ int main(int argc, char *argv[]) {
 
                 ImGui::Spacing();
 
-                ImGui::SetNextItemWidth(120);
-                if (ImGui::Combo("Buffer", &s_selected_buf_idx, buf_labels, 5)) {
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("Buffer");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(100);
+                if (ImGui::Combo("##buffer", &s_selected_buf_idx, buf_labels, 5)) {
                     fx_audio_set_buffer_size(engine, buf_sizes[s_selected_buf_idx]);
                 }
                 ImGui::SameLine();
-                ImGui::SetNextItemWidth(120);
-                if (ImGui::Combo("Rate", &s_selected_sr_idx, sr_labels, 2)) {
+                ImGui::TextDisabled("Rate");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(100);
+                if (ImGui::Combo("##rate", &s_selected_sr_idx, sr_labels, 2)) {
                     fx_audio_set_sample_rate(engine, (float)sr_values[s_selected_sr_idx]);
                 }
 
@@ -2955,10 +3165,23 @@ int main(int argc, char *argv[]) {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Keyboard shortcuts");
                 pop_toolbar_button_colors();
+                ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 0.0f),
+                                                    ImVec2(460.0f, FLT_MAX));
                 if (ImGui::BeginPopup("app_keybinds")) {
+                    const float kb_popup_w = 460.0f;
+                    const float kb_btn_w   = 22.0f;
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
                     ImGui::Text("Keyboard shortcuts");
                     ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    ImGui::SetCursorPosX(kb_popup_w - kb_btn_w - ImGui::GetStyle().WindowPadding.x);
+                    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+                    if (ImGui::Button("X##keybinds_close", ImVec2(kb_btn_w, 0))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopStyleColor(3);
                     ImGui::Separator();
                     ImGui::TextDisabled("Global");
                     ImGui::BulletText("Space          LIVE on/off (or tap focused loop slot)");
@@ -3090,6 +3313,12 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
+
+            /* Publish toolbar widget-hover state for the SDL hit-test so the
+             * OS-level window drag kicks in only when the pointer is over
+             * empty toolbar space, not a button or dropdown. */
+            g_toolbar_pointer_on_widget =
+                ImGui::IsAnyItemHovered() || ImGui::IsAnyItemActive();
 
             ImGui::End();
         }
@@ -5905,6 +6134,21 @@ int main(int argc, char *argv[]) {
                                           0.0f, dirt_top,
                                           win_w, dirt_bot - dirt_top,
                                           s_theme);
+            }
+        }
+
+        /* Re-publish toolbar widget-hover state for the SDL hit-test. The
+         * toolbar End() already set this based on toolbar-local items, but
+         * popups/child windows render AFTER the toolbar and may overlap it.
+         * If the pointer is over any non-toolbar window (e.g. the audio
+         * settings popup), disable window drag so the click reaches the popup
+         * instead of becoming an OS window-drag gesture. */
+        {
+            ImGuiContext *gctx = ImGui::GetCurrentContext();
+            ImGuiWindow  *hov  = gctx ? gctx->HoveredWindow : NULL;
+            if (hov && hov->RootWindow) hov = hov->RootWindow;
+            if (hov && strcmp(hov->Name, "##toolbar") != 0) {
+                g_toolbar_pointer_on_widget = true;
             }
         }
 
