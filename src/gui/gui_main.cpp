@@ -2749,7 +2749,10 @@ int main(int argc, char *argv[]) {
                                       ImVec2(cx + w2 - 1.0f, cy - h2 + 3.0f),
                                       theme_col32(thf->bg));
 
-                    if (clicked) fx_open_folder(s_rec_dir);
+                    if (clicked) {
+                        ensure_dir(s_rec_dir);
+                        fx_open_folder(s_rec_dir);
+                    }
                     if (hov)
                         ImGui::SetTooltip("Open recording folder\n%s", s_rec_dir);
                 }
@@ -2863,6 +2866,7 @@ int main(int argc, char *argv[]) {
                     ImGui::TextWrapped("%s", s_rec_dir);
                     ImGui::Spacing();
                     if (ImGui::Button("Open Folder", ImVec2(140, 28))) {
+                        ensure_dir(s_rec_dir);
                         fx_open_folder(s_rec_dir);
                     }
                     ImGui::SameLine();
