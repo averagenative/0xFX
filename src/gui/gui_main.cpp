@@ -629,6 +629,7 @@ static void looper_render_panel(fx_engine_t *engine,
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoSavedSettings);
 
+
     /* Background gradient + bottom separator — matches toolbar. */
     {
         ImDrawList *dl = ImGui::GetWindowDrawList();
@@ -764,14 +765,21 @@ static void looper_render_panel(fx_engine_t *engine,
             ImVec4(c.x * 0.8f, c.y * 0.8f, c.z * 0.8f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
 
+        /* `###pad_N` pins the widget ID so the button doesn't lose its active
+         * item when the displayed length (%.1fs) ticks over during RECORDING.
+         * Without it, ImGui's Button() drops the click if the label changes
+         * between mouse-down and mouse-up frames. */
         char label[64];
-        snprintf(label, sizeof(label), "%d\n%s%s\n%.1fs L%d",
+        snprintf(label, sizeof(label), "%d\n%s%s\n%.1fs L%d###looper_pad_%d",
                  slot + 1, looper_state_label(st),
                  muted ? " m" : "",
-                 len > 0 ? (float)len / 48000.0f : 0.0f, layers);
+                 len > 0 ? (float)len / 48000.0f : 0.0f, layers,
+                 slot);
 
         ImGui::PushID(slot);
         if (ImGui::Button(label, ImVec2(pad_w, pad_h))) {
+            FX_INFO("looper GUI: pad %d clicked (state=%d len=%d)",
+                    slot + 1, (int)st, len);
             fx_looper_slot_tap(engine, slot);
         }
         ImGui::PopID();
@@ -813,20 +821,28 @@ static void looper_handle_keys(fx_engine_t *engine) {
     };
     for (int i = 0; i < 9; i++) {
         if (ImGui::IsKeyPressed(num_keys[i], false)) {
+            FX_INFO("looper GUI: key %d pressed (ctrl=%d shift=%d alt=%d)",
+                    i + 1, ctrl, shift, alt);
             if (alt)        fx_looper_slot_clear(engine, i);
             else if (shift) fx_looper_slot_mute(engine, i);
             else            fx_looper_slot_tap(engine, i);
         }
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !ctrl && !shift && !alt)
+    if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !ctrl && !shift && !alt) {
+        FX_INFO("looper GUI: R pressed (arm next)");
         fx_looper_arm_next(engine);
+    }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ctrl && !shift && !alt)
+    if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ctrl && !shift && !alt) {
+        FX_INFO("looper GUI: Tab pressed (focused=%d)", fx_looper_focused(engine));
         fx_looper_focus_next(engine);
+    }
 
-    if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+    if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+        FX_INFO("looper GUI: Ctrl+Z pressed (undo focused=%d)", fx_looper_focused(engine));
         fx_looper_slot_undo(engine, fx_looper_focused(engine));
+    }
 }
 
 /* ── Surprise Me — random preset generator ──────────────────── */
@@ -2917,6 +2933,12 @@ int main(int argc, char *argv[]) {
         }
         /* Space: tap focused looper slot when panel is open (start/stop rec,
          * then overdub), otherwise LIVE toggle. */
+        if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+            FX_INFO("GUI: Space pressed (looper_open=%d focused=%d want_cap_kbd=%d)",
+                    s_looper_panel_open ? 1 : 0,
+                    s_looper_panel_open ? fx_looper_focused(engine) : -1,
+                    ImGui::GetIO().WantCaptureKeyboard ? 1 : 0);
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_Space) && !ImGui::GetIO().WantCaptureKeyboard) {
             if (s_looper_panel_open) {
                 fx_looper_slot_tap(engine, fx_looper_focused(engine));

@@ -163,8 +163,12 @@ static bool valid_slot(int slot) {
 }
 
 void looper_slot_tap(fx_looper_t *l, int slot) {
-    if (!l || !valid_slot(slot)) return;
+    if (!l || !valid_slot(slot)) {
+        FX_INFO("looper_slot_tap: INVALID l=%p slot=%d", (void*)l, slot);
+        return;
+    }
     fx_loop_slot_t *s = &l->slots[slot];
+    fx_loop_state_t before = s->state;
 
     switch (s->state) {
     case FX_LOOP_EMPTY:
@@ -212,6 +216,10 @@ void looper_slot_tap(fx_looper_t *l, int slot) {
         s->state = FX_LOOP_PLAYING;
         break;
     }
+
+    FX_INFO("looper_slot_tap: slot=%d  %d -> %d  (len=%d layers=%d pos=%d)",
+            slot, (int)before, (int)s->state,
+            s->length, s->layers, s->play_pos);
 }
 
 void looper_slot_mute(fx_looper_t *l, int slot) {
