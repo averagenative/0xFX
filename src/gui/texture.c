@@ -250,3 +250,27 @@ void fx_texture_cache_clear(void)
      * or belong to a different instance */
     s_count = 0;
 }
+
+unsigned char *fx_image_load_rgba(const char *path, int *out_w, int *out_h)
+{
+    if (!path || !out_w || !out_h) return NULL;
+    int w = 0, h = 0, channels = 0;
+    unsigned char *data = NULL;
+    const fx_embedded_asset_t *embedded = fx_embedded_find(path);
+    if (embedded) {
+        data = stbi_load_from_memory(embedded->data, (int)embedded->size,
+                                     &w, &h, &channels, 4);
+    }
+    if (!data) {
+        data = stbi_load(path, &w, &h, &channels, 4);
+    }
+    if (!data) return NULL;
+    *out_w = w;
+    *out_h = h;
+    return data;
+}
+
+void fx_image_free_pixels(unsigned char *pixels)
+{
+    if (pixels) stbi_image_free(pixels);
+}

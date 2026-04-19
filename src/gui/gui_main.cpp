@@ -1824,6 +1824,22 @@ int main(int argc, char *argv[]) {
 
     SDL_SetWindowMinimumSize(window, 800, 500);
     SDL_SetWindowHitTest(window, fx_window_hit_test, NULL);
+
+    {
+        int iw = 0, ih = 0;
+        unsigned char *icon_px = fx_image_load_rgba("resources/icon/0xfx_256.png", &iw, &ih);
+        if (icon_px) {
+            /* stb_image returns RGBA with R in byte 0 — matches these masks on LE */
+            SDL_Surface *icon_surf = SDL_CreateRGBSurfaceFrom(
+                icon_px, iw, ih, 32, iw * 4,
+                0x000000ffu, 0x0000ff00u, 0x00ff0000u, 0xff000000u);
+            if (icon_surf) {
+                SDL_SetWindowIcon(window, icon_surf);
+                SDL_FreeSurface(icon_surf);
+            }
+            fx_image_free_pixels(icon_px);
+        }
+    }
 #ifdef _WIN32
     install_borderless_wndproc(window);
 #endif

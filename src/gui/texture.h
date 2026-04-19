@@ -19,4 +19,12 @@ void fx_texture_shutdown(void);
  * where each instance has its own GL context) */
 void fx_texture_cache_clear(void);
 
+/* Load a PNG from embedded assets (or disk fallback) as raw RGBA pixels.
+ * Returns malloc'd buffer of w*h*4 bytes, caller must free via
+ * fx_image_free_pixels(). NULL on failure. Used for window-icon wiring
+ * so we can build platform HICON / _NET_WM_ICON / SDL_Surface without
+ * each frontend reaching into stb_image directly. */
+unsigned char *fx_image_load_rgba(const char *path, int *out_w, int *out_h);
+void           fx_image_free_pixels(unsigned char *pixels);
+
 #endif

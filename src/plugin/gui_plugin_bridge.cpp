@@ -334,6 +334,59 @@ static DWORD WINAPI render_thread_func(LPVOID data)
     return 0;
 }
 
+/* ─── Window icon (from embedded 0xfx_256.png) ─────────────────────────── */
+
+static HICON create_hicon_from_rgba(const unsigned char *rgba, int w, int h)
+{
+    BITMAPV5HEADER bi = {};
+    bi.bV5Size        = sizeof(bi);
+    bi.bV5Width       = w;
+    bi.bV5Height      = -h; /* top-down */
+    bi.bV5Planes      = 1;
+    bi.bV5BitCount    = 32;
+    bi.bV5Compression = BI_BITFIELDS;
+    bi.bV5RedMask     = 0x00FF0000;
+    bi.bV5GreenMask   = 0x0000FF00;
+    bi.bV5BlueMask    = 0x000000FF;
+    bi.bV5AlphaMask   = 0xFF000000;
+
+    HDC hdc = GetDC(NULL);
+    void *bits = NULL;
+    HBITMAP color_bmp = CreateDIBSection(hdc, (BITMAPINFO*)&bi, DIB_RGB_COLORS,
+                                         &bits, NULL, 0);
+    ReleaseDC(NULL, hdc);
+    if (!color_bmp || !bits) { if (color_bmp) DeleteObject(color_bmp); return NULL; }
+
+    /* stb_image delivers R,G,B,A — Windows DIB wants B,G,R,A */
+    unsigned char *dst = (unsigned char*)bits;
+    for (int i = 0; i < w * h; i++) {
+        dst[i*4+0] = rgba[i*4+2];
+        dst[i*4+1] = rgba[i*4+1];
+        dst[i*4+2] = rgba[i*4+0];
+        dst[i*4+3] = rgba[i*4+3];
+    }
+
+    HBITMAP mask_bmp = CreateBitmap(w, h, 1, 1, NULL);
+    ICONINFO ii = {};
+    ii.fIcon    = TRUE;
+    ii.hbmMask  = mask_bmp;
+    ii.hbmColor = color_bmp;
+    HICON icon = CreateIconIndirect(&ii);
+    DeleteObject(color_bmp);
+    DeleteObject(mask_bmp);
+    return icon;
+}
+
+static HICON load_plugin_hicon(void)
+{
+    int w = 0, h = 0;
+    unsigned char *rgba = fx_image_load_rgba("resources/icon/0xfx_256.png", &w, &h);
+    if (!rgba) return NULL;
+    HICON icon = create_hicon_from_rgba(rgba, w, h);
+    fx_image_free_pixels(rgba);
+    return icon;
+}
+
 /* ─── Window class registration ────────────────────────────────────────── */
 
 static void ensure_wnd_class(void)
@@ -344,9 +397,15 @@ static void ensure_wnd_class(void)
     wc.cbSize        = sizeof(wc);
     wc.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     wc.lpfnWndProc   = PluginWndProc;
-    wc.hInstance      = GetModuleHandleW(NULL);
-    wc.lpszClassName  = OXFX_WND_CLASS;
-    wc.hCursor        = LoadCursor(NULL, IDC_ARROW);
+    wc.hInstance     = GetModuleHandleW(NULL);
+    wc.lpszClassName = OXFX_WND_CLASS;
+    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+    /* Load the shared icon once; leaked at plugin unload — harmless (~260 KB).
+     * hIcon/hIconSm are not owned by the class in a way that we can free,
+     * and one instance per DLL is the intended lifetime. */
+    HICON icon = load_plugin_hicon();
+    wc.hIcon   = icon;
+    wc.hIconSm = icon;
 
     if (RegisterClassExW(&wc))
         s_wnd_class_registered = true;
@@ -359,10 +418,35 @@ static void ensure_wnd_class(void)
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <stdlib.h>
+
+/* Set _NET_WM_ICON from embedded 0xfx_256.png. Safe to call once per window. */
+static void set_x11_window_icon(Display *dpy, Window win)
+{
+    int w = 0, h = 0;
+    unsigned char *rgba = fx_image_load_rgba("resources/icon/0xfx_256.png", &w, &h);
+    if (!rgba) return;
+    size_t n = 2 + (size_t)w * h;
+    long *data = (long *)malloc(n * sizeof(long));
+    if (!data) { fx_image_free_pixels(rgba); return; }
+    data[0] = w;
+    data[1] = h;
+    for (int i = 0; i < w * h; i++) {
+        unsigned long r = rgba[i*4+0], g = rgba[i*4+1],
+                      b = rgba[i*4+2], a = rgba[i*4+3];
+        data[2 + i] = (long)((a << 24) | (r << 16) | (g << 8) | b);
+    }
+    Atom prop = XInternAtom(dpy, "_NET_WM_ICON", False);
+    XChangeProperty(dpy, win, prop, XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)data, (int)n);
+    free(data);
+    fx_image_free_pixels(rgba);
+}
 
 struct PluginGUI {
     fx_engine_t    *engine;
@@ -766,6 +850,8 @@ void oxfx_gui_attach(void *gui_ptr, void *parent_hwnd)
         gui->display = NULL;
         return;
     }
+
+    set_x11_window_icon(gui->display, gui->window);
 
     /* If parent was provided and isn't the root, reparent */
     if (parent_hwnd) {
