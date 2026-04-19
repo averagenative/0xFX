@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1810"/>
+      <stop offset="1" stop-color="#0c0604"/>
+    </linearGradient>
+    <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#ffb74a"/>
+      <stop offset="0.55" stop-color="#ff7a1a"/>
+      <stop offset="1"    stop-color="#d63d00"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff7a1a" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ff7a1a" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="url(#bg)"/>
+  <rect x="3" y="3" width="1018" height="1018" rx="222" ry="222"
+        fill="none" stroke="url(#edge)" stroke-width="6"/>
+
+  <text x="512" y="640"
+        text-anchor="middle"
+        font-family="Liberation Sans, DejaVu Sans, Arial, sans-serif"
+        font-weight="700"
+        font-size="340"
+        fill="url(#fg)">0xFX</text>
+</svg>
