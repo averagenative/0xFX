@@ -34,6 +34,12 @@ for size in 16 32 48 64 128 256 512 1024; do
     echo "  -> 0xfx_${size}.png"
 done
 
+WORDMARK_SVG="${ICON_DIR}/0xfx_wordmark.svg"
+if [ -f "$WORDMARK_SVG" ]; then
+    rsvg-convert -w 512 -h 200 "$WORDMARK_SVG" -o "${ICON_DIR}/0xfx_wordmark.png"
+    echo "  -> 0xfx_wordmark.png (toolbar wordmark)"
+fi
+
 echo ""
 echo "--- Building 0xfx.ico (16/32/48/64/128/256) ---"
 magick \

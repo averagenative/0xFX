@@ -2071,23 +2071,25 @@ int main(int argc, char *argv[]) {
                     theme_col32(sep), 1.0f);
             }
 
-            /* Neon logo image (cached) — pre-trimmed + faded asset */
+            /* App wordmark — gradient "0xFX" on transparent background */
+            float logo_w = 0.0f;
             {
                 static uintptr_t s_logo_tex = 0;
                 static bool s_logo_tried = false;
-                static float s_logo_aspect = 1.96f;
+                static float s_logo_aspect = 3.29f;
                 if (!s_logo_tried) {
-                    s_logo_tex = fx_texture_load("resources/logo/logo_neon_v4_red_trim_fade.png");
+                    s_logo_tex = fx_texture_load("resources/icon/0xfx_wordmark.png");
                     s_logo_tried = true;
                     int lw = 0, lh = 0;
                     if (s_logo_tex && fx_texture_get_size(s_logo_tex, &lw, &lh) && lh > 0)
                         s_logo_aspect = (float)lw / (float)lh;
                 }
                 if (s_logo_tex) {
-                    float logo_h = TOOLBAR_H - 8.0f;
-                    float logo_w = logo_h * s_logo_aspect;
+                    float logo_h = 28.0f;
+                    logo_w = logo_h * s_logo_aspect;
                     /* Draw via DrawList (not ImGui::Image) so the logo doesn't
-                     * register as a hovered item and block toolbar drag. */
+                     * register as a hovered item and block toolbar drag.
+                     * Top-align with a small margin. */
                     ImVec2 cp = ImGui::GetCursorScreenPos();
                     cp.y += 4.0f;
                     ImGui::GetWindowDrawList()->AddImage(
@@ -2095,9 +2097,10 @@ int main(int argc, char *argv[]) {
                         ImVec2(cp.x + logo_w, cp.y + logo_h));
                 } else {
                     ImGui::TextUnformatted("0xFX");
+                    logo_w = 80.0f;
                 }
             }
-            ImGui::SameLine(130);
+            ImGui::SameLine(logo_w + 24.0f);
 
             /* Tuner */
             {
@@ -2143,7 +2146,7 @@ int main(int argc, char *argv[]) {
                 ImGui::PopStyleColor();
                 /* Lock the bar to a fixed X so a 1-char ("E") vs 2-char
                  * ("D#") note doesn't shove the tuner sideways. */
-                ImGui::SameLine(175.0f);
+                ImGui::SameLine(logo_w + 64.0f);
 
                 /* Cents bar */
                 {

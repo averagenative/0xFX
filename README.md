@@ -9,14 +9,14 @@ Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3
 ---
 
 <p align="center">
-  <a href="docs/screenshots/main-view.png"><img src="docs/screenshots/main-view.png" width="32%" alt="Main view — Worn Grime theme with active looper and amp editor"></a>
-  <a href="docs/screenshots/preset-browser.png"><img src="docs/screenshots/preset-browser.png" width="32%" alt="Preset library — genre tabs, Mystery Rig, user presets"></a>
-  <a href="docs/screenshots/amp-selector.png"><img src="docs/screenshots/amp-selector.png" width="32%" alt="Amp model selector — 12 circuit-modeled amps"></a>
+  <a href="docs/screenshots/main-view.png"><img src="docs/screenshots/main-view.png" width="32%" alt="Main view — Studio Pale theme, dual chain with cabinet editor"></a>
+  <a href="docs/screenshots/preset-browser.png"><img src="docs/screenshots/preset-browser.png" width="32%" alt="Preset library — genre tabs, Mystery Rig, factory + user presets"></a>
+  <a href="docs/screenshots/amp-selector.png"><img src="docs/screenshots/amp-selector.png" width="32%" alt="Amp editor — Meridian high-gain with circuit-modeled tone stack"></a>
 </p>
 <p align="center">
-  <a href="docs/screenshots/theme-blueprint.png"><img src="docs/screenshots/theme-blueprint.png" width="32%" alt="Blueprint theme — dual chain with parallel amps"></a>
-  <a href="docs/screenshots/theme-cyberpunk.png"><img src="docs/screenshots/theme-cyberpunk.png" width="32%" alt="Cyberpunk Neon theme — magenta accent palette"></a>
-  <a href="docs/screenshots/pedal-closeup.png"><img src="docs/screenshots/pedal-closeup.png" width="32%" alt="Pedal close-up — knobs, LED, stomp switch"></a>
+  <a href="docs/screenshots/looper-panel.png"><img src="docs/screenshots/looper-panel.png" width="32%" alt="Looper panel — 9 slot live looper, sync, per-slot record/play"></a>
+  <a href="docs/screenshots/theme-selector.png"><img src="docs/screenshots/theme-selector.png" width="32%" alt="Theme selector — 11 built-in color schemes"></a>
+  <a href="docs/screenshots/rack-effects.png"><img src="docs/screenshots/rack-effects.png" width="32%" alt="Rack effects — post-amp compression, EQ, tape saturation, reverb"></a>
 </p>
 
 ---

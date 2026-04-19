@@ -6,7 +6,7 @@
 
 typedef struct { const char *path; const unsigned char *data; size_t size; } fx_embedded_asset_t;
 
-extern const fx_embedded_asset_t fx_embedded_assets[167];
+extern const fx_embedded_asset_t fx_embedded_assets[168];
 extern const int fx_embedded_asset_count;
 
 /* Look up an embedded asset by path. Returns NULL if not found. */

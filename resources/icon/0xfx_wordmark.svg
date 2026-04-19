@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 200" width="512" height="200">
+  <defs>
+    <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#ffb74a"/>
+      <stop offset="0.55" stop-color="#ff7a1a"/>
+      <stop offset="1"    stop-color="#d63d00"/>
+    </linearGradient>
+  </defs>
+
+  <text x="256" y="150"
+        text-anchor="middle"
+        font-family="Liberation Sans, DejaVu Sans, Arial, sans-serif"
+        font-weight="700"
+        font-size="165"
+        fill="url(#fg)">0xFX</text>
+</svg>

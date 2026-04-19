@@ -1140,24 +1140,26 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 IM_COL32(60, 50, 38, 180), 1.0f);
         }
 
-        /* Logo */
+        /* App wordmark — gradient "0xFX" on transparent background */
+        float logo_w = 0.0f;
         {
             if (!gui->logo_tried) {
-                gui->logo_tex = fx_texture_load("resources/logo/logo_neon_v4_red_trim_fade.png");
+                gui->logo_tex = fx_texture_load("resources/icon/0xfx_wordmark.png");
                 gui->logo_tried = true;
                 int lw = 0, lh = 0;
                 if (gui->logo_tex && fx_texture_get_size(gui->logo_tex, &lw, &lh) && lh > 0)
                     gui->logo_aspect = (float)lw / (float)lh;
             }
             if (gui->logo_tex) {
-                float logo_h = TOOLBAR_H - 8.0f;
-                float logo_w = logo_h * gui->logo_aspect;
+                float logo_h = 28.0f;
+                logo_w = logo_h * gui->logo_aspect;
                 ImGui::Image((ImTextureID)gui->logo_tex, ImVec2(logo_w, logo_h));
             } else {
                 ImGui::Text("0xFX");
+                logo_w = 80.0f;
             }
         }
-        ImGui::SameLine(130);
+        ImGui::SameLine(logo_w + 24.0f);
 
         /* Tuner */
         {
