@@ -28,7 +28,7 @@
  * is the correct no-op-GUI approach until TASK-070+.
  */
 #define CPLUG_WANT_GUI         1
-#define CPLUG_GUI_RESIZABLE    0
+#define CPLUG_GUI_RESIZABLE    1
 
 /* MIDI CC input for parameter control via hardware controllers */
 #define CPLUG_WANT_MIDI_INPUT  1

@@ -872,6 +872,13 @@ static void looper_render_panel(fx_engine_t *engine,
             fx_looper_set_focus(engine, slot);
             fx_looper_slot_tap(engine, slot);
         }
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+            FX_INFO("looper GUI: pad %d right-clicked (clear)", slot + 1);
+            fx_looper_set_focus(engine, slot);
+            fx_looper_slot_clear(engine, slot);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Left-click: tap (rec/play/dub)\nRight-click: clear slot");
         ImGui::PopID();
         ImGui::PopStyleColor(4);
 

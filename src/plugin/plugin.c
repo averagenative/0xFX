@@ -302,6 +302,20 @@ typedef struct {
      * plugin parameters using this table.
      */
     int cc_map[MIDI_CC_COUNT];
+
+    /*
+     * GUI theme id — persists with the plugin instance across GUI open/close
+     * and is saved/loaded with host state so each track can have its own look.
+     * -1 before user selects a theme; otherwise 0..FX_THEME_COUNT-1.
+     */
+    int theme_id;
+
+    /*
+     * GUI wrapper back-pointer — populated when cplug_createGUI runs so that
+     * cplug_saveState can pull the live theme out of the GUI before the host
+     * destroys it. NULL while no GUI is attached.
+     */
+    void *gui_wrapper;
 } OxFXPlugin;
 
 /* ── Type-from-param helpers ────────────────────────────────────── */
@@ -1049,6 +1063,9 @@ void *cplug_createPlugin(CplugHostContext *ctx)
     for (int i = 0; i < MIDI_CC_COUNT; i++)
         p->cc_map[i] = MIDI_CC_UNMAPPED;
 
+    p->theme_id     = -1;
+    p->gui_wrapper  = NULL;
+
     p->engine = fx_engine_create(p->sample_rate);
     if (!p->engine) {
         free(p);
@@ -1745,6 +1762,29 @@ void cplug_process(void *ptr, CplugProcessContext *ctx)
 
 typedef struct { uint32_t id; float value; } ParamState;
 
+/* Forward-declared; full definition with the GUI wrapper is near the
+ * plugin-GUI bridge further down this file. */
+typedef struct PluginGUIWrapper {
+    OxFXPlugin *plugin;
+    void       *bridge_gui;
+} PluginGUIWrapper;
+
+/* Bridge API used by state save/load; full declarations live near the
+ * plugin-GUI section below. */
+extern void oxfx_gui_set_theme(void *gui, int theme_id);
+extern int  oxfx_gui_get_theme(void *gui);
+
+/* Trailing extension written after the ParamState array. Consumers that
+ * predate this block stop at the params and ignore the tail. Magic is
+ * chosen so it can never collide with a valid ParamState id range. */
+#define OXFX_STATE_TAIL_MAGIC 0x30784658u /* "0xFX" */
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    int32_t  theme_id;
+    uint32_t reserved;
+} StateTail;
+
 void cplug_saveState(void *user_plugin, const void *state_ctx, cplug_writeProc write_proc)
 {
     OxFXPlugin *p = (OxFXPlugin *)user_plugin;
@@ -1755,16 +1795,57 @@ void cplug_saveState(void *user_plugin, const void *state_ctx, cplug_writeProc w
         state[i].value = p->param_values[i];
     }
     write_proc(state_ctx, state, sizeof(state));
+
+    /* Pull live theme from the GUI bridge if it's open, else use the
+     * stored value. Ensures picking a theme and saving without closing
+     * the editor still persists. */
+    int theme = p->theme_id;
+#ifdef OXFX_PLUGIN_HAS_GUI
+    if (p->gui_wrapper) {
+        PluginGUIWrapper *wrap = (PluginGUIWrapper *)p->gui_wrapper;
+        int t = oxfx_gui_get_theme(wrap->bridge_gui);
+        if (t >= 0) { theme = t; p->theme_id = t; }
+    }
+#endif
+
+    StateTail tail = { OXFX_STATE_TAIL_MAGIC, 1u, (int32_t)theme, 0u };
+    write_proc(state_ctx, &tail, sizeof(tail));
 }
 
 void cplug_loadState(void *user_plugin, const void *state_ctx, cplug_readProc read_proc)
 {
     OxFXPlugin *p = (OxFXPlugin *)user_plugin;
 
-    ParamState state[NUM_PARAMS * 2]; /* generous read buffer */
-    int64_t bytes_read = read_proc(state_ctx, state, sizeof(state));
-    int     count      = (int)(bytes_read / (int64_t)sizeof(ParamState));
+    /* Read params + optional tail into one buffer. */
+    enum { BUF_BYTES = (int)(sizeof(ParamState) * NUM_PARAMS) + (int)sizeof(StateTail) + 256 };
+    unsigned char buf[BUF_BYTES];
+    int64_t bytes_read = read_proc(state_ctx, buf, sizeof(buf));
+    if (bytes_read <= 0) return;
 
+    int param_bytes = (int)(bytes_read - ((bytes_read >= (int64_t)sizeof(StateTail)) ? 0 : 0));
+    /* Params come first, tail (if present) comes last. Detect the tail
+     * by scanning the final sizeof(StateTail) bytes for our magic. */
+    int tail_bytes = 0;
+    if (bytes_read >= (int64_t)sizeof(StateTail)) {
+        StateTail maybe;
+        memcpy(&maybe, buf + (bytes_read - (int64_t)sizeof(StateTail)), sizeof(maybe));
+        if (maybe.magic == OXFX_STATE_TAIL_MAGIC) {
+            tail_bytes = (int)sizeof(StateTail);
+            if (maybe.theme_id >= 0) {
+                p->theme_id = (int)maybe.theme_id;
+#ifdef OXFX_PLUGIN_HAS_GUI
+                if (p->gui_wrapper) {
+                    PluginGUIWrapper *wrap = (PluginGUIWrapper *)p->gui_wrapper;
+                    oxfx_gui_set_theme(wrap->bridge_gui, p->theme_id);
+                }
+#endif
+            }
+        }
+    }
+    param_bytes = (int)(bytes_read - tail_bytes);
+
+    int count = param_bytes / (int)sizeof(ParamState);
+    ParamState *state = (ParamState *)buf;
     for (int i = 0; i < count; i++) {
         int index = find_param_index(state[i].id);
         if (index < NUM_PARAMS) {
@@ -1894,11 +1975,9 @@ void  oxfx_gui_detach(void *gui);
 void  oxfx_gui_set_visible(void *gui, bool visible);
 void  oxfx_gui_get_size(void *gui, uint32_t *w, uint32_t *h);
 bool  oxfx_gui_set_size(void *gui, uint32_t w, uint32_t h);
-
-typedef struct {
-    OxFXPlugin *plugin;
-    void       *bridge_gui;  /* PluginGUI* from gui_plugin_bridge.cpp */
-} PluginGUIWrapper;
+/* oxfx_gui_set_theme / oxfx_gui_get_theme forward-declared with state
+ * save/load above; implemented in gui_plugin_bridge.cpp. */
+/* PluginGUIWrapper is forward-declared above near cplug_saveState. */
 
 void *cplug_createGUI(void *user_plugin)
 {
@@ -1907,6 +1986,10 @@ void *cplug_createGUI(void *user_plugin)
     if (!wrap) return NULL;
     wrap->plugin = plugin;
     wrap->bridge_gui = oxfx_gui_create(plugin->engine);
+    if (plugin->theme_id >= 0) {
+        oxfx_gui_set_theme(wrap->bridge_gui, plugin->theme_id);
+    }
+    plugin->gui_wrapper = wrap;
     return wrap;
 }
 
@@ -1914,6 +1997,13 @@ void cplug_destroyGUI(void *user_gui)
 {
     if (!user_gui) return;
     PluginGUIWrapper *wrap = (PluginGUIWrapper *)user_gui;
+    /* Snapshot theme before tearing down the bridge so host state saves
+     * persist the latest picked palette even if the GUI was just closed. */
+    if (wrap->plugin) {
+        int t = oxfx_gui_get_theme(wrap->bridge_gui);
+        if (t >= 0) wrap->plugin->theme_id = t;
+        wrap->plugin->gui_wrapper = NULL;
+    }
     oxfx_gui_destroy(wrap->bridge_gui);
     free(wrap);
 }

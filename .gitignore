@@ -5,8 +5,15 @@
 # Build
 build/
 build_win/
+build_win_arm64/
+build_linux_arm64_container/
 build_asan/
+release/
 __pycache__/
+
+# Runtime state
+imgui.ini
+presets/last_session.0xfx
 
 # IDE
 .vscode/

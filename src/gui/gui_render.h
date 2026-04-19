@@ -34,9 +34,16 @@ void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_h,
  * internal pedal/studio ID caches with the engine state. */
 void fx_gui_sync_from_engine(fx_gui_state_t *gui);
 
-/* Apply the "worn grime" dark theme to ImGui. Call once after ImGui
+/* Apply the default dark theme to ImGui. Call once after ImGui
  * context creation. */
 void fx_gui_setup_theme(void);
+
+/* Per-instance theme selection (0..FX_THEME_COUNT-1). When set to a valid
+ * theme id, the plugin toolbar reflects it and fx_gui_render_frame will
+ * re-apply the palette every frame (safe: each plugin has its own ImGui
+ * context). The standalone app manages its own theme outside of this. */
+int  fx_gui_get_theme(const fx_gui_state_t *gui);
+void fx_gui_set_theme(fx_gui_state_t *gui, int theme_id);
 
 #ifdef __cplusplus
 }

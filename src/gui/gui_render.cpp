@@ -13,6 +13,8 @@
 #include "imgui_impl_opengl3.h"
 
 #include "gui_render.h"
+#include "fx_theme.h"
+#include "custom_cabs.h"
 
 extern "C" {
 #include "../engine/fx_engine.h"
@@ -26,6 +28,7 @@ extern "C" {
 #include <cstring>
 #include <ctime>
 #include <cstdlib>
+#include <cfloat>
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -411,6 +414,13 @@ struct fx_gui_state {
 
     /* Tuner EMA smoothing (per-instance, no statics) */
     float        tuner_smoothed_cents;
+
+    /* Per-instance theme selection. -1 = unset (standalone manages its own
+     * theme); 0..FX_THEME_COUNT-1 = palette applied every frame. */
+    int          current_theme;
+
+    /* Looper docked-strip panel visibility (per-instance). */
+    bool         looper_panel_open;
 };
 
 static const char *s_preset_categories[] = {
@@ -724,34 +734,9 @@ static ImVec4 hsv_to_rgb(float h, float s, float v) {
 
 extern "C" void fx_gui_setup_theme(void) {
     ImGuiStyle &style = ImGui::GetStyle();
-    ImVec4 *colors = style.Colors;
+    fx_theme_apply(style, FX_THEME_GRIME_DARK);
 
-    colors[ImGuiCol_WindowBg]         = ImVec4(0.08f, 0.07f, 0.06f, 1.0f);
-    colors[ImGuiCol_ChildBg]          = ImVec4(0.10f, 0.09f, 0.08f, 1.0f);
-    colors[ImGuiCol_PopupBg]          = ImVec4(0.12f, 0.10f, 0.09f, 0.95f);
-    colors[ImGuiCol_Border]           = ImVec4(0.25f, 0.22f, 0.18f, 0.5f);
-    colors[ImGuiCol_FrameBg]          = ImVec4(0.14f, 0.12f, 0.10f, 1.0f);
-    colors[ImGuiCol_FrameBgHovered]   = ImVec4(0.20f, 0.17f, 0.14f, 1.0f);
-    colors[ImGuiCol_FrameBgActive]    = ImVec4(0.25f, 0.20f, 0.15f, 1.0f);
-    colors[ImGuiCol_TitleBg]          = ImVec4(0.06f, 0.05f, 0.04f, 1.0f);
-    colors[ImGuiCol_TitleBgActive]    = ImVec4(0.12f, 0.10f, 0.08f, 1.0f);
-    colors[ImGuiCol_MenuBarBg]        = ImVec4(0.10f, 0.08f, 0.07f, 1.0f);
-    colors[ImGuiCol_Header]           = ImVec4(0.18f, 0.15f, 0.12f, 1.0f);
-    colors[ImGuiCol_HeaderHovered]    = ImVec4(0.30f, 0.24f, 0.18f, 1.0f);
-    colors[ImGuiCol_HeaderActive]     = ImVec4(0.40f, 0.30f, 0.20f, 1.0f);
-    colors[ImGuiCol_Button]           = ImVec4(0.20f, 0.16f, 0.12f, 1.0f);
-    colors[ImGuiCol_ButtonHovered]    = ImVec4(0.60f, 0.40f, 0.15f, 1.0f);
-    colors[ImGuiCol_ButtonActive]     = ImVec4(0.80f, 0.55f, 0.15f, 1.0f);
-    colors[ImGuiCol_CheckMark]        = ImVec4(0.90f, 0.65f, 0.20f, 1.0f);
-    colors[ImGuiCol_SliderGrab]       = ImVec4(0.70f, 0.50f, 0.20f, 1.0f);
-    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.90f, 0.65f, 0.20f, 1.0f);
-    colors[ImGuiCol_Text]            = ImVec4(0.85f, 0.80f, 0.72f, 1.0f);
-    colors[ImGuiCol_TextDisabled]    = ImVec4(0.45f, 0.40f, 0.35f, 1.0f);
-    colors[ImGuiCol_Tab]             = ImVec4(0.14f, 0.12f, 0.10f, 1.0f);
-    colors[ImGuiCol_TabHovered]      = ImVec4(0.35f, 0.28f, 0.18f, 1.0f);
-    colors[ImGuiCol_TabActive]       = ImVec4(0.25f, 0.20f, 0.14f, 1.0f);
-    colors[ImGuiCol_Separator]       = ImVec4(0.25f, 0.22f, 0.18f, 0.5f);
-
+    /* Shape / spacing settings are theme-agnostic. */
     style.WindowRounding    = 4.0f;
     style.FrameRounding     = 3.0f;
     style.GrabRounding      = 3.0f;
@@ -759,6 +744,20 @@ extern "C" void fx_gui_setup_theme(void) {
     style.WindowPadding     = ImVec2(10, 10);
     style.FramePadding      = ImVec2(6, 4);
     style.ItemSpacing       = ImVec2(8, 6);
+}
+
+extern "C" int fx_gui_get_theme(const fx_gui_state_t *gui) {
+    return gui ? gui->current_theme : -1;
+}
+
+extern "C" void fx_gui_set_theme(fx_gui_state_t *gui, int theme_id) {
+    if (!gui) return;
+    if (theme_id < 0 || theme_id >= (int)FX_THEME_COUNT) {
+        gui->current_theme = -1;
+        return;
+    }
+    gui->current_theme = theme_id;
+    fx_theme_apply(ImGui::GetStyle(), (fx_theme_id_t)theme_id);
 }
 
 /* ── Create / Destroy ──────────────────────────────────────── */
@@ -775,6 +774,7 @@ extern "C" fx_gui_state_t *fx_gui_create(fx_engine_t *engine) {
     g->browser_needs_scan = true;
     g->browser_preset_count = 0;
     g->selected_cat = 0;
+    g->current_theme = -1;
     snprintf(g->preset_name, sizeof(g->preset_name), "Untitled");
 
     /* Sync pedal/studio IDs from engine */
@@ -816,6 +816,260 @@ extern "C" void fx_gui_sync_from_engine(fx_gui_state_t *gui) {
             gui->pre_id_count, gui->post_id_count, chain_count);
 }
 
+/* ── Looper panel (ported from gui_main.cpp, per-instance) ──── */
+
+static ImVec4 looper_state_color_th(fx_loop_state_t s, bool muted,
+                                    const fx_theme_t *th) {
+    if (muted) return ImVec4(0.35f, 0.35f, 0.35f, 1.0f);
+    switch (s) {
+    case FX_LOOP_EMPTY:       return th->frame;
+    case FX_LOOP_ARMED:       return ImVec4(0.80f, 0.60f, 0.15f, 1.0f);
+    case FX_LOOP_RECORDING:   return ImVec4(0.85f, 0.15f, 0.15f, 1.0f);
+    case FX_LOOP_PLAYING:     return ImVec4(0.20f, 0.70f, 0.30f, 1.0f);
+    case FX_LOOP_OVERDUBBING: return ImVec4(0.85f, 0.55f, 0.20f, 1.0f);
+    }
+    return th->frame;
+}
+
+static const char *looper_state_label_str(fx_loop_state_t s) {
+    switch (s) {
+    case FX_LOOP_EMPTY:       return "empty";
+    case FX_LOOP_ARMED:       return "armed";
+    case FX_LOOP_RECORDING:   return "REC";
+    case FX_LOOP_PLAYING:     return "play";
+    case FX_LOOP_OVERDUBBING: return "DUB";
+    }
+    return "?";
+}
+
+static ImVec4 scale_rgb_local(ImVec4 c, float s) {
+    return ImVec4(c.x * s, c.y * s, c.z * s, c.w);
+}
+
+static void looper_render_panel(fx_gui_state_t *gui, fx_engine_t *engine,
+                                float x, float y, float w, float h,
+                                const fx_theme_t *th) {
+    if (!gui->looper_panel_open) return;
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::SetNextWindowSize(ImVec2(w, h));
+    ImGui::Begin("##looper_panel", NULL,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings);
+
+    /* Background gradient + bottom separator */
+    {
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        ImVec2 p0 = ImGui::GetWindowPos();
+        ImVec2 p1 = ImVec2(p0.x + w, p0.y + h);
+        ImU32 c_top = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(th->panel.x * 1.15f, th->panel.y * 1.15f, th->panel.z * 1.15f, 1.0f));
+        ImU32 c_bot = ImGui::ColorConvertFloat4ToU32(th->bg);
+        dl->AddRectFilledMultiColor(p0, p1, c_top, c_top, c_bot, c_bot);
+        ImVec4 sep = th->border; sep.w = 0.8f;
+        dl->AddLine(ImVec2(p0.x, p1.y - 1.0f), ImVec2(p1.x, p1.y - 1.0f),
+                    ImGui::ColorConvertFloat4ToU32(sep), 1.0f);
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_Text, th->accent_glow);
+    ImGui::SetCursorPos(ImVec2(10, 8));
+    ImGui::Text("LOOPER");
+    ImGui::PopStyleColor();
+
+    ImGui::SetCursorPos(ImVec2(w - 56, 6));
+    if (ImGui::SmallButton("?##looper_help"))
+        ImGui::OpenPopup("looper_keybinds");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show looper keybinds");
+
+    ImGui::SetCursorPos(ImVec2(w - 28, 6));
+    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+    if (ImGui::SmallButton("X##looper_close"))
+        gui->looper_panel_open = false;
+    ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Close looper panel");
+
+    if (ImGui::BeginPopup("looper_keybinds")) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+        ImGui::Text("Looper keybinds");
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+        ImGui::BulletText("1 - 9       tap slot (rec -> play -> overdub)");
+        ImGui::BulletText("Shift + 1-9 mute / unmute slot");
+        ImGui::BulletText("Alt + 1-9   clear slot");
+        ImGui::BulletText("Space       tap the FOCUSED slot");
+        ImGui::BulletText("R           arm next empty slot");
+        ImGui::BulletText("Tab         cycle focused slot");
+        ImGui::BulletText("Ctrl + Z    undo last overdub on focused");
+        ImGui::Separator();
+        ImGui::TextDisabled("Clicking a pad does the same as pressing 1-9.");
+        ImGui::TextDisabled("Click again while RECORDING to stop and play.");
+        ImGui::EndPopup();
+    }
+
+    const int focused = fx_looper_focused(engine);
+    bool playing = fx_looper_master_is_playing(engine);
+
+    ImGui::SetCursorPos(ImVec2(10, 28));
+    {
+        ImVec4 btn = playing ? ImVec4(0.20f, 0.55f, 0.25f, 1.0f)
+                             : scale_rgb_local(th->accent, 0.9f);
+        ImGui::PushStyleColor(ImGuiCol_Button, btn);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            playing ? ImVec4(0.28f, 0.70f, 0.33f, 1.0f) : th->accent_hover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+            playing ? ImVec4(0.16f, 0.48f, 0.22f, 1.0f) : th->accent_active);
+    }
+    if (ImGui::Button(playing ? "Pause" : "Play", ImVec2(72, 26))) {
+        fx_looper_master_toggle(engine);
+    }
+    ImGui::PopStyleColor(3);
+
+    ImGui::SameLine();
+    float level = fx_looper_get_master_level(engine);
+    ImGui::SetNextItemWidth(130);
+    if (ImGui::SliderFloat("##master", &level, 0.0f, 1.0f, "Vol %.2f")) {
+        fx_looper_set_master_level(engine, level);
+    }
+
+    ImGui::SetCursorPos(ImVec2(10, 62));
+    bool sync = fx_looper_get_sync(engine);
+    if (ImGui::Checkbox("Sync", &sync)) fx_looper_set_sync(engine, sync);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Quantize new slots to the first loop's length");
+    ImGui::SameLine();
+    bool pre = fx_looper_get_tap_pre_chain(engine);
+    if (ImGui::Checkbox("Pre-chain", &pre))
+        fx_looper_set_tap_pre_chain(engine, pre);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("ON: record raw input. OFF: record post-chain (processed tone).");
+
+    ImGui::SetCursorPos(ImVec2(10, 92));
+    ImGui::Text("Focus:%d", focused + 1);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("R arm"))    fx_looper_arm_next(engine);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Tab"))      fx_looper_focus_next(engine);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Undo"))     fx_looper_slot_undo(engine, focused);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear"))    fx_looper_slot_clear(engine, focused);
+
+    ImGui::SetCursorPos(ImVec2(10, 116));
+    if (ImGui::SmallButton("Export slot")) {
+        char path[512];
+        snprintf(path, sizeof(path), "loop_slot_%d.wav", focused + 1);
+        if (fx_looper_export_slot_wav(engine, focused, path))
+            FX_INFO("Looper: exported slot %d to %s", focused + 1, path);
+        else FX_WARN("Looper: export failed (slot empty?)");
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Export mix")) {
+        if (fx_looper_export_mix_wav(engine, "loop_mix.wav"))
+            FX_INFO("Looper: exported mix to loop_mix.wav");
+        else FX_WARN("Looper: mix export failed");
+    }
+
+    /* 9 pads in a horizontal row on the right side of the strip. */
+    const float pads_left = 260.0f;
+    const float pad_gap   = 6.0f;
+    const float pads_avail = w - pads_left - 12.0f;
+    float pad_w = (pads_avail - pad_gap * 8) / 9.0f;
+    if (pad_w < 56.0f) pad_w = 56.0f;
+    if (pad_w > 110.0f) pad_w = 110.0f;
+    const float pad_h = h - 20.0f;
+
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+
+    for (int slot = 0; slot < 9; slot++) {
+        float px = pads_left + slot * (pad_w + pad_gap);
+        ImGui::SetCursorPos(ImVec2(px, 10));
+
+        fx_loop_state_t st = fx_looper_get_slot_state(engine, slot);
+        bool muted = fx_looper_get_slot_muted(engine, slot);
+        int len    = fx_looper_get_slot_length_frames(engine, slot);
+        int pos    = fx_looper_get_slot_play_pos(engine, slot);
+        int layers = fx_looper_get_slot_layers(engine, slot);
+
+        ImVec4 c = looper_state_color_th(st, muted, th);
+        ImGui::PushStyleColor(ImGuiCol_Button, c);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            ImVec4(c.x * 1.25f + 0.05f, c.y * 1.25f + 0.05f, c.z * 1.25f + 0.05f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+            ImVec4(c.x * 0.8f, c.y * 0.8f, c.z * 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+
+        char label[64];
+        snprintf(label, sizeof(label), "%d\n%s%s\n%.1fs L%d###looper_pad_%d",
+                 slot + 1, looper_state_label_str(st),
+                 muted ? " m" : "",
+                 len > 0 ? (float)len / 48000.0f : 0.0f, layers,
+                 slot);
+
+        ImGui::PushID(slot);
+        if (ImGui::Button(label, ImVec2(pad_w, pad_h))) {
+            fx_looper_set_focus(engine, slot);
+            fx_looper_slot_tap(engine, slot);
+        }
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+            fx_looper_set_focus(engine, slot);
+            fx_looper_slot_clear(engine, slot);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Left-click: tap (rec/play/dub)\nRight-click: clear slot");
+        ImGui::PopID();
+        ImGui::PopStyleColor(4);
+
+        ImVec2 p_min = ImGui::GetItemRectMin();
+        ImVec2 p_max = ImGui::GetItemRectMax();
+        if (len > 0 && (st == FX_LOOP_PLAYING || st == FX_LOOP_OVERDUBBING)) {
+            float t = (float)pos / (float)len;
+            float bar_x = p_min.x + 3 + t * (p_max.x - p_min.x - 6);
+            dl->AddLine(ImVec2(bar_x, p_max.y - 6),
+                        ImVec2(bar_x, p_max.y - 2),
+                        IM_COL32(255, 255, 255, 220), 2.0f);
+        }
+        if (slot == focused) {
+            dl->AddRect(p_min, p_max,
+                        ImGui::ColorConvertFloat4ToU32(th->accent_glow),
+                        3.0f, 0, 2.0f);
+        }
+    }
+
+    ImGui::End();
+}
+
+static void looper_handle_keys(fx_engine_t *engine) {
+    ImGuiIO &io = ImGui::GetIO();
+    bool ctrl  = io.KeyCtrl;
+    bool shift = io.KeyShift;
+    bool alt   = io.KeyAlt;
+
+    static const ImGuiKey num_keys[9] = {
+        ImGuiKey_1, ImGuiKey_2, ImGuiKey_3,
+        ImGuiKey_4, ImGuiKey_5, ImGuiKey_6,
+        ImGuiKey_7, ImGuiKey_8, ImGuiKey_9,
+    };
+    for (int i = 0; i < 9; i++) {
+        if (ImGui::IsKeyPressed(num_keys[i], false)) {
+            if (alt)        fx_looper_slot_clear(engine, i);
+            else if (shift) fx_looper_slot_mute(engine, i);
+            else {
+                fx_looper_set_focus(engine, i);
+                fx_looper_slot_tap(engine, i);
+            }
+        }
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !ctrl && !shift && !alt)
+        fx_looper_arm_next(engine);
+    if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ctrl && !shift && !alt)
+        fx_looper_focus_next(engine);
+    if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+        fx_looper_slot_undo(engine, fx_looper_focused(engine));
+}
+
 /* ── Render one frame ──────────────────────────────────────── */
 /*
  * This is a forward-declaration; the actual massive render function is
@@ -838,8 +1092,17 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
     if (!gui || !gui->engine) return;
     fx_engine_t *engine = gui->engine;
 
+    /* Per-frame theme apply — only when an explicit theme is selected.
+     * Plugins use this for per-instance palettes; each plugin has its own
+     * ImGui context so this never cross-contaminates. Standalone leaves
+     * current_theme at -1 and manages its own theme in gui_main.cpp. */
+    if (gui->current_theme >= 0 && gui->current_theme < (int)FX_THEME_COUNT) {
+        fx_theme_apply(ImGui::GetStyle(), (fx_theme_id_t)gui->current_theme);
+    }
+
     /* Layout constants */
     const float TOOLBAR_H      = 64.0f;
+    const float LOOPER_H       = 136.0f;
     const float STATUS_H       = 50.0f;
     const float NODE_W         = 80.0f;
     const float NODE_H         = 60.0f;
@@ -1015,13 +1278,50 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::SetTooltip("Browse factory and user presets");
         }
 
+        ImGui::SameLine(0, 6);
+
+        /* Looper panel toggle */
+        {
+            int theme_id = (gui->current_theme >= 0 &&
+                            gui->current_theme < (int)FX_THEME_COUNT)
+                           ? gui->current_theme : (int)FX_THEME_GRIME_DARK;
+            const fx_theme_t *th = fx_theme_get((fx_theme_id_t)theme_id);
+            ImVec4 btn_bg = gui->looper_panel_open
+                ? scale_rgb_local(th->accent, 0.55f)
+                : th->frame;
+            ImGui::PushStyleColor(ImGuiCol_Button,        btn_bg);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->frame_hover);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->frame_active);
+            ImGui::PushStyleColor(ImGuiCol_Text,          th->text);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+            if (ImGui::Button("Looper", ImVec2(70.0f, 32.0f)))
+                gui->looper_panel_open = !gui->looper_panel_open;
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(4);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("9-slot looper (1-9 tap, R arm, Tab focus, Ctrl+Z undo)");
+        }
+
         /* Preset browser popup */
+        ImGui::SetNextWindowSizeConstraints(ImVec2(640.0f, 0.0f),
+                                            ImVec2(640.0f, FLT_MAX));
         if (ImGui::BeginPopup("preset_browser_popup")) {
             if (gui->browser_needs_scan) preset_browser_scan(gui);
 
+            const float pb_popup_w = 640.0f;
+            const float pb_btn_w   = 22.0f;
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
             ImGui::Text("Preset Library");
             ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(pb_popup_w - pb_btn_w - ImGui::GetStyle().WindowPadding.x);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+            if (ImGui::Button("X##preset_close", ImVec2(pb_btn_w, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(3);
             ImGui::Separator();
 
             /* Mystery Rig button with rainbow border */
@@ -1274,6 +1574,53 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
          * chrome. They are NOT rendered here — gui_main.cpp renders them after
          * calling us, or they could be added in future with an is_plugin guard. */
 
+        /* Plugin-only theme picker — standalone has its own in gui_main.cpp. */
+        if (is_plugin) {
+            int theme_id = (gui->current_theme >= 0 &&
+                            gui->current_theme < (int)FX_THEME_COUNT)
+                           ? gui->current_theme : (int)FX_THEME_GRIME_DARK;
+            const fx_theme_t *th = fx_theme_get((fx_theme_id_t)theme_id);
+
+            /* Right-align: pull to win_w - button_w - margin. */
+            const float btn_w  = 150.0f;
+            const float btn_h  = 32.0f;
+            const float margin = 12.0f;
+            ImGui::SameLine(win_w - btn_w - margin);
+
+            ImGui::PushStyleColor(ImGuiCol_Button,        th->frame);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->frame_hover);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->frame_active);
+            ImGui::PushStyleColor(ImGuiCol_Text,          th->text);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+
+            char tlabel[64];
+            snprintf(tlabel, sizeof(tlabel), "Theme: %s", th->name);
+            if (ImGui::Button(tlabel, ImVec2(btn_w, btn_h))) {
+                ImGui::OpenPopup("theme_picker_popup");
+            }
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(4);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Cycle color theme — persists per plugin instance");
+
+            if (ImGui::BeginPopup("theme_picker_popup")) {
+                ImGui::PushStyleColor(ImGuiCol_Text, th->text);
+                ImGui::Text("Color Theme");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                for (int i = 0; i < (int)FX_THEME_COUNT; i++) {
+                    const fx_theme_t *ti = fx_theme_get((fx_theme_id_t)i);
+                    bool selected = (i == theme_id);
+                    if (ImGui::Selectable(ti->name, selected)) {
+                        fx_gui_set_theme(gui, i);
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", ti->description);
+                }
+                ImGui::EndPopup();
+            }
+        }
+
         ImGui::End();
     }
 
@@ -1311,12 +1658,25 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
 
     if (gui->selected_node >= chain_len) gui->selected_node = -1;
 
+    /* Looper docked strip between toolbar and signal chain. */
+    if (gui->looper_panel_open) {
+        int theme_id = (gui->current_theme >= 0 &&
+                        gui->current_theme < (int)FX_THEME_COUNT)
+                       ? gui->current_theme : (int)FX_THEME_GRIME_DARK;
+        const fx_theme_t *lth = fx_theme_get((fx_theme_id_t)theme_id);
+        looper_render_panel(gui, engine, 0.0f, TOOLBAR_H, win_w, LOOPER_H, lth);
+        if (!ImGui::GetIO().WantTextInput)
+            looper_handle_keys(engine);
+    }
+
     /* ============================================================
-     * SIGNAL CHAIN VIEW (~35% of window, below toolbar)
+     * SIGNAL CHAIN VIEW (~35% of window, below toolbar + looper)
      * ============================================================ */
     {
-        float chain_area_h = (win_h - TOOLBAR_H - STATUS_H) * 0.35f;
-        ImGui::SetNextWindowPos(ImVec2(0, TOOLBAR_H));
+        float looper_h = gui->looper_panel_open ? LOOPER_H : 0.0f;
+        float chain_top = TOOLBAR_H + looper_h;
+        float chain_area_h = (win_h - chain_top - STATUS_H) * 0.35f;
+        ImGui::SetNextWindowPos(ImVec2(0, chain_top));
         ImGui::SetNextWindowSize(ImVec2(win_w, chain_area_h));
         ImGui::Begin("##signal_chain", NULL,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -1787,8 +2147,21 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
         }
 
         /* Pedal gallery popup — pre-amp */
+        ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f, 0.0f),
+                                            ImVec2(320.0f, FLT_MAX));
         if (ImGui::BeginPopup("add_pedal_gallery_pre")) {
+            const float pg_popup_w = 320.0f;
+            const float pg_btn_w   = 22.0f;
             ImGui::Text("Add Pre-Amp Pedal");
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(pg_popup_w - pg_btn_w - ImGui::GetStyle().WindowPadding.x);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+            if (ImGui::Button("X##pedal_pre_close", ImVec2(pg_btn_w, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(3);
             ImGui::Separator();
             for (int ci = 0; ci < s_pedal_category_count; ci++) {
                 if (ImGui::TreeNode(s_pedal_categories[ci].label)) {
@@ -1814,8 +2187,21 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
         }
 
         /* Pedal gallery popup — post-amp */
+        ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f, 0.0f),
+                                            ImVec2(320.0f, FLT_MAX));
         if (ImGui::BeginPopup("add_pedal_gallery_post")) {
+            const float pg_popup_w = 320.0f;
+            const float pg_btn_w   = 22.0f;
             ImGui::Text("Add Post-Amp Effect");
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(pg_popup_w - pg_btn_w - ImGui::GetStyle().WindowPadding.x);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.20f, 0.20f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.45f, 0.12f, 0.12f, 1.0f));
+            if (ImGui::Button("X##pedal_post_close", ImVec2(pg_btn_w, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(3);
             ImGui::Separator();
             /* Rack effects with descriptions */
             if (ImGui::TreeNode("RACK EFFECTS")) {
@@ -1874,9 +2260,11 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
      * DETAIL VIEW (~65% of window, below signal chain)
      * ============================================================ */
     {
-        float chain_area_h = (win_h - TOOLBAR_H - STATUS_H) * 0.35f;
-        float detail_h     = win_h - TOOLBAR_H - chain_area_h - STATUS_H;
-        float detail_y     = TOOLBAR_H + chain_area_h;
+        float looper_h = gui->looper_panel_open ? LOOPER_H : 0.0f;
+        float chain_top = TOOLBAR_H + looper_h;
+        float chain_area_h = (win_h - chain_top - STATUS_H) * 0.35f;
+        float detail_h     = win_h - chain_top - chain_area_h - STATUS_H;
+        float detail_y     = chain_top + chain_area_h;
 
         ImGui::SetNextWindowPos(ImVec2(0, detail_y));
         ImGui::SetNextWindowSize(ImVec2(win_w, detail_h));
@@ -2297,16 +2685,61 @@ extern "C" void fx_gui_render_frame(fx_gui_state_t *gui, float win_w, float win_
                 ImGui::SetNextItemWidth(200);
                 char cab_combo_id[32];
                 snprintf(cab_combo_id, sizeof(cab_combo_id), "##cab_sel_%d", sel.chain_id);
-                if (ImGui::Combo(cab_combo_id, &cab_type_ref, s_cab_type_names, FX_CAB_TYPE_COUNT)) {
-                    fx_cab_params_t params;
-                    params.cab_type = (fx_cab_type_t)cab_type_ref;
-                    params.mic_pos  = FX_MIC_ON_AXIS;
-                    params.speaker_fs = 80.0f;
-                    params.brightness = 0.5f;
-                    params.resonance  = 0.5f;
-                    fx_cab_generate_ir(engine, cab_chain, &params);
+
+                /* Is an imported IR currently active on this chain? */
+                const char *active_ir = fx_cab_get_custom_ir_path(engine, cab_chain);
+                bool is_custom_active = (active_ir && *active_ir);
+                const char *preview = is_custom_active
+                    ? fx_cab_get_custom_name(engine, cab_chain)
+                    : s_cab_type_names[cab_type_ref];
+                if (!preview || !*preview) preview = "(unnamed)";
+
+                /* Snapshot the shared library once per frame for this combo. */
+                static const int MAX_CC_PER_FRAME = 64;
+                fx_custom_cab_t cc_snap[MAX_CC_PER_FRAME];
+                int cc_count = fx_custom_cabs_snapshot(cc_snap, MAX_CC_PER_FRAME);
+
+                if (ImGui::BeginCombo(cab_combo_id, preview)) {
+                    for (int i = 0; i < FX_CAB_TYPE_COUNT; i++) {
+                        bool sel_i = !is_custom_active && (cab_type_ref == i);
+                        if (ImGui::Selectable(s_cab_type_names[i], sel_i)) {
+                            cab_type_ref = i;
+                            fx_cab_params_t params;
+                            params.cab_type = (fx_cab_type_t)cab_type_ref;
+                            params.mic_pos  = FX_MIC_ON_AXIS;
+                            params.speaker_fs = 80.0f;
+                            params.brightness = 0.5f;
+                            params.resonance  = 0.5f;
+                            fx_cab_generate_ir(engine, cab_chain, &params);
+                        }
+                    }
+                    if (cc_count > 0) {
+                        ImGui::Separator();
+                        for (int i = 0; i < cc_count; i++) {
+                            bool sel_i = is_custom_active &&
+                                         strcmp(active_ir, cc_snap[i].ir_path) == 0;
+                            char label[80];
+                            snprintf(label, sizeof(label), "%s##cc%d",
+                                     cc_snap[i].name, i);
+                            if (ImGui::Selectable(label, sel_i)) {
+                                if (fx_cab_load_ir(engine, cab_chain,
+                                                   cc_snap[i].ir_path)) {
+                                    fx_cab_set_custom_name(engine, cab_chain,
+                                                           cc_snap[i].name);
+                                    fx_cab_set_custom_image_path(engine, cab_chain,
+                                                                 cc_snap[i].image_path);
+                                } else {
+                                    FX_WARN("Custom IR load failed: %s",
+                                            cc_snap[i].ir_path);
+                                }
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
                 }
-                /* Scroll wheel to cycle cab types */
+
+                /* Scroll wheel to cycle cab types (stock only for the plugin
+                 * to keep wheel UX predictable — custom entries stay pick-only). */
                 if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
                     float wheel = ImGui::GetIO().MouseWheel;
                     if (wheel != 0.0f) {
