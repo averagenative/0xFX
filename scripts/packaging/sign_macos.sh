@@ -99,6 +99,9 @@ DMG_STAGE="${RELEASE_DIR}/dmg_stage"
 rm -rf "$DMG_STAGE"
 mkdir -p "$DMG_STAGE"
 cp -R "$APP" "$DMG_STAGE/"
+# Include signed plugin bundles so the DMG can be a complete install
+# (standalone via Applications symlink, plugins via Plugins/).
+[ -d "$PLUGINS_DIR" ] && cp -R "$PLUGINS_DIR" "$DMG_STAGE/"
 [ -f README.md ] && cp README.md "$DMG_STAGE/"
 [ -f LICENSE ] && cp LICENSE "$DMG_STAGE/"
 [ -f "${RELEASE_DIR}/INSTALL.txt" ] && cp "${RELEASE_DIR}/INSTALL.txt" "$DMG_STAGE/"

@@ -244,6 +244,12 @@ DMG_STAGE="${RELEASE_DIR}/dmg_stage"
 mkdir -p "${DMG_STAGE}"
 
 cp -r "${APP_DIR}" "${DMG_STAGE}/"
+# Plugin bundles (.clap / .vst3 / .component) + INSTALL_PLUGINS.txt.
+# Without these the DMG distribution has no plugins at all — the Applications
+# symlink covers the standalone install, but DAW users need the bundles too.
+if [ -d "${PLUGIN_DIR}" ]; then
+    cp -r "${PLUGIN_DIR}" "${DMG_STAGE}/"
+fi
 cp README.md "${DMG_STAGE}/" 2>/dev/null || true
 cp LICENSE "${DMG_STAGE}/" 2>/dev/null || true
 cp "${RELEASE_DIR}/INSTALL.txt" "${DMG_STAGE}/"
