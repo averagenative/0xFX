@@ -7,10 +7,15 @@ Once everything here is in place, the per-release process is two commands:
 ```bash
 ./scripts/packaging/package_macos.sh 1.3.0
 CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+INSTALLER_IDENTITY="Developer ID Installer: Your Name (TEAMID)" \
 NOTARY_PROFILE="0xFX-notary" \
 ./scripts/packaging/sign_macos.sh 1.3.0
 ./scripts/packaging/upload_release.sh 1.3.0
 ```
+
+> **Two different certificates are needed**, both issued by the same team:
+> - **Developer ID Application** — signs the `.app` and the plugin bundles.
+> - **Developer ID Installer** — signs the `.pkg` installer.
 
 ---
 
@@ -21,34 +26,40 @@ NOTARY_PROFILE="0xFX-notary" \
 - $99/year at <https://developer.apple.com/programs/>.
 - Individual enrollment uses your legal name; Organization enrollment requires a D-U-N-S number and shows the company name as the developer.
 
-### 2. Create a "Developer ID Application" certificate
+### 2. Create both "Developer ID" certificates
 
-This is the cert used to sign apps distributed *outside* the Mac App Store. Two ways:
+You need two separate certs, both under the same team:
+
+- **Developer ID Application** — signs `.app` and plugin bundles.
+- **Developer ID Installer** — signs `.pkg` installers.
+
+Generate each one the same way; the only difference is which type you pick.
 
 **Via Xcode (easiest):**
 1. Open Xcode → *Settings → Accounts*.
 2. Sign in with the Apple ID on your developer account.
-3. Click *Manage Certificates... → +* → **Developer ID Application**.
-4. Xcode creates the cert and installs it in your login keychain.
+3. Click *Manage Certificates... → +* → **Developer ID Application**, then repeat for **Developer ID Installer**.
+4. Xcode installs both in your login keychain.
 
 **Via the developer portal:**
 1. Generate a CSR from *Keychain Access → Certificate Assistant → Request a Certificate From a Certificate Authority* ("Saved to disk").
-2. Upload it at <https://developer.apple.com/account/resources/certificates> → **+ → Developer ID Application**.
-3. Download the resulting `.cer`, double-click to install in Keychain.
+2. Upload it at <https://developer.apple.com/account/resources/certificates> → **+ → Developer ID Application**. Repeat for **Developer ID Installer** (can reuse one CSR or create a new one).
+3. Download both `.cer` files and double-click each to install in Keychain.
 
-### 3. Verify the identity is usable
+### 3. Verify both identities are usable
 
 ```bash
-security find-identity -v -p codesigning
+security find-identity -v -p codesigning | grep "Developer ID"
 ```
 
-You should see a line like:
+You should see two entries:
 
 ```
 1) XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX "Developer ID Application: Your Name (TEAMID)"
+2) YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY "Developer ID Installer: Your Name (TEAMID)"
 ```
 
-The quoted string is your `CODESIGN_IDENTITY`. The 10-character `TEAMID` inside the parens is your Apple Team ID.
+The Application string becomes `CODESIGN_IDENTITY`; the Installer string becomes `INSTALLER_IDENTITY`. The 10-character `TEAMID` inside the parens is your Apple Team ID.
 
 ### 4. Create an app-specific password for notarization
 
@@ -81,12 +92,13 @@ xcrun notarytool store-credentials "0xFX-notary" \
 ./scripts/packaging/package_macos.sh 1.3.0
 ```
 
-This produces an **unsigned** `.app`, plugin bundles, `.dmg`, and `.zip` under `release/`. On its own, these require the `xattr -cr` workaround on end-user machines.
+This produces an **unsigned** `.app`, plugin bundles, a `.pkg` installer, and a `.zip` under `release/`. Without the signing step, end users see Gatekeeper warnings and need the `xattr -cr` workaround.
 
 ### 2. Sign + notarize + staple
 
 ```bash
 CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+INSTALLER_IDENTITY="Developer ID Installer: Your Name (TEAMID)" \
 NOTARY_PROFILE="0xFX-notary" \
 ./scripts/packaging/sign_macos.sh 1.3.0
 ```
@@ -94,12 +106,12 @@ NOTARY_PROFILE="0xFX-notary" \
 The script:
 - Signs the three plugin bundles (`.clap`, `.vst3`, `.component`) with hardened runtime and a secure timestamp.
 - Signs `0xFX.app` with hardened runtime + entitlements from `resources/macos/0xfx.entitlements` (microphone access, library-validation off for SDL2, JIT for ImGui/DSP).
-- Re-packs `release/0xFX-1.3.0-macos-universal.dmg` with the signed bundles, then signs the DMG itself.
-- Submits the DMG to Apple's notary service (~1–5 min) and waits.
-- Staples the notarization ticket onto the DMG, the app bundle, and each plugin — so Gatekeeper can verify them offline.
-- Re-zips `release/0xFX-1.3.0-macos-universal.zip` with the stapled contents.
+- Rebuilds `release/0xFX-1.3.0-macos-universal.pkg` via `build_pkg_macos.sh` so its payload contains the signed bundles, and signs the `.pkg` itself with the Installer identity.
+- Submits the `.pkg` to Apple's notary service (~1–5 min) and waits.
+- Staples the notarization ticket onto the `.pkg`, the `.app`, and each plugin — so Gatekeeper can verify them offline.
+- Re-zips `release/0xFX-1.3.0-macos-universal.zip` with the stapled contents for the portable-install path.
 
-Leave `NOTARY_PROFILE` unset to sign locally without notarizing (useful for testing the signing step before you have credentials stored).
+Leave `NOTARY_PROFILE` unset to sign locally without notarizing (useful for testing the signing step before you have credentials stored). Leave `INSTALLER_IDENTITY` unset to produce an unsigned `.pkg` — Gatekeeper will still warn on first open, but it's fine for internal testing.
 
 ### 3. Upload
 

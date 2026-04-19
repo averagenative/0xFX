@@ -205,10 +205,17 @@ Restart your DAW and rescan plugins.
 PLUGINTXT
 echo "  -> ${PLUGIN_DIR}/INSTALL_PLUGINS.txt"
 
-# ── macOS INSTALL.txt ──
+# ── macOS INSTALL.txt (for the .zip distribution; .pkg has its own UI) ──
 cat > "${RELEASE_DIR}/INSTALL.txt" << 'EOF'
 0xFX — macOS Installation
 ==============================
+
+RECOMMENDED:
+  Download 0xFX-<version>-macos-universal.pkg from the GitHub release
+  and double-click it. The installer handles both the standalone app
+  and all three plugin formats.
+
+THIS .ZIP (manual install):
 
 STANDALONE:
   Drag 0xFX.app to /Applications.
@@ -221,53 +228,27 @@ GATEKEEPER (unsigned app):
   cannot be verified", run in Terminal:
 
   xattr -cr /Applications/0xFX.app
-  xattr -cr ~/Library/Audio/Plug-Ins/CLAP/0xFX.clap
-  xattr -cr ~/Library/Audio/Plug-Ins/VST3/0xFX.vst3
-  xattr -cr ~/Library/Audio/Plug-Ins/Components/0xFX.component
+  xattr -cr /Library/Audio/Plug-Ins/CLAP/0xFX.clap
+  xattr -cr /Library/Audio/Plug-Ins/VST3/0xFX.vst3
+  xattr -cr /Library/Audio/Plug-Ins/Components/0xFX.component
 
-  Or: System Settings > Privacy & Security > "Allow Anyway"
+  Or: System Settings > Privacy & Security > "Open Anyway"
 
 PRESETS:
   Factory presets are bundled inside the .app.
-  User presets save to ~/Library/Application Support/0xFX/presets/
 
 REQUIREMENTS:
-  SDL2: brew install sdl2
   macOS 11.0 (Big Sur) or later
 EOF
 
-# ── Create .dmg ──
+# ── Build the .pkg installer ──
+# The .pkg handles standalone app + all three plugin formats in one flow,
+# so users never have to manually copy Plugins/ anywhere. Component choices
+# in the installer UI let them deselect plugin formats their DAW doesn't use.
 echo ""
-echo "--- Creating .dmg ---"
-DMG_NAME="0xFX-${VERSION}-macos-universal.dmg"
-DMG_STAGE="${RELEASE_DIR}/dmg_stage"
-mkdir -p "${DMG_STAGE}"
+"${SCRIPT_DIR}/build_pkg_macos.sh" "${VERSION}"
 
-cp -r "${APP_DIR}" "${DMG_STAGE}/"
-# Plugin bundles (.clap / .vst3 / .component) + INSTALL_PLUGINS.txt.
-# Without these the DMG distribution has no plugins at all — the Applications
-# symlink covers the standalone install, but DAW users need the bundles too.
-if [ -d "${PLUGIN_DIR}" ]; then
-    cp -r "${PLUGIN_DIR}" "${DMG_STAGE}/"
-fi
-cp README.md "${DMG_STAGE}/" 2>/dev/null || true
-cp LICENSE "${DMG_STAGE}/" 2>/dev/null || true
-cp "${RELEASE_DIR}/INSTALL.txt" "${DMG_STAGE}/"
-ln -s /Applications "${DMG_STAGE}/Applications"
-
-hdiutil create -volname "0xFX v${VERSION}" \
-    -srcfolder "${DMG_STAGE}" \
-    -ov -format UDZO \
-    "${RELEASE_DIR}/${DMG_NAME}" 2>/dev/null && {
-    echo "  -> ${RELEASE_DIR}/${DMG_NAME}"
-} || {
-    echo "  hdiutil failed — check Console.app for details"
-    echo "  Falling back to zip-only distribution"
-}
-
-rm -rf "${DMG_STAGE}"
-
-# ── Create zip (app + plugins) ──
+# ── Create zip (app + plugins, for portable / manual users) ──
 echo ""
 echo "--- Creating zip ---"
 cd "${RELEASE_DIR}"
@@ -282,10 +263,10 @@ cd "$PROJECT_DIR"
 # ── Summary ──
 echo ""
 echo "=== macOS Release Artifacts ==="
-ls -lh "${RELEASE_DIR}"/*.dmg "${RELEASE_DIR}"/*.zip 2>/dev/null
+ls -lh "${RELEASE_DIR}"/*.pkg "${RELEASE_DIR}"/*.zip 2>/dev/null
 echo ""
 echo "To upload to GitHub release:"
-echo "  gh release upload v${VERSION} ${RELEASE_DIR}/*.dmg ${RELEASE_DIR}/*.zip"
+echo "  gh release upload v${VERSION} ${RELEASE_DIR}/*.pkg ${RELEASE_DIR}/*.zip"
 echo ""
 echo "To test locally:"
 echo "  open ${RELEASE_DIR}/${APP_NAME}.app"

@@ -3,22 +3,28 @@
 # sign_macos.sh — Codesign, notarize, and staple the macOS release.
 #
 # Run after package_macos.sh has produced release/0xFX.app, release/Plugins/*,
-# and the .dmg/.zip artifacts. Re-packs the .dmg and .zip after signing so the
-# distributed archives contain the signed + stapled bundles.
+# the .pkg installer, and the .zip. Re-builds and signs the .pkg with the
+# Developer ID Installer cert, notarizes it, and staples the ticket. Re-zips
+# with the signed bundles.
 #
 # Usage:
 #   CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+#   INSTALLER_IDENTITY="Developer ID Installer: Your Name (TEAMID)" \
 #   NOTARY_PROFILE="0xFX-notary" \
 #   ./scripts/packaging/sign_macos.sh 1.3.0
 #
 # Environment:
-#   CODESIGN_IDENTITY  Required. Full Developer ID Application identity string.
-#                      Find via: security find-identity -v -p codesigning
-#   NOTARY_PROFILE     Optional. Keychain profile name previously stored via
-#                      `xcrun notarytool store-credentials`. If unset, skips
-#                      the notarize + staple steps (useful for test signing).
-#   ENTITLEMENTS       Optional. Path to entitlements plist.
-#                      Default: resources/macos/0xfx.entitlements
+#   CODESIGN_IDENTITY   Required. Developer ID *Application* identity — signs
+#                       the .app and plugin bundles.
+#                       Find via: security find-identity -v -p codesigning
+#   INSTALLER_IDENTITY  Required when building the signed .pkg. Developer ID
+#                       *Installer* identity — a separate cert from the
+#                       Application one. Same TEAMID.
+#   NOTARY_PROFILE      Optional. Keychain profile name previously stored via
+#                       `xcrun notarytool store-credentials`. If unset, skips
+#                       the notarize + staple steps (useful for test signing).
+#   ENTITLEMENTS        Optional. Path to entitlements plist.
+#                       Default: resources/macos/0xfx.entitlements
 #
 # See docs/MACOS_SIGNING.md for the full one-time setup walkthrough.
 #
@@ -27,7 +33,9 @@ set -euo pipefail
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
-    echo "Usage: CODESIGN_IDENTITY='Developer ID Application: ...' $0 <version>" >&2
+    echo "Usage: CODESIGN_IDENTITY='Developer ID Application: ...' \\" >&2
+    echo "       INSTALLER_IDENTITY='Developer ID Installer: ...' \\" >&2
+    echo "       $0 <version>" >&2
     exit 2
 fi
 
@@ -45,7 +53,7 @@ RELEASE_DIR="release"
 APP="${RELEASE_DIR}/0xFX.app"
 PLUGINS_DIR="${RELEASE_DIR}/Plugins"
 ENTITLEMENTS="${ENTITLEMENTS:-resources/macos/0xfx.entitlements}"
-DMG="${RELEASE_DIR}/0xFX-${VERSION}-macos-universal.dmg"
+PKG="${RELEASE_DIR}/0xFX-${VERSION}-macos-universal.pkg"
 ZIP="${RELEASE_DIR}/0xFX-${VERSION}-macos-universal.zip"
 
 if [ ! -d "$APP" ]; then
@@ -58,12 +66,13 @@ if [ ! -f "$ENTITLEMENTS" ]; then
 fi
 
 echo "=== Signing 0xFX v${VERSION} ==="
-echo "  Identity:     ${CODESIGN_IDENTITY}"
-echo "  Entitlements: ${ENTITLEMENTS}"
-echo "  Notary:       ${NOTARY_PROFILE:-<skip — no NOTARY_PROFILE set>}"
+echo "  App/plugin identity: ${CODESIGN_IDENTITY}"
+echo "  Installer identity:  ${INSTALLER_IDENTITY:-<unsigned .pkg — set INSTALLER_IDENTITY>}"
+echo "  Entitlements:        ${ENTITLEMENTS}"
+echo "  Notary:              ${NOTARY_PROFILE:-<skip — no NOTARY_PROFILE set>}"
 echo ""
 
-# ── Sign plugins (inside-out) ──
+# ── Sign plugin bundles ──
 # Plugin bundles are self-contained — no extra dylibs inside — so a single
 # codesign pass per bundle is sufficient.
 echo "--- Signing plugin bundles ---"
@@ -92,45 +101,33 @@ spctl --assess --type execute --verbose "$APP" || {
     echo "  (spctl warning above is expected until notarization completes)"
 }
 
-# ── Re-pack .dmg so it contains the signed app ──
+# ── Rebuild the .pkg so it contains the signed bundles, and sign it ──
 echo ""
-echo "--- Re-packing ${DMG} ---"
-DMG_STAGE="${RELEASE_DIR}/dmg_stage"
-rm -rf "$DMG_STAGE"
-mkdir -p "$DMG_STAGE"
-cp -R "$APP" "$DMG_STAGE/"
-# Include signed plugin bundles so the DMG can be a complete install
-# (standalone via Applications symlink, plugins via Plugins/).
-[ -d "$PLUGINS_DIR" ] && cp -R "$PLUGINS_DIR" "$DMG_STAGE/"
-[ -f README.md ] && cp README.md "$DMG_STAGE/"
-[ -f LICENSE ] && cp LICENSE "$DMG_STAGE/"
-[ -f "${RELEASE_DIR}/INSTALL.txt" ] && cp "${RELEASE_DIR}/INSTALL.txt" "$DMG_STAGE/"
-ln -s /Applications "${DMG_STAGE}/Applications"
-
-rm -f "$DMG"
-hdiutil create -volname "0xFX v${VERSION}" \
-    -srcfolder "$DMG_STAGE" \
-    -ov -format UDZO \
-    "$DMG" >/dev/null
-rm -rf "$DMG_STAGE"
-echo "  -> $DMG"
-
-# The DMG itself should be signed too so Gatekeeper accepts the download.
-codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$DMG"
+echo "--- Rebuilding signed .pkg ---"
+rm -f "$PKG"
+if [ -n "${INSTALLER_IDENTITY:-}" ]; then
+    INSTALLER_IDENTITY="$INSTALLER_IDENTITY" \
+        "${SCRIPT_DIR}/build_pkg_macos.sh" "$VERSION"
+else
+    echo "  (INSTALLER_IDENTITY unset — building unsigned .pkg)" >&2
+    "${SCRIPT_DIR}/build_pkg_macos.sh" "$VERSION"
+fi
 
 # ── Notarize + staple ──
 if [ -n "${NOTARY_PROFILE:-}" ]; then
     echo ""
-    echo "--- Notarizing ${DMG} (this can take 1–5 minutes) ---"
-    xcrun notarytool submit "$DMG" \
+    echo "--- Notarizing ${PKG} (this can take 1–5 minutes) ---"
+    xcrun notarytool submit "$PKG" \
         --keychain-profile "$NOTARY_PROFILE" \
         --wait
 
     echo ""
     echo "--- Stapling ---"
-    xcrun stapler staple "$DMG"
+    # Staple the .pkg itself (so the download verifies offline) and each
+    # bundle the .pkg contains (so installed apps/plugins verify offline
+    # once Gatekeeper unpacks them).
+    xcrun stapler staple "$PKG"
     xcrun stapler staple "$APP"
-    # Staple each plugin bundle so they verify offline too.
     for bundle in "${PLUGINS_DIR}/0xFX.clap" \
                   "${PLUGINS_DIR}/0xFX.vst3" \
                   "${PLUGINS_DIR}/0xFX.component"; do
@@ -140,6 +137,7 @@ if [ -n "${NOTARY_PROFILE:-}" ]; then
     echo ""
     echo "--- Final Gatekeeper check ---"
     spctl --assess --type execute --verbose "$APP"
+    spctl --assess --type install --verbose "$PKG" || true
 else
     echo ""
     echo "(skipping notarize/staple — set NOTARY_PROFILE to enable)"
@@ -155,6 +153,6 @@ echo "  -> $ZIP"
 
 echo ""
 echo "=== Done ==="
-ls -lh "$DMG" "$ZIP"
+ls -lh "$PKG" "$ZIP"
 echo ""
 echo "Upload with: ./scripts/packaging/upload_release.sh ${VERSION}"

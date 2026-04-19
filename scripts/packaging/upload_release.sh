@@ -46,7 +46,8 @@ ARTIFACTS=(release/"0xFX-${VERSION}"-*.tar.gz
            release/"0xFX-${VERSION}"-*.zip
            release/"0xFX-${VERSION}"-*.exe
            release/"0xFX-${VERSION}"-*.AppImage
-           release/"0xFX-${VERSION}"-*.dmg)
+           release/"0xFX-${VERSION}"-*.dmg
+           release/"0xFX-${VERSION}"-*.pkg)
 
 if [ ${#ARTIFACTS[@]} -eq 0 ]; then
     echo "ERROR: No artifacts found matching release/0xFX-${VERSION}-*" >&2
