@@ -1988,6 +1988,16 @@ static void test_looper_focus(void) {
     fx_looper_focus_next(e);
     ASSERT(fx_looper_focused(e) == 0, "focus wraps back to 0");
 
+    /* set_focus jumps directly; out-of-range is ignored. */
+    fx_looper_set_focus(e, 5);
+    ASSERT(fx_looper_focused(e) == 5, "set_focus 5");
+    fx_looper_set_focus(e, 0);
+    ASSERT(fx_looper_focused(e) == 0, "set_focus 0");
+    fx_looper_set_focus(e, -1);
+    ASSERT(fx_looper_focused(e) == 0, "set_focus ignores -1");
+    fx_looper_set_focus(e, FX_LOOPER_SLOT_COUNT);
+    ASSERT(fx_looper_focused(e) == 0, "set_focus ignores OOB");
+
     fx_engine_destroy(e);
     printf("  OK\n");
 }

@@ -780,6 +780,8 @@ static void looper_render_panel(fx_engine_t *engine,
         if (ImGui::Button(label, ImVec2(pad_w, pad_h))) {
             FX_INFO("looper GUI: pad %d clicked (state=%d len=%d)",
                     slot + 1, (int)st, len);
+            /* Click-to-tap also selects the slot so Space targets it next. */
+            fx_looper_set_focus(engine, slot);
             fx_looper_slot_tap(engine, slot);
         }
         ImGui::PopID();
@@ -825,7 +827,10 @@ static void looper_handle_keys(fx_engine_t *engine) {
                     i + 1, ctrl, shift, alt);
             if (alt)        fx_looper_slot_clear(engine, i);
             else if (shift) fx_looper_slot_mute(engine, i);
-            else            fx_looper_slot_tap(engine, i);
+            else {
+                fx_looper_set_focus(engine, i);
+                fx_looper_slot_tap(engine, i);
+            }
         }
     }
 
@@ -2541,18 +2546,48 @@ int main(int argc, char *argv[]) {
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Recording format");
 
-                    /* Folder button to set recording directory */
+                    /* Gear button — opens the recording save-location modal. */
                     ImGui::SameLine();
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.10f, 0.09f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.18f, 0.14f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.55f, 0.45f, 1.0f));
-                    if (ImGui::Button("\xf0\x9f\x93\x81##rec_dir", ImVec2(30.0f, 0.0f))) {
-                        strncpy(s_rec_dir_edit, s_rec_dir, sizeof(s_rec_dir_edit));
-                        s_rec_dir_modal = true;
-                    }
-                    ImGui::PopStyleColor(3);
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Recordings save to:\n%s", s_rec_dir);
+                    {
+                        ImVec2 gear_sz(30.0f, 30.0f);
+                        ImVec2 p0 = ImGui::GetCursorScreenPos();
+                        bool clicked = ImGui::InvisibleButton("##rec_dir", gear_sz);
+                        bool hov = ImGui::IsItemHovered();
+                        ImDrawList *dl = ImGui::GetWindowDrawList();
+                        ImU32 bg = hov ? IM_COL32(56, 44, 32, 255)
+                                       : IM_COL32(30, 26, 23, 255);
+                        ImU32 fg = hov ? IM_COL32(205, 180, 135, 255)
+                                       : IM_COL32(155, 140, 115, 255);
+                        dl->AddRectFilled(p0,
+                            ImVec2(p0.x + gear_sz.x, p0.y + gear_sz.y), bg, 3.0f);
+
+                        /* Gear: 8 teeth on a ring + center hole. */
+                        ImVec2 c(p0.x + gear_sz.x * 0.5f, p0.y + gear_sz.y * 0.5f);
+                        const float R_out = 10.0f;
+                        const float R_ring = 7.5f;
+                        const float R_hole = 3.0f;
+                        const int   teeth = 8;
+                        const float tooth_half = 0.22f;
+                        for (int i = 0; i < teeth; i++) {
+                            float a = (float)i * (6.2831853f / teeth);
+                            float a0 = a - tooth_half, a1 = a + tooth_half;
+                            ImVec2 q[4] = {
+                                ImVec2(c.x + cosf(a0) * R_ring, c.y + sinf(a0) * R_ring),
+                                ImVec2(c.x + cosf(a0) * R_out,  c.y + sinf(a0) * R_out),
+                                ImVec2(c.x + cosf(a1) * R_out,  c.y + sinf(a1) * R_out),
+                                ImVec2(c.x + cosf(a1) * R_ring, c.y + sinf(a1) * R_ring),
+                            };
+                            dl->AddConvexPolyFilled(q, 4, fg);
+                        }
+                        dl->AddCircleFilled(c, R_ring, fg, 24);
+                        dl->AddCircleFilled(c, R_hole, bg, 16);
+
+                        if (clicked) {
+                            strncpy(s_rec_dir_edit, s_rec_dir, sizeof(s_rec_dir_edit));
+                            s_rec_dir_modal = true;
+                        }
+                        if (hov)
+                            ImGui::SetTooltip("Recordings save to:\n%s", s_rec_dir);
                     }
                 }
             }
@@ -2827,11 +2862,46 @@ int main(int argc, char *argv[]) {
                 ImGui::EndPopup();
             }
 
-            /* ── Window controls: _ [] X (borderless) ─────────── */
+            /* ── Window controls: ? _ [] X (borderless) ───────── */
             {
                 ImVec2 wc_sz(35.0f, 28.0f);
-                float controls_w = wc_sz.x * 3 + 4 + 8;
+                float controls_w = wc_sz.x * 4 + 6 + 8;
                 ImGui::SameLine(ImGui::GetWindowWidth() - controls_w);
+
+                /* Help button — opens a popup listing all keybinds. */
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
+                if (ImGui::Button("?##whelp", wc_sz))
+                    ImGui::OpenPopup("app_keybinds");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Keyboard shortcuts");
+                ImGui::PopStyleColor(4);
+                if (ImGui::BeginPopup("app_keybinds")) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+                    ImGui::Text("Keyboard shortcuts");
+                    ImGui::PopStyleColor();
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Global");
+                    ImGui::BulletText("Space          LIVE on/off (or tap focused loop slot)");
+                    ImGui::BulletText("Ctrl + S       save preset");
+                    ImGui::BulletText("Ctrl + Shift + S   save preset as…");
+                    ImGui::BulletText("Esc            quit");
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Looper (panel open)");
+                    ImGui::BulletText("1 – 9          tap slot (rec → play → overdub)");
+                    ImGui::BulletText("Shift + 1-9    mute / unmute slot");
+                    ImGui::BulletText("Alt + 1-9      clear slot");
+                    ImGui::BulletText("Space          tap the focused slot");
+                    ImGui::BulletText("R              arm next empty slot");
+                    ImGui::BulletText("Tab            cycle focused slot");
+                    ImGui::BulletText("Ctrl + Z       undo last overdub on focused");
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Clicking a looper pad also selects it for Space.");
+                    ImGui::EndPopup();
+                }
+                ImGui::SameLine(0, 2);
 
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
@@ -2939,10 +3009,18 @@ int main(int argc, char *argv[]) {
                     s_looper_panel_open ? fx_looper_focused(engine) : -1,
                     ImGui::GetIO().WantCaptureKeyboard ? 1 : 0);
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Space) && !ImGui::GetIO().WantCaptureKeyboard) {
-            if (s_looper_panel_open) {
-                fx_looper_slot_tap(engine, fx_looper_focused(engine));
-            } else if (s_audio_active) {
+        /* Space in the looper panel always taps the focused slot — ImGui sets
+         * WantCaptureKeyboard after a pad click (nav focus), but we explicitly
+         * want Space to drive the looper regardless. The no-text-input check
+         * is still needed so Space doesn't fire while typing in an input. */
+        bool typing = ImGui::GetIO().WantTextInput;
+        if (s_looper_panel_open && !typing
+            && ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
+            int f = fx_looper_focused(engine);
+            FX_INFO("looper GUI: Space tap focused=%d", f);
+            fx_looper_slot_tap(engine, f);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Space) && !ImGui::GetIO().WantCaptureKeyboard) {
+            if (s_audio_active) {
                 fx_audio_shutdown(); fx_audio_init();
                 num_input_devices  = fx_audio_get_device_count();
                 num_output_devices = fx_audio_get_output_count();

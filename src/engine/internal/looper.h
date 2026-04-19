@@ -75,6 +75,7 @@ void looper_slot_undo(fx_looper_t *l, int slot);    /* revert last overdub */
 int  looper_arm_next(fx_looper_t *l);               /* arms first EMPTY slot, returns index or -1 */
 void looper_master_toggle(fx_looper_t *l);          /* Space */
 void looper_focus_next(fx_looper_t *l);             /* Tab */
+void looper_set_focus(fx_looper_t *l, int slot);    /* pad click, number key */
 
 /* ── Export ───────────────────────────────────────────────────────── */
 

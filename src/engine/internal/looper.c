@@ -290,6 +290,11 @@ void looper_focus_next(fx_looper_t *l) {
     l->focused_slot = (l->focused_slot + 1) % FX_LOOPER_SLOTS;
 }
 
+void looper_set_focus(fx_looper_t *l, int slot) {
+    if (!l || !valid_slot(slot)) return;
+    l->focused_slot = slot;
+}
+
 /* ── WAV export ───────────────────────────────────────────────── */
 
 static bool write_wav_mono(const char *path, const float *samples, int n,

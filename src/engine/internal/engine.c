@@ -700,6 +700,11 @@ void fx_looper_focus_next(fx_engine_t *engine) {
     looper_focus_next(&engine->looper);
 }
 
+void fx_looper_set_focus(fx_engine_t *engine, int slot) {
+    if (!engine) return;
+    looper_set_focus(&engine->looper, slot);
+}
+
 int fx_looper_focused(fx_engine_t *engine) {
     return engine ? engine->looper.focused_slot : 0;
 }

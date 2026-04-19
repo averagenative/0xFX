@@ -337,6 +337,7 @@ int             fx_looper_arm_next   (fx_engine_t *engine);              /* arm 
 void            fx_looper_master_toggle(fx_engine_t *engine);            /* play/pause all */
 bool            fx_looper_master_is_playing(fx_engine_t *engine);
 void            fx_looper_focus_next (fx_engine_t *engine);              /* Tab cycles focus */
+void            fx_looper_set_focus  (fx_engine_t *engine, int slot);    /* explicit focus (pad click, number key) */
 int             fx_looper_focused    (fx_engine_t *engine);
 
 void            fx_looper_set_sync       (fx_engine_t *engine, bool on);
