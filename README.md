@@ -286,6 +286,28 @@ makensis scripts/packaging/0xfx_installer_arm64.nsi   # Windows ARM64 installer
 ./scripts/packaging/package_macos.sh 1.1.0            # Universal .dmg + .zip
 ```
 
+### Testing Windows builds under Wine (Linux host)
+
+For smoke-testing the Windows artifact without dual-booting:
+
+```bash
+# one-time — creates ~/.local/share/0xfx-wine-test
+./scripts/wine/setup.sh
+
+# install the newest release/0xFX-*-windows-x64-setup.exe
+./scripts/wine/install-0xfx.sh
+
+# launch the installed standalone
+./scripts/wine/launch-0xfx.sh
+
+# optional — drop Reaper in the same prefix to test VST3/CLAP loading
+./scripts/wine/install-reaper.sh
+WINEPREFIX=~/.local/share/0xfx-wine-test wine \
+  "$HOME/.local/share/0xfx-wine-test/drive_c/Program Files/REAPER (x64)/reaper.exe"
+```
+
+Audio under Wine is **not** representative — use this to verify the GUI renders, presets load, and plugins are discovered. Do real audio testing on native Windows. Full docs, caveats, and the ship-blocking test matrix live in [`scripts/wine/README.md`](scripts/wine/README.md).
+
 ---
 
 ## Architecture
