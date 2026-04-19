@@ -3259,5 +3259,31 @@
       "deps/nfd/"
     ],
     "notes": "Dan asked 2026-04-18 after we finished TASK-368 (bundled IRs). The engine API already accepts an arbitrary wav path — just never exposed in the GUI. Users who own commercial IR packs (OwnHammer, Redwirez, 3 Sigma, etc.) should be able to drag/drop or file-pick their own .wav and hear it immediately. Same dialog pattern will also unblock import of NAM profiles and .0xfx presets later. Skip drag-and-drop for v1, file-picker is enough; we can add DnD as a separate polish task."
+  },
+  {
+    "id": "TASK-371",
+    "priority": "HIGH",
+    "title": "Multi-instance plugin crashes Reaper on close",
+    "domain": "frontend",
+    "phase": 14,
+    "status": "done",
+    "claimedBy": "claude",
+    "depends": [],
+    "estimatedTokens": 20000,
+    "release": "1.4.0",
+    "acceptanceCriteria": [
+      "Repro steps: Reaper (Wine), load 0xFX on two tracks, close/remove one instance → Reaper crashes",
+      "Capture a winedbg backtrace when crash fires — that pinpoints the actual failing call site",
+      "Audit texture.c: owner_thread-keyed cache entries are stale after a render thread exits. Windows recycles thread IDs — if a new instance picks up a dead instance's TID, it will match stale GL IDs from a destroyed context. Fix: clear stale entries when an instance's render thread exits (callable from render_thread_func cleanup), OR key by GL context handle instead of thread ID, OR make the cache genuinely per-instance (allocated inside fx_gui_state_t)",
+      "Audit looper API race: fx_looper_slot_tap (GUI thread) calls calloc for s->buf while fx_looper_tap (audio thread) reads s->buf and s->state. Needs atomic or a quick lock around state transitions. Unlikely to cause close-time crash but is a real data race and should be fixed regardless",
+      "Confirm close ordering: detach (stop render thread, destroy GL context, destroy ImGui context) must finish before any shared-state mutation that could touch another instance",
+      "Tested: load 3+ instances, close them in arbitrary order — Reaper stays up. Also verify repeated attach/detach cycles on a single instance don't crash"
+    ],
+    "files": [
+      "src/gui/texture.c",
+      "src/plugin/gui_plugin_bridge.cpp",
+      "src/engine/internal/looper.c"
+    ],
+    "notes": "Dan hit this 2026-04-19 during Wine/Reaper testing after the looper plugin port landed. User's initial hypothesis was looper thread safety; audit found gui_render.cpp has no mutable statics (clean per-instance) but texture.c cache uses thread IDs as keys which Windows can recycle — that's a concrete crash vector. Also flagged the looper slot-tap calloc race as a latent bug. Get the winedbg backtrace first; don't guess at a fix before we know which call is faulting."
   }
 ]

@@ -83,6 +83,7 @@ struct PluginGUI {
     uint32_t        height;
     void           *parent_handle;
     ImGuiContext   *imgui_ctx;
+    int             pending_theme; /* -1 = no override; else applied when gui_state exists */
 };
 
 /* Global mutex for GL/ImGui operations — serializes render frames
@@ -229,6 +230,9 @@ static DWORD WINAPI render_thread_func(LPVOID data)
 
     /* Create the GUI rendering state (bound to the engine) */
     gui->gui_state = fx_gui_create(gui->engine);
+    if (gui->gui_state && gui->pending_theme >= 0) {
+        fx_gui_set_theme(gui->gui_state, gui->pending_theme);
+    }
 
     gui_dbg("render_thread GL init complete, releasing lock");
     LeaveCriticalSection(&s_gl_init_cs);
@@ -296,13 +300,26 @@ static DWORD WINAPI render_thread_func(LPVOID data)
         Sleep(16); /* ~60fps */
     }
 
-    /* Cleanup on render thread */
+    /* Cleanup on render thread.
+     *
+     * MUST hold s_gl_init_cs across every ImGui_Impl_*_Shutdown and
+     * ImGui::DestroyContext call. ImGui uses a global GImGui pointer that
+     * SetCurrentContext mutates; if another instance's render thread last
+     * set its own context, an unlocked Shutdown here would free THAT
+     * instance's backend data. The next frame on the other instance then
+     * crashes with a NULL BackendRendererUserData deref in
+     * imgui_impl_opengl3.cpp. Re-binding our own context before shutdown
+     * ensures the shutdown touches our data, not a sibling's. */
+    EnterCriticalSection(&s_gl_init_cs);
+
+    wglMakeCurrent(gui->hdc, gui->hglrc);
+    ImGui::SetCurrentContext(gui->imgui_ctx);
+
     if (gui->gui_state) {
         fx_gui_destroy(gui->gui_state);
         gui->gui_state = NULL;
     }
 
-    /* Flush texture cache — GL IDs are invalid after context destruction */
     /* NOTE: dont call fx_texture_shutdown — global cache shared across instances */
 
     ImGui_ImplOpenGL3_Shutdown();
@@ -311,6 +328,8 @@ static DWORD WINAPI render_thread_func(LPVOID data)
     gui->imgui_ctx = NULL;
 
     wglMakeCurrent(NULL, NULL);
+
+    LeaveCriticalSection(&s_gl_init_cs);
 
     return 0;
 }
@@ -360,6 +379,7 @@ struct PluginGUI {
     void           *parent_handle;
     ImGuiContext   *imgui_ctx;
     bool            thread_created;
+    int             pending_theme; /* -1 = no override; else applied when gui_state exists */
 };
 
 /* Map X11 mouse button to ImGui mouse button index */
@@ -489,6 +509,9 @@ static void *render_thread_func(void *data)
     ImGui_ImplOpenGL3_Init("#version 330");
 
     gui->gui_state = fx_gui_create(gui->engine);
+    if (gui->gui_state && gui->pending_theme >= 0) {
+        fx_gui_set_theme(gui->gui_state, gui->pending_theme);
+    }
 
     while (gui->running) {
         if (!gui->visible) {
@@ -518,6 +541,12 @@ static void *render_thread_func(void *data)
 
         usleep(16000); /* ~60fps */
     }
+
+    /* Re-bind our GL + ImGui context before shutdown so sibling instances'
+     * backend data isn't touched. See the Windows cleanup block for the
+     * full explanation — same ImGui GImGui race applies on any platform. */
+    glXMakeCurrent(gui->display, gui->window, gui->gl_ctx);
+    ImGui::SetCurrentContext(gui->imgui_ctx);
 
     if (gui->gui_state) {
         fx_gui_destroy(gui->gui_state);
@@ -549,6 +578,7 @@ struct PluginGUI {
     uint32_t        height;
     void           *parent_handle;
     ImGuiContext   *imgui_ctx;
+    int             pending_theme;
 };
 
 #endif /* platform */
@@ -574,8 +604,30 @@ void *oxfx_gui_create(void *engine)
     gui->engine = (fx_engine_t *)engine;
     gui->width  = 1200;
     gui->height = 700;
+    gui->pending_theme = -1;
     gui_dbg("gui_create done gui=%p", gui);
     return gui;
+}
+
+void oxfx_gui_set_theme(void *gui_ptr, int theme_id)
+{
+    if (!gui_ptr) return;
+    PluginGUI *gui = (PluginGUI *)gui_ptr;
+    gui->pending_theme = theme_id;
+    if (gui->gui_state) {
+        fx_gui_set_theme(gui->gui_state, theme_id);
+    }
+}
+
+int oxfx_gui_get_theme(void *gui_ptr)
+{
+    if (!gui_ptr) return -1;
+    PluginGUI *gui = (PluginGUI *)gui_ptr;
+    if (gui->gui_state) {
+        int t = fx_gui_get_theme(gui->gui_state);
+        if (t >= 0) return t;
+    }
+    return gui->pending_theme;
 }
 
 void oxfx_gui_destroy(void *gui_ptr)
