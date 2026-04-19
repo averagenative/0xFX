@@ -100,6 +100,7 @@ struct SessionConfig {
     int   sr_idx;
     float input_gain_db;   /* -24..+12 dB, default 0.0 */
     bool  input_pad;       /* -20 dB pad toggle, default false */
+    int   theme_id;        /* fx_theme_id_t */
 };
 
 static void session_config_defaults(SessionConfig *cfg) {
@@ -111,6 +112,7 @@ static void session_config_defaults(SessionConfig *cfg) {
     cfg->sr_idx            = 0;
     cfg->input_gain_db     = 0.0f;
     cfg->input_pad         = false;
+    cfg->theme_id          = 0;
 }
 
 static bool session_config_load(SessionConfig *cfg) {
@@ -138,6 +140,7 @@ static bool session_config_load(SessionConfig *cfg) {
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "sr_idx"))        && cJSON_IsNumber(v)) cfg->sr_idx            = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_gain_db")) && cJSON_IsNumber(v)) cfg->input_gain_db     = (float)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_pad"))     && cJSON_IsBool(v))   cfg->input_pad         = (bool)cJSON_IsTrue(v);
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "theme"))         && cJSON_IsNumber(v)) cfg->theme_id          = (int)v->valuedouble;
     cJSON_Delete(root);
     return true;
 }
@@ -153,6 +156,7 @@ static void session_config_save(const SessionConfig *cfg) {
     cJSON_AddNumberToObject(root, "sr_idx",        cfg->sr_idx);
     cJSON_AddNumberToObject(root, "input_gain_db", cfg->input_gain_db);
     cJSON_AddBoolToObject  (root, "input_pad",     cfg->input_pad);
+    cJSON_AddNumberToObject(root, "theme",         cfg->theme_id);
     char *json = cJSON_Print(root);
     cJSON_Delete(root);
     if (!json) return;
@@ -590,20 +594,36 @@ static bulk_import_result_t custom_cab_bulk_import(const char *folder) {
     return r;
 }
 
+/* ── Theme selection ────────────────────────────────────────── */
+
+#include "fx_theme.h"
+static fx_theme_id_t s_theme = FX_THEME_GRIME_DARK;
+
+static ImU32 theme_col32(const ImVec4 &v) {
+    return ImGui::ColorConvertFloat4ToU32(v);
+}
+static ImVec4 scale_rgb(const ImVec4 &v, float s) {
+    return ImVec4(v.x * s, v.y * s, v.z * s, v.w);
+}
+
 /* ── Looper panel state ─────────────────────────────────────── */
 
 static bool s_looper_panel_open = false;
 
 static ImVec4 looper_state_color(fx_loop_state_t s, bool muted) {
+    /* Only the EMPTY state is neutral and worth theming — the others
+     * (armed/recording/playing/overdubbing) carry semantic meaning so we
+     * keep their universal colors for readability. */
+    const fx_theme_t *th = fx_theme_get(s_theme);
     if (muted)                return ImVec4(0.35f, 0.35f, 0.35f, 1.0f);
     switch (s) {
-    case FX_LOOP_EMPTY:       return ImVec4(0.18f, 0.17f, 0.16f, 1.0f);
+    case FX_LOOP_EMPTY:       return th->frame;
     case FX_LOOP_ARMED:       return ImVec4(0.80f, 0.60f, 0.15f, 1.0f);
     case FX_LOOP_RECORDING:   return ImVec4(0.85f, 0.15f, 0.15f, 1.0f);
     case FX_LOOP_PLAYING:     return ImVec4(0.20f, 0.70f, 0.30f, 1.0f);
     case FX_LOOP_OVERDUBBING: return ImVec4(0.85f, 0.55f, 0.20f, 1.0f);
     }
-    return ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+    return th->frame;
 }
 
 static const char *looper_state_label(fx_loop_state_t s) {
@@ -630,25 +650,30 @@ static void looper_render_panel(fx_engine_t *engine,
         ImGuiWindowFlags_NoSavedSettings);
 
 
-    /* Background gradient + bottom separator — matches toolbar. */
+    /* Background gradient + bottom separator — theme-driven, matches toolbar. */
     {
+        const fx_theme_t *th = fx_theme_get(s_theme);
         ImDrawList *dl = ImGui::GetWindowDrawList();
         ImVec2 p0 = ImGui::GetWindowPos();
         ImVec2 p1 = ImVec2(p0.x + w, p0.y + h);
-        dl->AddRectFilledMultiColor(
-            p0, p1,
-            IM_COL32(28, 24, 20, 255), IM_COL32(28, 24, 20, 255),
-            IM_COL32(16, 14, 12, 255), IM_COL32(16, 14, 12, 255));
+        ImU32 c_top = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(th->panel.x * 1.15f, th->panel.y * 1.15f, th->panel.z * 1.15f, 1.0f));
+        ImU32 c_bot = ImGui::ColorConvertFloat4ToU32(th->bg);
+        dl->AddRectFilledMultiColor(p0, p1, c_top, c_top, c_bot, c_bot);
+        ImVec4 sep = th->border; sep.w = 0.8f;
         dl->AddLine(ImVec2(p0.x, p1.y - 1.0f),
                     ImVec2(p1.x, p1.y - 1.0f),
-                    IM_COL32(60, 50, 35, 255), 1.0f);
+                    ImGui::ColorConvertFloat4ToU32(sep), 1.0f);
     }
 
-    /* Panel title + master controls on the left. */
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.55f, 1.0f));
-    ImGui::SetCursorPos(ImVec2(10, 8));
-    ImGui::Text("LOOPER");
-    ImGui::PopStyleColor();
+    /* Panel title — theme accent for the heading. */
+    {
+        const fx_theme_t *th = fx_theme_get(s_theme);
+        ImGui::PushStyleColor(ImGuiCol_Text, th->accent_glow);
+        ImGui::SetCursorPos(ImVec2(10, 8));
+        ImGui::Text("LOOPER");
+        ImGui::PopStyleColor();
+    }
 
     /* Keybinds help — ? button on the right edge of the strip. */
     ImGui::SetCursorPos(ImVec2(w - 32, 6));
@@ -679,13 +704,22 @@ static void looper_render_panel(fx_engine_t *engine,
 
     /* Row 1: Play/Pause, master vol, sync, pre-chain tap */
     ImGui::SetCursorPos(ImVec2(10, 28));
-    ImGui::PushStyleColor(ImGuiCol_Button,
-        playing ? ImVec4(0.20f, 0.55f, 0.25f, 1.0f)
-                : ImVec4(0.55f, 0.22f, 0.20f, 1.0f));
+    {
+        const fx_theme_t *th = fx_theme_get(s_theme);
+        ImVec4 btn = playing ? ImVec4(0.20f, 0.55f, 0.25f, 1.0f)
+                             : scale_rgb(th->accent, 0.9f);
+        ImGui::PushStyleColor(ImGuiCol_Button, btn);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                              playing ? ImVec4(0.28f, 0.70f, 0.33f, 1.0f)
+                                      : th->accent_hover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                              playing ? ImVec4(0.16f, 0.48f, 0.22f, 1.0f)
+                                      : th->accent_active);
+    }
     if (ImGui::Button(playing ? "Pause" : "Play", ImVec2(72, 26))) {
         fx_looper_master_toggle(engine);
     }
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(3);
 
     ImGui::SameLine();
     float level = fx_looper_get_master_level(engine);
@@ -798,7 +832,9 @@ static void looper_render_panel(fx_engine_t *engine,
                         IM_COL32(255, 255, 255, 220), 2.0f);
         }
         if (slot == focused) {
-            dl->AddRect(p_min, p_max, IM_COL32(220, 190, 100, 255),
+            const fx_theme_t *th = fx_theme_get(s_theme);
+            dl->AddRect(p_min, p_max,
+                        ImGui::ColorConvertFloat4ToU32(th->accent_glow),
                         3.0f, 0, 2.0f);
         }
     }
@@ -807,8 +843,8 @@ static void looper_render_panel(fx_engine_t *engine,
     ImGui::End();
 }
 
-/* Handle looper keyboard shortcuts. Only called when the panel is open
- * and io.WantCaptureKeyboard is false. */
+/* Handle looper keyboard shortcuts. Called whenever the panel is open
+ * and no text input is focused. */
 static void looper_handle_keys(fx_engine_t *engine) {
     ImGuiIO &io = ImGui::GetIO();
     bool ctrl  = io.KeyCtrl;
@@ -1110,41 +1146,13 @@ static const char *get_pedal_tooltip(fx_pedal_type_t type) {
     return nullptr;
 }
 
-/* ── Colors — "worn grime" dark theme ─────────────────────────── */
+/* ── Theme application ─────────────────────────────────────────── */
 
-static void setup_theme(void) {
+static void apply_theme(fx_theme_id_t id) {
     ImGuiStyle &style = ImGui::GetStyle();
-    ImVec4 *colors = style.Colors;
+    fx_theme_apply(style, id);
 
-    /* Dark base with warm undertones */
-    colors[ImGuiCol_WindowBg]         = ImVec4(0.08f, 0.07f, 0.06f, 1.0f);
-    colors[ImGuiCol_ChildBg]          = ImVec4(0.10f, 0.09f, 0.08f, 1.0f);
-    colors[ImGuiCol_PopupBg]          = ImVec4(0.12f, 0.10f, 0.09f, 0.95f);
-    colors[ImGuiCol_Border]           = ImVec4(0.25f, 0.22f, 0.18f, 0.5f);
-    colors[ImGuiCol_FrameBg]          = ImVec4(0.14f, 0.12f, 0.10f, 1.0f);
-    colors[ImGuiCol_FrameBgHovered]   = ImVec4(0.20f, 0.17f, 0.14f, 1.0f);
-    colors[ImGuiCol_FrameBgActive]    = ImVec4(0.25f, 0.20f, 0.15f, 1.0f);
-    colors[ImGuiCol_TitleBg]          = ImVec4(0.06f, 0.05f, 0.04f, 1.0f);
-    colors[ImGuiCol_TitleBgActive]    = ImVec4(0.12f, 0.10f, 0.08f, 1.0f);
-    colors[ImGuiCol_MenuBarBg]        = ImVec4(0.10f, 0.08f, 0.07f, 1.0f);
-    colors[ImGuiCol_Header]           = ImVec4(0.18f, 0.15f, 0.12f, 1.0f);
-    colors[ImGuiCol_HeaderHovered]    = ImVec4(0.30f, 0.24f, 0.18f, 1.0f);
-    colors[ImGuiCol_HeaderActive]     = ImVec4(0.40f, 0.30f, 0.20f, 1.0f);
-    /* Amber accent (LED / active indicator) */
-    colors[ImGuiCol_Button]           = ImVec4(0.20f, 0.16f, 0.12f, 1.0f);
-    colors[ImGuiCol_ButtonHovered]    = ImVec4(0.60f, 0.40f, 0.15f, 1.0f);
-    colors[ImGuiCol_ButtonActive]     = ImVec4(0.80f, 0.55f, 0.15f, 1.0f);
-    colors[ImGuiCol_CheckMark]        = ImVec4(0.90f, 0.65f, 0.20f, 1.0f);
-    colors[ImGuiCol_SliderGrab]       = ImVec4(0.70f, 0.50f, 0.20f, 1.0f);
-    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.90f, 0.65f, 0.20f, 1.0f);
-    colors[ImGuiCol_Text]            = ImVec4(0.85f, 0.80f, 0.72f, 1.0f);
-    colors[ImGuiCol_TextDisabled]    = ImVec4(0.45f, 0.40f, 0.35f, 1.0f);
-    colors[ImGuiCol_Tab]             = ImVec4(0.14f, 0.12f, 0.10f, 1.0f);
-    colors[ImGuiCol_TabHovered]      = ImVec4(0.35f, 0.28f, 0.18f, 1.0f);
-    colors[ImGuiCol_TabActive]       = ImVec4(0.25f, 0.20f, 0.14f, 1.0f);
-    colors[ImGuiCol_Separator]       = ImVec4(0.25f, 0.22f, 0.18f, 0.5f);
-
-    /* Rounded corners for a hardware feel */
+    /* Shape / spacing settings are theme-agnostic. */
     style.WindowRounding    = 4.0f;
     style.FrameRounding     = 3.0f;
     style.GrabRounding      = 3.0f;
@@ -1152,6 +1160,25 @@ static void setup_theme(void) {
     style.WindowPadding     = ImVec2(10, 10);
     style.FramePadding      = ImVec2(6, 4);
     style.ItemSpacing       = ImVec2(8, 6);
+
+    s_theme = id;
+}
+
+static void setup_theme(void) {
+    apply_theme(s_theme);
+}
+
+/* Toolbar / status-bar buttons use neutral frame colors (not the bright accent)
+ * so they read like "chrome" rather than primary CTAs. */
+static void push_toolbar_button_colors(void) {
+    const fx_theme_t *th = fx_theme_get(s_theme);
+    ImGui::PushStyleColor(ImGuiCol_Button,        th->frame);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->frame_hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->frame_active);
+    ImGui::PushStyleColor(ImGuiCol_Text,          th->text);
+}
+static void pop_toolbar_button_colors(void) {
+    ImGui::PopStyleColor(4);
 }
 
 /* ── Borderless window support (Win32) ─────────────────────────── */
@@ -1709,6 +1736,8 @@ int main(int argc, char *argv[]) {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigDebugHighlightIdConflicts = false;
 
+    if (s_session_cfg.theme_id >= 0 && s_session_cfg.theme_id < FX_THEME_COUNT)
+        s_theme = (fx_theme_id_t)s_session_cfg.theme_id;
     setup_theme();
 
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
@@ -1877,6 +1906,11 @@ int main(int argc, char *argv[]) {
         float win_w = io.DisplaySize.x;
         float win_h = io.DisplaySize.y;
 
+        /* Corner dirt vignettes — draw on the foreground drawlist so they
+         * tint over the toolbar / looper panel / status bar (otherwise
+         * those opaque windows cover the background drawlist). The dirt
+         * colors all have partial alpha, so widgets remain readable. */
+
         /* ── Theme textures (loaded once) ────────────────────────── */
         static uintptr_t s_tex_pedalboard  = 0;
         static uintptr_t s_tex_tolex       = 0;
@@ -1901,22 +1935,21 @@ int main(int argc, char *argv[]) {
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
 
-            /* Toolbar gradient: slightly lighter at top, darker at bottom */
+            /* Toolbar gradient: panel at top, bg at bottom, border separator. */
             {
+                const fx_theme_t *th = fx_theme_get(s_theme);
                 ImDrawList *dl_tb = ImGui::GetWindowDrawList();
                 ImVec2 tb_min = ImGui::GetWindowPos();
                 ImVec2 tb_max = ImVec2(tb_min.x + win_w, tb_min.y + TOOLBAR_H);
-                dl_tb->AddRectFilledMultiColor(
-                    tb_min, tb_max,
-                    IM_COL32(32, 28, 24, 255),  /* top-left  — slightly lighter */
-                    IM_COL32(32, 28, 24, 255),  /* top-right — slightly lighter */
-                    IM_COL32(18, 16, 13, 255),  /* bot-right — darker */
-                    IM_COL32(18, 16, 13, 255)); /* bot-left  — darker */
-                /* Bottom edge separator line */
+                ImU32 c_top = theme_col32(scale_rgb(th->panel, 1.15f));
+                ImU32 c_bot = theme_col32(th->bg);
+                dl_tb->AddRectFilledMultiColor(tb_min, tb_max,
+                                               c_top, c_top, c_bot, c_bot);
+                ImVec4 sep = th->border; sep.w = 0.7f;
                 dl_tb->AddLine(
                     ImVec2(tb_min.x, tb_max.y - 1.0f),
                     ImVec2(tb_max.x, tb_max.y - 1.0f),
-                    IM_COL32(60, 50, 38, 180), 1.0f);
+                    theme_col32(sep), 1.0f);
             }
 
             /* Neon logo image (cached) — pre-trimmed + faded asset */
@@ -1947,10 +1980,24 @@ int main(int argc, char *argv[]) {
                 bool active = (freq > 20.0f);
                 const char *note = active ? fx_tuner_get_note_name(engine) : "--";
                 float raw_cents = active ? fx_tuner_get_cents(engine) : 0.0f;
-                /* EMA smoothing for smoother animation (alpha=0.15 → responsive but smooth) */
+
+                /* Time-constant EMA smoothing — frame-rate independent and
+                 * slower than before (tau=0.22s → roughly half the jitter of
+                 * the old alpha=0.15). A 0.4¢ deadzone snaps the dot to
+                 * center when the player is in-tune, killing the shimmer. */
                 static float smoothed_cents = 0.0f;
-                if (!active) { smoothed_cents = 0.0f; }
-                else { smoothed_cents += 0.15f * (raw_cents - smoothed_cents); }
+                if (!active) {
+                    smoothed_cents = 0.0f;
+                } else {
+                    const float tau = 0.45f;
+                    float dt = ImGui::GetIO().DeltaTime;
+                    if (dt < 0.001f) dt = 0.001f;
+                    if (dt > 0.100f) dt = 0.100f;
+                    float a = 1.0f - expf(-dt / tau);
+                    smoothed_cents += a * (raw_cents - smoothed_cents);
+                    if (fabsf(smoothed_cents - raw_cents) < 1.2f)
+                        smoothed_cents = raw_cents;
+                }
                 float cents = smoothed_cents;
 
                 ImVec4 note_color;
@@ -2046,17 +2093,14 @@ int main(int argc, char *argv[]) {
 
             /* ── Presets browser button ───────────────────────── */
             {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.13f, 0.11f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.22f, 0.18f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.65f, 0.45f, 1.0f));
+                push_toolbar_button_colors();
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
                 if (ImGui::Button("Presets", ImVec2(70.0f, 32.0f))) {
                     if (s_browser_needs_scan) preset_browser_scan();
                     ImGui::OpenPopup("preset_browser_popup");
                 }
                 ImGui::PopStyleVar();
-                ImGui::PopStyleColor(4);
+                pop_toolbar_button_colors();
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Browse factory and user presets");
             }
@@ -2065,13 +2109,14 @@ int main(int argc, char *argv[]) {
 
             /* ── Looper panel toggle ──────────────────────────── */
             {
+                const fx_theme_t *th = fx_theme_get(s_theme);
                 ImVec4 btn_bg = s_looper_panel_open
-                    ? ImVec4(0.25f, 0.18f, 0.10f, 1.0f)
-                    : ImVec4(0.15f, 0.13f, 0.11f, 1.0f);
+                    ? scale_rgb(th->accent, 0.55f)
+                    : th->frame;
                 ImGui::PushStyleColor(ImGuiCol_Button, btn_bg);
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.22f, 0.15f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.65f, 0.45f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->frame_hover);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->frame_active);
+                ImGui::PushStyleColor(ImGuiCol_Text,          th->text);
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
                 if (ImGui::Button("Looper", ImVec2(70.0f, 32.0f))) {
                     s_looper_panel_open = !s_looper_panel_open;
@@ -2307,29 +2352,22 @@ int main(int argc, char *argv[]) {
 
             ImGui::SameLine(0, 10);
 
-            /* ── LIVE button — neon red-orange ─────────────────── */
+            /* ── LIVE button — theme accent when ON, frame tone when OFF ── */
             {
                 ImVec2 live_sz(80.0f, 32.0f);
+                const fx_theme_t *th = fx_theme_get(s_theme);
                 if (s_audio_active) {
                     float t = (float)ImGui::GetTime();
                     float pulse = 0.85f + 0.15f * sinf(t * 3.0f);
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                        ImVec4(0.55f * pulse, 0.12f * pulse, 0.05f * pulse, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                        ImVec4(0.70f, 0.18f, 0.08f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                        ImVec4(0.40f, 0.10f, 0.04f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(1.0f * pulse, 0.45f * pulse, 0.15f * pulse, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button,        scale_rgb(th->accent,        pulse));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->accent_hover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->accent_active);
+                    ImGui::PushStyleColor(ImGuiCol_Text,          scale_rgb(th->accent_glow, pulse));
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                        ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                        ImVec4(0.20f, 0.17f, 0.13f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                        ImVec4(0.08f, 0.07f, 0.05f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.40f, 0.35f, 0.28f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button,        th->frame);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->frame_hover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->frame_active);
+                    ImGui::PushStyleColor(ImGuiCol_Text,          th->text_dim);
                 }
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
                 if (ImGui::Button(s_audio_active ? "LIVE [ON]" : "LIVE [OFF]", live_sz)) {
@@ -2394,24 +2432,17 @@ int main(int argc, char *argv[]) {
             /* ── DUAL/SINGLE chain toggle ──────────────────────── */
             {
                 bool is_dual = (s_chain_b >= 0);
+                const fx_theme_t *thd = fx_theme_get(s_theme);
                 if (is_dual) {
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                        ImVec4(0.25f, 0.18f, 0.06f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                        ImVec4(0.40f, 0.28f, 0.08f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                        ImVec4(0.55f, 0.38f, 0.10f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.95f, 0.75f, 0.20f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button,        scale_rgb(thd->accent, 0.55f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, thd->accent_hover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  thd->accent_active);
+                    ImGui::PushStyleColor(ImGuiCol_Text,          thd->accent_glow);
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Button,
-                        ImVec4(0.15f, 0.13f, 0.11f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                        ImVec4(0.25f, 0.22f, 0.18f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                        ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.55f, 0.50f, 0.40f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button,        thd->frame);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, thd->frame_hover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  thd->frame_active);
+                    ImGui::PushStyleColor(ImGuiCol_Text,          thd->text_dim);
                 }
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
                 if (ImGui::Button(is_dual ? "DUAL##split" : "SINGLE##split",
@@ -2441,8 +2472,9 @@ int main(int argc, char *argv[]) {
                 if (is_dual) {
                     ImDrawList *dl = ImGui::GetWindowDrawList();
                     ImVec2 bmin = ImGui::GetItemRectMin(), bmax = ImGui::GetItemRectMax();
+                    ImVec4 glow = thd->accent_glow; glow.w = 0.70f;
                     dl->AddRect(ImVec2(bmin.x-2,bmin.y-2), ImVec2(bmax.x+2,bmax.y+2),
-                                IM_COL32(200, 160, 30, 180), 6.0f, 0, 1.5f);
+                                theme_col32(glow), 6.0f, 0, 1.5f);
                 }
             }
 
@@ -2466,19 +2498,28 @@ int main(int argc, char *argv[]) {
 
                 bool recording = fx_recorder_active();
 
-                /* REC button */
+                /* REC button — theme frame tone when idle, red pulse when recording. */
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-                if (recording) {
-                    float t = (float)ImGui::GetTime();
-                    float pulse = 0.7f + 0.3f * sinf(t * 4.0f);
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f*pulse, 0.05f, 0.05f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.2f, 1.0f));
-                } else {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.13f, 0.11f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.40f, 0.35f, 1.0f));
+                {
+                    const fx_theme_t *thr = fx_theme_get(s_theme);
+                    if (recording) {
+                        float t = (float)ImGui::GetTime();
+                        float pulse = 0.7f + 0.3f * sinf(t * 4.0f);
+                        ImGui::PushStyleColor(ImGuiCol_Button,
+                            ImVec4(0.50f * pulse, 0.05f, 0.05f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text,
+                            ImVec4(1.0f, 0.3f, 0.2f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                            ImVec4(0.65f, 0.12f, 0.10f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                            ImVec4(0.40f, 0.08f, 0.08f, 1.0f));
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Button,        thr->frame);
+                        ImGui::PushStyleColor(ImGuiCol_Text,          thr->text_dim);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, thr->frame_hover);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  thr->frame_active);
+                    }
                 }
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.12f, 0.10f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.50f, 0.15f, 0.12f, 1.0f));
 
                 char rec_label[32];
                 if (recording) {
@@ -2529,11 +2570,16 @@ int main(int argc, char *argv[]) {
                 /* Format dropdown after REC button */
                 if (!recording) {
                     ImGui::SameLine();
-                    ImGui::AlignTextToFramePadding();
+                    /* FramePadding.y = 8 makes the Combo 32 px tall to match
+                     * the Presets/Looper/Settings/REC buttons on the toolbar. */
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 8.0f));
                     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.12f, 0.10f, 0.09f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.65f, 0.55f, 1.0f));
-                    ImGui::PushItemWidth(100.0f);
+                    {
+                        const fx_theme_t *thf = fx_theme_get(s_theme);
+                        ImGui::PushStyleColor(ImGuiCol_FrameBg, thf->frame);
+                        ImGui::PushStyleColor(ImGuiCol_Text,    thf->text);
+                    }
+                    ImGui::PushItemWidth(110.0f);
                     const char *fmt_names[] = {
                         "WAV 16-bit", "WAV 24-bit",
                         "MP3 192k", "MP3 320k",
@@ -2542,7 +2588,7 @@ int main(int argc, char *argv[]) {
                     ImGui::Combo("##rec_fmt", &rec_format_idx, fmt_names, FX_RECORD_FORMAT_COUNT);
                     ImGui::PopItemWidth();
                     ImGui::PopStyleColor(2);
-                    ImGui::PopStyleVar();
+                    ImGui::PopStyleVar(2);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Recording format");
 
@@ -2554,14 +2600,13 @@ int main(int argc, char *argv[]) {
                         bool clicked = ImGui::InvisibleButton("##rec_dir", gear_sz);
                         bool hov = ImGui::IsItemHovered();
                         ImDrawList *dl = ImGui::GetWindowDrawList();
-                        ImU32 bg = hov ? IM_COL32(56, 44, 32, 255)
-                                       : IM_COL32(30, 26, 23, 255);
-                        ImU32 fg = hov ? IM_COL32(205, 180, 135, 255)
-                                       : IM_COL32(155, 140, 115, 255);
-                        dl->AddRectFilled(p0,
-                            ImVec2(p0.x + gear_sz.x, p0.y + gear_sz.y), bg, 3.0f);
+                        const fx_theme_t *thg = fx_theme_get(s_theme);
+                        /* Transparent background — the gear floats on the toolbar
+                         * gradient. The "hole" in the gear center is drawn with the
+                         * gear's own foreground color + alpha=0 so we only punch
+                         * the icon, not a box around it. */
+                        ImU32 fg = theme_col32(hov ? thg->text : thg->text_dim);
 
-                        /* Gear: 8 teeth on a ring + center hole. */
                         ImVec2 c(p0.x + gear_sz.x * 0.5f, p0.y + gear_sz.y * 0.5f);
                         const float R_out = 10.0f;
                         const float R_ring = 7.5f;
@@ -2580,7 +2625,9 @@ int main(int argc, char *argv[]) {
                             dl->AddConvexPolyFilled(q, 4, fg);
                         }
                         dl->AddCircleFilled(c, R_ring, fg, 24);
-                        dl->AddCircleFilled(c, R_hole, bg, 16);
+                        /* Center "hole" — draw the toolbar gradient through by
+                         * using the theme bg. */
+                        dl->AddCircleFilled(c, R_hole, theme_col32(thg->bg), 16);
 
                         if (clicked) {
                             strncpy(s_rec_dir_edit, s_rec_dir, sizeof(s_rec_dir_edit));
@@ -2623,17 +2670,50 @@ int main(int argc, char *argv[]) {
 
             ImGui::SameLine();
 
+            /* Theme picker button — cycles through themes on click, also Ctrl+T. */
+            {
+                char tlabel[48];
+                snprintf(tlabel, sizeof(tlabel), "Theme: %s", fx_theme_name(s_theme));
+                push_toolbar_button_colors();
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+                if (ImGui::Button(tlabel, ImVec2(0.0f, 32.0f))) {
+                    ImGui::OpenPopup("theme_picker_popup");
+                }
+                ImGui::PopStyleVar();
+                pop_toolbar_button_colors();
+                if (ImGui::IsItemHovered()) {
+                    const fx_theme_t *t = fx_theme_get(s_theme);
+                    ImGui::SetTooltip("%s\n%s\n\nCtrl+T to cycle", t->name, t->description);
+                }
+
+                if (ImGui::BeginPopup("theme_picker_popup")) {
+                    ImGui::TextDisabled("Theme");
+                    ImGui::Separator();
+                    for (int i = 0; i < (int)FX_THEME_COUNT; i++) {
+                        const fx_theme_t *ti = fx_theme_get((fx_theme_id_t)i);
+                        bool selected = (i == (int)s_theme);
+                        if (ImGui::Selectable(ti->name, selected)) {
+                            apply_theme((fx_theme_id_t)i);
+                            s_session_cfg.theme_id = i;
+                            FX_INFO("Theme changed: %s", ti->name);
+                        }
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%s", ti->description);
+                    }
+                    ImGui::EndPopup();
+                }
+            }
+
+            ImGui::SameLine(0, 6);
+
             /* Audio settings gear — last toolbar item before window controls */
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.13f, 0.11f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.22f, 0.18f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.07f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.65f, 0.55f, 1.0f));
+            push_toolbar_button_colors();
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
             if (ImGui::Button("Settings", ImVec2(80.0f, 32.0f))) {
                 ImGui::OpenPopup("audio_settings_popup");
             }
             ImGui::PopStyleVar();
-            ImGui::PopStyleColor(4);
+            pop_toolbar_button_colors();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Audio device and buffer settings");
 
@@ -2869,15 +2949,12 @@ int main(int argc, char *argv[]) {
                 ImGui::SameLine(ImGui::GetWindowWidth() - controls_w);
 
                 /* Help button — opens a popup listing all keybinds. */
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
+                push_toolbar_button_colors();
                 if (ImGui::Button("?##whelp", wc_sz))
                     ImGui::OpenPopup("app_keybinds");
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Keyboard shortcuts");
-                ImGui::PopStyleColor(4);
+                pop_toolbar_button_colors();
                 if (ImGui::BeginPopup("app_keybinds")) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
                     ImGui::Text("Keyboard shortcuts");
@@ -2887,6 +2964,7 @@ int main(int argc, char *argv[]) {
                     ImGui::BulletText("Space          LIVE on/off (or tap focused loop slot)");
                     ImGui::BulletText("Ctrl + S       save preset");
                     ImGui::BulletText("Ctrl + Shift + S   save preset as…");
+                    ImGui::BulletText("Ctrl + T       cycle theme");
                     ImGui::BulletText("Esc            quit");
                     ImGui::Separator();
                     ImGui::TextDisabled("Looper (panel open)");
@@ -2899,14 +2977,32 @@ int main(int argc, char *argv[]) {
                     ImGui::BulletText("Ctrl + Z       undo last overdub on focused");
                     ImGui::Separator();
                     ImGui::TextDisabled("Clicking a looper pad also selects it for Space.");
+
+                    /* File locations — rebuilt per-open so s_rec_dir reflects
+                     * any edits in the recording save-location modal. */
+                    ImGui::Separator();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.78f, 0.6f, 1.0f));
+                    ImGui::Text("File locations");
+                    ImGui::PopStyleColor();
+#ifdef _WIN32
+                    const char *platform_note = "Windows: %APPDATA%\\0xFX";
+#elif defined(__APPLE__)
+                    const char *platform_note = "macOS: ~/.0xfx";
+#else
+                    const char *platform_note = "Linux: ~/.0xfx";
+#endif
+                    ImGui::TextDisabled("%s", platform_note);
+                    ImGui::BulletText("Config:      %s", get_config_path());
+                    ImGui::BulletText("Custom cabs: %s", custom_cabs_path());
+                    ImGui::BulletText("Recordings:  %s",
+                        s_rec_dir[0] ? s_rec_dir : "(not set — open with the gear icon)");
+                    ImGui::BulletText("Presets:     presets/ (relative to app)");
+                    ImGui::BulletText("Session:     presets/last_session.0xfx");
                     ImGui::EndPopup();
                 }
                 ImGui::SameLine(0, 2);
 
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
+                push_toolbar_button_colors();
                 if (ImGui::Button("_##wmin", wc_sz)) {
 #ifdef _WIN32
                     SDL_SysWMinfo wmInfo; SDL_VERSION(&wmInfo.version);
@@ -2916,13 +3012,10 @@ int main(int argc, char *argv[]) {
                     SDL_MinimizeWindow(window);
 #endif
                 }
-                ImGui::PopStyleColor(4);
+                pop_toolbar_button_colors();
                 ImGui::SameLine(0, 2);
 
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.14f, 0.12f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.28f, 0.24f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.10f, 0.09f, 0.08f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.80f, 0.72f, 1.0f));
+                push_toolbar_button_colors();
                 {
                     bool maximized = false;
 #ifdef _WIN32
@@ -2943,13 +3036,17 @@ int main(int argc, char *argv[]) {
 #endif
                     }
                 }
-                ImGui::PopStyleColor(4);
+                pop_toolbar_button_colors();
                 ImGui::SameLine(0, 2);
 
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.10f, 0.10f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.00f, 0.25f, 0.25f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                /* Close — theme frame idle, hot red on hover (universal close). */
+                {
+                    const fx_theme_t *thc = fx_theme_get(s_theme);
+                    ImGui::PushStyleColor(ImGuiCol_Button,        thc->frame);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.00f, 0.25f, 0.25f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,          thc->text);
+                }
                 if (ImGui::Button("X##wclose", wc_sz)) {
                     running = false;
                 }
@@ -3039,10 +3136,23 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Looper key handler (Space above handles the focused-slot tap). */
-        if (s_looper_panel_open && !ImGui::GetIO().WantCaptureKeyboard) {
+        /* Looper key handler (Space above handles the focused-slot tap).
+         * Gated on WantTextInput — not WantCaptureKeyboard — because a
+         * click-focused pad sets WantCaptureKeyboard but must not swallow
+         * 1-9 / R / Tab / Alt+N / Shift+N / Ctrl+Z. */
+        if (s_looper_panel_open && !ImGui::GetIO().WantTextInput) {
             looper_handle_keys(engine);
         }
+        /* Ctrl+T = cycle themes */
+        if (ImGui::GetIO().KeyCtrl
+            && ImGui::IsKeyPressed(ImGuiKey_T, false)
+            && !ImGui::GetIO().WantTextInput) {
+            fx_theme_id_t next = (fx_theme_id_t)(((int)s_theme + 1) % (int)FX_THEME_COUNT);
+            apply_theme(next);
+            s_session_cfg.theme_id = (int)next;
+            FX_INFO("Theme cycled: %s", fx_theme_name(next));
+        }
+
         /* Ctrl+S = quick-save preset */
         {
             bool ctrl = ImGui::GetIO().KeyCtrl;
@@ -5525,23 +5635,24 @@ int main(int argc, char *argv[]) {
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
 
-            /* ── Status bar: dark background + inner shadow at top ── */
+            /* ── Status bar: theme-driven dark base + inner shadow at top ── */
             {
+                const fx_theme_t *th = fx_theme_get(s_theme);
                 ImDrawList *dl_sb = ImGui::GetWindowDrawList();
                 ImVec2 sb_min = ImGui::GetWindowPos();
                 ImVec2 sb_max = ImVec2(sb_min.x + win_w, sb_min.y + STATUS_H);
-                /* Solid dark base (slightly warmer than pure black) */
-                dl_sb->AddRectFilled(sb_min, sb_max, IM_COL32(14, 12, 10, 255));
-                /* Inner shadow at top edge: detail view "sits over" the status bar */
+                dl_sb->AddRectFilled(sb_min, sb_max,
+                                     theme_col32(scale_rgb(th->bg, 0.8f)));
+                /* Inner shadow at top edge — always pure black at low alpha. */
                 dl_sb->AddRectFilledMultiColor(
                     sb_min, ImVec2(sb_max.x, sb_min.y + 8.0f),
                     IM_COL32(0, 0, 0, 110), IM_COL32(0, 0, 0, 110),
                     IM_COL32(0, 0, 0,   0), IM_COL32(0, 0, 0,   0));
-                /* Top separator line */
+                ImVec4 sep = th->border; sep.w = 0.8f;
                 dl_sb->AddLine(
                     ImVec2(sb_min.x, sb_min.y),
                     ImVec2(sb_max.x, sb_min.y),
-                    IM_COL32(40, 34, 26, 200), 1.0f);
+                    theme_col32(sep), 1.0f);
             }
 
             float in_level  = fx_engine_get_input_level(engine);
@@ -5676,16 +5787,19 @@ int main(int argc, char *argv[]) {
 
             ImGui::SameLine(0, 4);
             ImGui::SetCursorPosY((STATUS_H - bar_h) * 0.5f);
-            if (s_input_pad) {
-                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.65f, 0.42f, 0.05f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.55f, 0.10f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.50f, 0.32f, 0.03f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(1.00f, 0.90f, 0.50f, 1.0f));
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.18f, 0.16f, 0.13f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.24f, 0.18f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.12f, 0.10f, 0.08f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.60f, 0.55f, 0.45f, 1.0f));
+            {
+                const fx_theme_t *th = fx_theme_get(s_theme);
+                if (s_input_pad) {
+                    ImGui::PushStyleColor(ImGuiCol_Button,        th->accent);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->accent_hover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->accent_active);
+                    ImGui::PushStyleColor(ImGuiCol_Text,          th->text);
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button,        th->frame);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, th->frame_hover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  th->frame_active);
+                    ImGui::PushStyleColor(ImGuiCol_Text,          th->text_dim);
+                }
             }
             if (ImGui::Button("PAD", ImVec2(38.0f, bar_h))) {
                 s_input_pad = !s_input_pad;
@@ -5778,6 +5892,22 @@ int main(int argc, char *argv[]) {
                 ImVec2(bx - gs, by), ImVec2(bx, by - gs), ImVec2(bx, by), grip_col);
         }
 
+        /* Corner dirt vignettes — drawn over the "content region" only
+         * (signal chain + detail view), not over the toolbar, looper
+         * strip, or status bar. Uses the foreground drawlist so it sits
+         * above widgets, but alpha-blends so they remain legible. */
+        {
+            float dirt_top = TOOLBAR_H;
+            if (s_looper_panel_open) dirt_top += LOOPER_H;
+            float dirt_bot = win_h - STATUS_H;
+            if (dirt_bot > dirt_top) {
+                fx_theme_draw_corner_dirt(ImGui::GetForegroundDrawList(),
+                                          0.0f, dirt_top,
+                                          win_w, dirt_bot - dirt_top,
+                                          s_theme);
+            }
+        }
+
         /* Render */
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
@@ -5805,6 +5935,7 @@ int main(int argc, char *argv[]) {
         s_session_cfg.sr_idx            = s_selected_sr_idx;
         s_session_cfg.input_gain_db     = s_input_gain_db;
         s_session_cfg.input_pad         = s_input_pad;
+        s_session_cfg.theme_id          = (int)s_theme;
         session_config_save(&s_session_cfg);
         FX_INFO("Config saved to %s", get_config_path());
     }

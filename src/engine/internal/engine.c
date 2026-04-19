@@ -175,37 +175,33 @@ void fx_engine_process(fx_engine_t *engine,
         fx_studio_process_dsp(&engine->studio[i], buf, num_frames, sr);
     }
 
-    /* ── Master volume on the live chain ─────────────────────── */
-    float master_vol = engine->master_volume;
+    /* Sanitize the live bus before the looper tap — NaN/inf would poison
+     * both the loop recording and the final mix. */
     for (int i = 0; i < num_frames; i++) {
         float s = buf[i];
-        /* Kill NaN and infinity — prevents engine crash from feedback runaway */
         if (s != s || s > 1e6f || s < -1e6f) { buf[i] = 0.0f; continue; }
-        if (s > -1e-20f && s < 1e-20f) s = 0.0f;
-        s *= master_vol;
-        buf[i] = s;
+        if (s > -1e-20f && s < 1e-20f) buf[i] = 0.0f;
     }
 
     /* ── Looper record tap + playback mix ─────────────────────
-     * Record tap: in POST mode we feed the fully-processed live signal
-     * (post-chain, post-master-volume, pre-clip). In PRE mode we feed
-     * the raw input snapshotted at the top of this block. This means
-     * loop playback captures whatever the user hears going out live. */
+     * Tap is taken pre-master so loops record at the post-chain level the
+     * user played at; master volume is then applied to the summed live +
+     * loop bus so the master knob governs total output. */
     {
         const float *tap_src = engine->looper.tap_pre_chain
                                    ? engine->scratch_tap
                                    : buf;
         looper_tap(&engine->looper, tap_src, num_frames);
         looper_process(&engine->looper, engine->scratch_loop, num_frames);
-        /* Sum looper output into the live bus. */
         for (int i = 0; i < num_frames; i++) {
             buf[i] += engine->scratch_loop[i];
         }
     }
 
-    /* ── Final clip (covers live + looper mix) ───────────────── */
+    /* ── Master volume + final clip (covers live + looper mix) ── */
+    float master_vol = engine->master_volume;
     for (int i = 0; i < num_frames; i++) {
-        float s = buf[i];
+        float s = buf[i] * master_vol;
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         buf[i] = s;

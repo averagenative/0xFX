@@ -297,6 +297,7 @@ if(HAS_GUI)
         src/gui/gui_main.cpp
         src/gui/gui_render.cpp
         src/gui/knobs.cpp
+        src/gui/fx_theme.cpp
         src/gui/texture.c
         src/gui/embedded_assets.c
         src/audio/audio_device.c

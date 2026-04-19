@@ -9,14 +9,14 @@ Real-time guitar effects processor and amp simulator. Standalone app + CLAP/VST3
 ---
 
 <p align="center">
-  <a href="docs/screenshots/main-view.png"><img src="docs/screenshots/main-view.png" width="32%" alt="Main view — signal chain, amp faceplate, overlay knobs"></a>
-  <a href="docs/screenshots/preset-browser.png"><img src="docs/screenshots/preset-browser.png" width="32%" alt="Preset browser — genre-organized factory presets"></a>
+  <a href="docs/screenshots/main-view.png"><img src="docs/screenshots/main-view.png" width="32%" alt="Main view — Worn Grime theme with active looper and amp editor"></a>
+  <a href="docs/screenshots/preset-browser.png"><img src="docs/screenshots/preset-browser.png" width="32%" alt="Preset library — genre tabs, Mystery Rig, user presets"></a>
   <a href="docs/screenshots/amp-selector.png"><img src="docs/screenshots/amp-selector.png" width="32%" alt="Amp model selector — 12 circuit-modeled amps"></a>
 </p>
 <p align="center">
+  <a href="docs/screenshots/theme-blueprint.png"><img src="docs/screenshots/theme-blueprint.png" width="32%" alt="Blueprint theme — dual chain with parallel amps"></a>
+  <a href="docs/screenshots/theme-cyberpunk.png"><img src="docs/screenshots/theme-cyberpunk.png" width="32%" alt="Cyberpunk Neon theme — magenta accent palette"></a>
   <a href="docs/screenshots/pedal-closeup.png"><img src="docs/screenshots/pedal-closeup.png" width="32%" alt="Pedal close-up — knobs, LED, stomp switch"></a>
-  <a href="docs/screenshots/rack-effects.png"><img src="docs/screenshots/rack-effects.png" width="32%" alt="Rack effects — post-cab studio processors"></a>
-  <a href="docs/screenshots/dual-chain.png"><img src="docs/screenshots/dual-chain.png" width="32%" alt="Dual chain — parallel amps with split/mix"></a>
 </p>
 
 ---
@@ -118,14 +118,16 @@ Default: DI (direct inject, no mic coloration).
 ## GUI Features
 
 - **Skeuomorphic design** — photorealistic amp faceplates, pedal body images, rack-mount units
+- **Eleven themes** — Worn Grime, Hacker Green, Cyberpunk Neon, Studio Pale, Blueprint, Nature Dirt, Vaporwave, Toxic Slime, Blood Moon, Amber CRT, Molten Forge. Toggle with the Theme button or `Ctrl+T`
+- **Looper** — 9 stereo slots with Record / Overdub / Play / Stop, `Alt+1..9` to clear pads, `Tab` to cycle slots
 - **Interactive overlay knobs** with position indicator dots, parameter labels
 - **Stomp switch** — click the footswitch on pedal images to bypass/activate
 - **LED indicators** — green glow active, dim red bypassed
 - **Section labels** — PEDALS, AMP, CABINET, RACK FX above signal chain
 - **Signal chain visualization** — TRS input plug, XLR output connector, realistic cable rendering
-- **Preset browser** — genre-organized factory presets, save/load user presets
+- **Preset browser** — genre-tabbed factory presets, Mystery Rig randomizer, user presets
 - **Recording** — WAV (16/24-bit), MP3 (192/320kbps), FLAC (16/24-bit) with timestamped filenames
-- **Chromatic tuner** — MPM algorithm for accurate fundamental detection
+- **Chromatic tuner** — MPM algorithm with time-constant smoothing for stable readings
 - **Input monitoring** — VU meters and tuner work without audio output (LIVE off)
 - **MIDI CC control** with MIDI learn mode
 - **Scroll-wheel** cycling for amp model and cab type, fine-adjust for input gain and master volume faders
