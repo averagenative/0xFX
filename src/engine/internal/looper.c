@@ -90,7 +90,10 @@ void looper_tap(fx_looper_t *l, const float *in, int n) {
         fx_loop_slot_t *s = &l->slots[i];
         if (s->state != FX_LOOP_RECORDING &&
             s->state != FX_LOOP_OVERDUBBING) continue;
-        if (!slot_ensure_buf(s)) { s->state = FX_LOOP_EMPTY; continue; }
+        /* Buffer is always allocated on the GUI thread in looper_slot_tap
+         * before entering RECORDING/OVERDUBBING. If it's missing here, an
+         * earlier allocation failed — skip silently to stay real-time safe. */
+        if (!s->buf) continue;
 
         if (s->state == FX_LOOP_RECORDING) {
             /* Append until we hit max_frames (truncate if user records > 120s) */
@@ -172,7 +175,11 @@ void looper_slot_tap(fx_looper_t *l, int slot) {
 
     switch (s->state) {
     case FX_LOOP_EMPTY:
-        /* EMPTY → ARMED (sync) or directly RECORDING (free) */
+        /* EMPTY → ARMED (sync) or directly RECORDING (free).
+         * Allocate the primary buffer here (GUI thread) so the audio
+         * thread never needs to malloc. If this fails we refuse to
+         * transition and stay EMPTY. */
+        if (!slot_ensure_buf(s)) break;
         if (l->sync_mode && l->sync_length > 0) {
             s->state = FX_LOOP_ARMED;
         } else {

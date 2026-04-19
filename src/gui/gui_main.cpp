@@ -18,10 +18,12 @@
 #include <windows.h>
 #include <windowsx.h>  /* GET_X_LPARAM, GET_Y_LPARAM */
 #include <shellapi.h>  /* ShellExecuteA for Open Folder */
+#else
+#include <unistd.h>    /* fork, execlp, dup2, _exit, close */
+#include <fcntl.h>     /* open, O_RDWR */
 #endif
 
 #include "imgui.h"
-#include "imgui_internal.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
 
@@ -197,20 +199,38 @@ static bool s_rec_dir_inited = false;
 static char s_last_rec_path[768] = "";
 static bool s_rec_saved_popup_open = false;
 
-/* Launch the OS file browser for a directory. */
+/* Launch the OS file browser for a directory. Uses ShellExecute on
+ * Windows and fork/execlp on POSIX so the path is passed as an argv
+ * entry, not interpolated into a shell command — no quoting traps,
+ * no injection risk if the path contains ", `, $, or ;. */
 static void fx_open_folder(const char *path) {
     if (!path || !*path) return;
 #ifdef _WIN32
     ShellExecuteA(NULL, "open", path, NULL, NULL, SW_SHOWDEFAULT);
 #else
-    char cmd[1024];
+    pid_t pid = fork();
+    if (pid < 0) {
+        FX_WARN("fx_open_folder: fork failed");
+        return;
+    }
+    if (pid == 0) {
+        /* Child — detach stdio so the opener doesn't inherit our TTY. */
+        int devnull = open("/dev/null", O_RDWR);
+        if (devnull >= 0) {
+            dup2(devnull, 0);
+            dup2(devnull, 1);
+            dup2(devnull, 2);
+            if (devnull > 2) close(devnull);
+        }
 #  ifdef __APPLE__
-    snprintf(cmd, sizeof(cmd), "open \"%s\" &", path);
+        execlp("open", "open", path, (char *)NULL);
 #  else
-    snprintf(cmd, sizeof(cmd), "xdg-open \"%s\" >/dev/null 2>&1 &", path);
+        execlp("xdg-open", "xdg-open", path, (char *)NULL);
 #  endif
-    int rc = system(cmd);
-    (void)rc;
+        _exit(127); /* exec failed */
+    }
+    /* Parent — don't wait. The opener forks its own long-lived GUI
+     * process almost immediately, so the zombie reaps quickly. */
 #endif
 }
 
@@ -6140,16 +6160,14 @@ int main(int argc, char *argv[]) {
         /* Re-publish toolbar widget-hover state for the SDL hit-test. The
          * toolbar End() already set this based on toolbar-local items, but
          * popups/child windows render AFTER the toolbar and may overlap it.
-         * If the pointer is over any non-toolbar window (e.g. the audio
-         * settings popup), disable window drag so the click reaches the popup
-         * instead of becoming an OS window-drag gesture. */
-        {
-            ImGuiContext *gctx = ImGui::GetCurrentContext();
-            ImGuiWindow  *hov  = gctx ? gctx->HoveredWindow : NULL;
-            if (hov && hov->RootWindow) hov = hov->RootWindow;
-            if (hov && strcmp(hov->Name, "##toolbar") != 0) {
-                g_toolbar_pointer_on_widget = true;
-            }
+         * If any popup is open, disable OS window drag across the whole
+         * toolbar strip — the click either targets the popup (if hovered)
+         * or dismisses it (if outside). Either way, the system window-drag
+         * gesture must not consume it. Coarser than tracking HoveredWindow
+         * directly but uses only the public ImGui API. */
+        if (ImGui::IsPopupOpen(NULL, ImGuiPopupFlags_AnyPopupId |
+                                     ImGuiPopupFlags_AnyPopupLevel)) {
+            g_toolbar_pointer_on_widget = true;
         }
 
         /* Render */
