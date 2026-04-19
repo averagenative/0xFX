@@ -19,8 +19,12 @@
 #include <windowsx.h>  /* GET_X_LPARAM, GET_Y_LPARAM */
 #include <shellapi.h>  /* ShellExecuteA for Open Folder */
 #else
-#include <unistd.h>    /* fork, execlp, dup2, _exit, close */
+#include <unistd.h>    /* fork, execlp, dup2, _exit, close, chdir */
 #include <fcntl.h>     /* open, O_RDWR */
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  /* _NSGetExecutablePath for .app bundle detection */
+#include <libgen.h>       /* dirname */
 #endif
 
 #include "imgui.h"
@@ -1774,12 +1778,50 @@ static uintptr_t load_cab_texture(int cab_type_idx) {
 
 /* ── Main ─────────────────────────────────────────────────────── */
 
+#ifdef __APPLE__
+/* When launched from Finder / Launchpad, a .app bundle's CWD is typically '/'.
+ * Factory presets + any other read-only data live in Contents/Resources/, so
+ * chdir there at startup — all the existing relative 'presets/...' paths
+ * then resolve correctly. If we're not inside a .app (e.g. running the raw
+ * executable from the build dir), do nothing. */
+static void fx_macos_chdir_to_bundle_resources(void) {
+    char exe_path[4096];
+    uint32_t sz = sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &sz) != 0) return;
+
+    /* exe_path ends in .../Contents/MacOS/<exe>. Strip two path components
+     * to get .../Contents, then append /Resources. */
+    char *macos_dir = dirname(exe_path);
+    if (!macos_dir) return;
+    char contents_buf[4096];
+    snprintf(contents_buf, sizeof(contents_buf), "%s", macos_dir);
+    char *contents_dir = dirname(contents_buf);
+    if (!contents_dir) return;
+
+    /* Only apply the bundle chdir when the path actually looks like an
+     * .app bundle — otherwise the build-dir dev workflow keeps working. */
+    if (!strstr(contents_dir, ".app/Contents")) return;
+
+    char resources_path[4096];
+    snprintf(resources_path, sizeof(resources_path), "%s/Resources", contents_dir);
+    if (chdir(resources_path) != 0) {
+        FX_WARN("chdir to %s failed", resources_path);
+    } else {
+        FX_INFO("chdir to bundle Resources: %s", resources_path);
+    }
+}
+#endif
+
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
     fx_log_init(NULL);
     fx_crash_init();
     FX_INFO("GUI started");
+
+#ifdef __APPLE__
+    fx_macos_chdir_to_bundle_resources();
+#endif
 
     /* SDL init */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
