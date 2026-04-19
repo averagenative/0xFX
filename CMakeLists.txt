@@ -298,6 +298,7 @@ if(HAS_GUI)
         src/gui/gui_render.cpp
         src/gui/knobs.cpp
         src/gui/fx_theme.cpp
+        src/gui/custom_cabs.cpp
         src/gui/texture.c
         src/gui/embedded_assets.c
         src/audio/audio_device.c
@@ -382,6 +383,8 @@ endif()
 set(PLUGIN_GUI_SOURCES
     src/gui/gui_render.cpp
     src/gui/knobs.cpp
+    src/gui/fx_theme.cpp
+    src/gui/custom_cabs.cpp
     src/gui/texture.c
     src/gui/embedded_assets.c
 )
