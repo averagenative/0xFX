@@ -48,8 +48,10 @@ Generate each one the same way; the only difference is which type you pick.
 
 ### 3. Verify both identities are usable
 
+> **Heads-up:** `security find-identity -v -p codesigning` only lists code-signing certs, so it *won't* show the Installer cert. Leave the `-p` flag off to see both:
+
 ```bash
-security find-identity -v -p codesigning | grep "Developer ID"
+security find-identity -v | grep "Developer ID"
 ```
 
 You should see two entries:
@@ -59,7 +61,7 @@ You should see two entries:
 2) YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY "Developer ID Installer: Your Name (TEAMID)"
 ```
 
-The Application string becomes `CODESIGN_IDENTITY`; the Installer string becomes `INSTALLER_IDENTITY`. The 10-character `TEAMID` inside the parens is your Apple Team ID.
+The Application string becomes `CODESIGN_IDENTITY`; the Installer string becomes `INSTALLER_IDENTITY`. The 10-character `TEAMID` inside the parens is your Apple Team ID — must match between the two.
 
 ### 4. Create an app-specific password for notarization
 
