@@ -99,6 +99,20 @@ static const char *get_config_path(void) {
     return buf;
 }
 
+/* User presets + last session live in the config dir — the app dir is
+ * read-only in an AppImage, Program Files, or a signed .app bundle. */
+static const char *get_user_presets_dir(void) {
+    static char buf[600];
+    snprintf(buf, sizeof(buf), "%s" PATH_SEP "presets", get_config_dir());
+    return buf;
+}
+
+static void user_preset_path(char *out, size_t out_size, const char *name) {
+    ensure_dir(get_config_dir());
+    ensure_dir(get_user_presets_dir());
+    snprintf(out, out_size, "%s" PATH_SEP "%s.0xfx", get_user_presets_dir(), name);
+}
+
 struct SessionConfig {
     int   input_device_idx;
     int   output_device_idx;
@@ -341,9 +355,10 @@ static void preset_browser_scan(void) {
         preset_scan_dir(dirpath, true, cat_labels[i]);
     }
 
-    /* User presets in root presets/ (excluding factory/ and last_session) */
-    const char *user_dirs[] = { "presets", "../presets" };
-    for (int d = 0; d < 2; d++) {
+    /* User presets (excluding factory/ and last_session): the config-dir
+     * library first, then presets/ beside the app from before it moved. */
+    const char *user_dirs[] = { get_user_presets_dir(), "presets", "../presets" };
+    for (int d = 0; d < 3; d++) {
 #ifdef _WIN32
         char pattern[600];
         snprintf(pattern, sizeof(pattern), "%s\\*.0xfx", user_dirs[d]);
@@ -1810,6 +1825,40 @@ static void fx_macos_chdir_to_bundle_resources(void) {
         FX_INFO("chdir to bundle Resources: %s", resources_path);
     }
 }
+#else
+/* Tarball, AppImage and Windows installs ship presets/factory/ and
+ * resources/ir/bundled/ beside the executable, but the CWD is wherever the
+ * launcher started us — $HOME for an AppImage, the shortcut's "Start in"
+ * dir on Windows. chdir to the exe dir when it holds the factory presets so
+ * the relative 'presets/...' and 'resources/ir/...' paths resolve. Dev
+ * builds (exe in build/, no presets/ beside it) are left alone. */
+static void fx_chdir_to_exe_dir(void) {
+    char exe_dir[4096];
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, exe_dir, sizeof(exe_dir));
+    if (n == 0 || n >= sizeof(exe_dir)) return;
+#else
+    ssize_t n = readlink("/proc/self/exe", exe_dir, sizeof(exe_dir) - 1);
+    if (n <= 0) return;
+    exe_dir[n] = '\0';
+#endif
+    char *sep = strrchr(exe_dir, PATH_SEP[0]);
+    if (!sep) return;
+    *sep = '\0';
+
+    char probe[4200];
+    snprintf(probe, sizeof(probe), "%s" PATH_SEP "presets" PATH_SEP "factory", exe_dir);
+    struct stat st;
+    if (stat(probe, &st) != 0 || !(st.st_mode & S_IFDIR)) return;
+
+#ifdef _WIN32
+    bool ok = SetCurrentDirectoryA(exe_dir) != 0;
+#else
+    bool ok = chdir(exe_dir) == 0;
+#endif
+    if (ok) FX_INFO("chdir to app dir: %s", exe_dir);
+    else    FX_WARN("chdir to %s failed", exe_dir);
+}
 #endif
 
 int main(int argc, char *argv[]) {
@@ -1821,6 +1870,8 @@ int main(int argc, char *argv[]) {
 
 #ifdef __APPLE__
     fx_macos_chdir_to_bundle_resources();
+#else
+    fx_chdir_to_exe_dir();
 #endif
 
     /* SDL init */
@@ -1973,7 +2024,11 @@ int main(int argc, char *argv[]) {
     static char s_preset_name[128] = "Untitled";
     static bool s_preset_modified = false;
     {
-        bool loaded = fx_preset_load(engine, "presets/last_session.0xfx");
+        char session_path[700];
+        user_preset_path(session_path, sizeof(session_path), "last_session");
+        bool loaded = fx_preset_load(engine, session_path);
+        /* Sessions saved beside the app before they moved to the config dir */
+        if (!loaded) loaded = fx_preset_load(engine, "presets/last_session.0xfx");
         if (!loaded) loaded = fx_preset_load(engine, "../presets/last_session.0xfx");
         if (loaded) {
             s_needs_gui_sync = true;
@@ -2085,7 +2140,7 @@ int main(int argc, char *argv[]) {
         /* Save-As state (shared between preset browser and Ctrl+Shift+S) */
         static bool s_save_as_open = false;
         static char s_save_as_name[128] = "";
-        static char s_save_toast[512] = "";
+        static char s_save_toast[768] = "";
         static float s_save_toast_timer = 0.0f;
 
         /* ── Toolbar ──────────────────────────────────────────── */
@@ -2494,13 +2549,9 @@ int main(int argc, char *argv[]) {
                             && strcmp(s_preset_name, "Untitled") != 0
                             && strcmp(s_preset_name, "Last Session") != 0);
                         if (has_name) {
-                            char path[400];
-                            snprintf(path, sizeof(path), "presets/%s.0xfx", s_preset_name);
+                            char path[700];
+                            user_preset_path(path, sizeof(path), s_preset_name);
                             bool ok = fx_preset_save(engine, path);
-                            if (!ok) {
-                                snprintf(path, sizeof(path), "../presets/%s.0xfx", s_preset_name);
-                                ok = fx_preset_save(engine, path);
-                            }
                             if (ok) {
                                 s_preset_modified = false;
                                 s_browser_needs_scan = true;
@@ -2515,7 +2566,9 @@ int main(int argc, char *argv[]) {
                             s_save_as_open = true;
                         }
                         /* Always quick-save session too */
-                        fx_preset_save(engine, "presets/last_session.0xfx");
+                        char session_path[700];
+                        user_preset_path(session_path, sizeof(session_path), "last_session");
+                        fx_preset_save(engine, session_path);
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Save As... (Ctrl+Shift+S)", ImVec2(200, 0))) {
@@ -3311,8 +3364,10 @@ int main(int argc, char *argv[]) {
                     ImGui::BulletText("Custom cabs: %s", custom_cabs_path());
                     ImGui::BulletText("Recordings:  %s",
                         s_rec_dir[0] ? s_rec_dir : "(not set — open with the gear icon)");
-                    ImGui::BulletText("Presets:     presets/ (relative to app)");
-                    ImGui::BulletText("Session:     presets/last_session.0xfx");
+                    ImGui::BulletText("Presets:     %s", get_user_presets_dir());
+                    ImGui::BulletText("Session:     %s" PATH_SEP "last_session.0xfx",
+                                      get_user_presets_dir());
+                    ImGui::BulletText("Factory:     presets/factory (bundled with app)");
                     ImGui::EndPopup();
                 }
                 ImGui::SameLine(0, 2);
@@ -3490,19 +3545,17 @@ int main(int argc, char *argv[]) {
                         && strcmp(s_preset_name, "Untitled") != 0
                         && strcmp(s_preset_name, "Last Session") != 0);
                     if (has_name) {
-                        char path[400];
-                        snprintf(path, sizeof(path), "presets/%s.0xfx", s_preset_name);
+                        char path[700];
+                        user_preset_path(path, sizeof(path), s_preset_name);
                         bool ok = fx_preset_save(engine, path);
-                        if (!ok) {
-                            snprintf(path, sizeof(path), "../presets/%s.0xfx", s_preset_name);
-                            ok = fx_preset_save(engine, path);
-                        }
                         if (ok) { s_preset_modified = false; s_browser_needs_scan = true; }
                         FX_INFO(ok ? "Saved: %s" : "Save failed: %s", s_preset_name);
                     } else {
                         s_save_as_open = true;
                     }
-                    fx_preset_save(engine, "presets/last_session.0xfx");
+                    char session_path[700];
+                    user_preset_path(session_path, sizeof(session_path), "last_session");
+                    fx_preset_save(engine, session_path);
                 }
             }
         }
@@ -3521,26 +3574,12 @@ int main(int argc, char *argv[]) {
             ImGui::Spacing();
             if ((ImGui::Button("Save", ImVec2(120, 0)) || enter_pressed) &&
                 s_save_as_name[0] != '\0') {
-                char path[400];
-                snprintf(path, sizeof(path), "presets/%s.0xfx", s_save_as_name);
+                char path[700];
+                user_preset_path(path, sizeof(path), s_save_as_name);
                 bool ok = fx_preset_save(engine, path);
-                if (!ok) {
-                    snprintf(path, sizeof(path), "../presets/%s.0xfx", s_save_as_name);
-                    ok = fx_preset_save(engine, path);
-                }
                 if (ok) {
                     s_browser_needs_scan = true;
-                    /* Resolve to absolute path for display */
-                    char abs_path[512] = "";
-                    #ifdef _WIN32
-                    _fullpath(abs_path, path, sizeof(abs_path));
-                    #else
-                    realpath(path, abs_path);
-                    #endif
-                    if (abs_path[0])
-                        snprintf(s_save_toast, sizeof(s_save_toast), "Saved to: %s", abs_path);
-                    else
-                        snprintf(s_save_toast, sizeof(s_save_toast), "Saved to: %s", path);
+                    snprintf(s_save_toast, sizeof(s_save_toast), "Saved to: %s", path);
                     s_save_toast_timer = 5.0f;
                 } else {
                     snprintf(s_save_toast, sizeof(s_save_toast), "Save failed: %s", s_save_as_name);
@@ -6253,9 +6292,10 @@ int main(int argc, char *argv[]) {
 
     /* Auto-save last session preset and config */
     {
-        bool ok = fx_preset_save(engine, "presets/last_session.0xfx");
-        if (!ok) fx_preset_save(engine, "../presets/last_session.0xfx");
-        FX_INFO(ok ? "Session saved to last_session.0xfx" : "Could not auto-save session");
+        char session_path[700];
+        user_preset_path(session_path, sizeof(session_path), "last_session");
+        bool ok = fx_preset_save(engine, session_path);
+        FX_INFO(ok ? "Session saved to %s" : "Could not auto-save session to %s", session_path);
     }
     {
         /* Snapshot window size before destruction */

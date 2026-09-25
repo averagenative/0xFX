@@ -205,8 +205,8 @@ Plugins:
   CLAP: cp 0xFX.clap ~/.clap/
   VST3: cp -r 0xFX.vst3 ~/.vst3/
 
-Presets are alongside the binary in presets/factory/
-or install to ~/.local/share/0xFX/presets/
+Factory presets are alongside the binary in presets/factory/.
+Presets you save go to ~/.0xfx/presets/.
 EOF
 }
 
@@ -228,7 +228,8 @@ populate_windows_zip_dir() {
 
 Standalone:
   Double-click 0xfx_gui.exe to run.
-  Presets are in the presets\\factory\\ folder.
+  Factory presets are in the presets\\factory\\ folder.
+  Presets you save go to %APPDATA%\\0xFX\\presets\\.
 
 Plugins (manual install):
   CLAP: Copy 0xFX.clap to C:\\Program Files\\Common Files\\CLAP\\

@@ -94,6 +94,12 @@ if [ -d presets ]; then
     echo "  -> Presets bundled in Resources/"
 fi
 
+# Bundled cab IRs — the GUI chdirs into Resources/, so they must sit at
+# Resources/resources/ir/bundled/ for 'resources/ir/bundled/...' to resolve
+mkdir -p "${APP_DIR}/Contents/Resources/resources/ir"
+cp -r resources/ir/bundled "${APP_DIR}/Contents/Resources/resources/ir/"
+echo "  -> Cab IRs bundled in Resources/resources/ir/bundled/"
+
 # Icon
 cp resources/icon/0xfx.icns "${APP_DIR}/Contents/Resources/"
 echo "  -> Icon: 0xfx.icns"
