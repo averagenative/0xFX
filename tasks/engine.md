@@ -261,3 +261,39 @@
   - Add logging so a missing/empty capture list surfaces clearly in `fx_log` instead of silently failing in the UI.
 
   **First steps**: run the standalone with `FX_LOG_LEVEL=DEBUG` or add a one-shot `ma_context_get_devices` dump to see what miniaudio reports on this box. Compare against `pw-cli list-objects Node` to confirm PipeWire does see the mic.
+
+### TASK-374: Resample WAV cab IRs to the engine sample rate
+- **Status**: in_progress
+- **Phase**: 15
+- **Priority**: HIGH
+- **Release**: 1.4.0
+- **Depends**: none
+- **Files**: `src/engine/internal/cab_ir.c`, `src/engine/internal/engine.c`, `src/engine/internal/engine_internal.h`, `tests/api_test.c`
+- **Notes**: Bundled IRs are all 44.1k and were used at the engine rate unchanged, so a 48k engine (standalone Rate=48000, the PipeWire graph rate, most DAW sessions) shifted every cab ~9% up; a 96k DAW session shifted it more than 2x. Prerequisite for TASK-375.
+
+  **Acceptance criteria**:
+  - `fx_cab_load_wav` resamples the decoded IR from the file's rate to the engine's rate at load time (windowed-sinc, anti-aliased when downsampling). Matching rates skip resampling and are bit-identical to before.
+  - IR files at any rate from 22050 to 192000 Hz are accepted (previously 44100/48000 only).
+  - The 4096-sample cap applies after resampling.
+  - Test: 44.1k IR with an impulse at sample 441 (10 ms) in a 48k engine peaks at output sample 480 (+/-1); in a 44.1k engine it stays at 441.
+  - Test: 44.1k IR of a decaying 2 kHz sinusoid in a 48k engine peaks at 2 kHz (+/-1 bin).
+  - Test: a 96k IR loads into a 48k engine.
+
+### TASK-375: Low-latency JACK/PipeWire duplex audio path for the Linux standalone
+- **Status**: claimed
+- **Phase**: 15
+- **Priority**: HIGH
+- **Release**: 1.4.0
+- **Depends**: TASK-374
+- **Files**: `src/audio/jack_duplex.c`, `src/audio/jack_duplex.h`, `src/audio/audio_device.c`, `src/audio/audio_device.h`, `src/gui/gui_main.cpp`, `CMakeLists.txt`, `tests/`
+- **Notes**: Reported 2026-09-25: significant lag with the iRig HD 2 on Fedora 44 / PipeWire 1.6.8. miniaudio 0.11.25 duplex on the PulseAudio backend runs capture and playback as separate streams joined by a ring buffer pre-filled with 2 periods (can grow to 5), plus per-stream pulse buffering and 44.1/48k resampling: roughly 35 ms+ round trip at 256 frames. miniaudio has no PipeWire backend and its JACK backend can't pick a device, so we drive libjack ourselves. pipewire-jack port names are `<node.description>:capture_FL` / `playback_FL` with `JackPortIsPhysical` set.
+
+  **Acceptance criteria**:
+  - `src/audio/jack_duplex.c` loads `libjack.so.0` with `dlopen` at runtime (PipeWire's libjack or real JACK). No build-time dependency; Linux only.
+  - One process callback reads the capture port, applies input trim, runs `fx_engine_process`, and writes the playback port(s) in the same cycle. No intermediate ring buffer.
+  - Used by default when a JACK server is reachable (`JackNoStartServer`); otherwise the existing miniaudio path runs unchanged. Windows/macOS untouched.
+  - Devices are listed from physical JACK ports grouped by client name. Input connects the device's first capture port; output connects all of the device's playback ports.
+  - Buffer size is requested via `PIPEWIRE_LATENCY` before the client opens; changing Buffer reopens the client. The actual quantum is read back and logged.
+  - The engine is created at the JACK sample rate; the Rate control shows it as set by the audio system.
+  - A round-trip latency estimate is logged at start and shown in audio settings.
+  - Test: port-name grouping is a pure function with a unit test. Manual: Dan verifies with the iRig HD 2 that Buffer 64/128 is audibly tighter than the Pulse path.

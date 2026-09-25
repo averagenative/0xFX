@@ -3351,5 +3351,67 @@
       "README.md"
     ],
     "notes": "Reported 2026-05-03 by Dan. The fx_window_hit_test path is wired up (gui_main.cpp:1261, 1826), but drag-resize does not work in shipping Linux builds. Sibling projects (0x808, 0xSYNTH) have the same behavior on their own AppImages and are tracked in their own task systems — coordinate fixes but each project ships its own.\n\nMost likely cause: SDL2's Wayland backend forwarding SDL_SetWindowHitTest results to xdg_toplevel move/resize. Fedora 43 default session is Wayland GNOME; mutter supports move/resize via xdg_toplevel, but SDL2's plumbing has been intermittently broken across 2.0.18 → 2.30.x.\n\nDiagnostic order:\n1. SDL_VIDEODRIVER=x11 ./0xFX.AppImage — if it works, confirms Wayland-only.\n2. FX_DEBUG inside fx_window_hit_test — confirms SDL is at least invoking the callback.\n3. Check SDL2 version bundled in the AppImage vs system SDL2.\n\nCheapest acceptable fix: detect Wayland at startup, drop SDL_WINDOW_BORDERLESS, let SDL render a native title bar. Loses the custom chrome on Wayland but the window actually works. Custom title-bar buttons (_ [] X) can stay as ImGui controls inside the client area; users get a redundant native title bar above them, which is ugly but functional. Iterate from there.\n\nReference points in current code:\n- fx_window_hit_test: src/gui/gui_main.cpp:1261\n- SDL_SetWindowHitTest registration: src/gui/gui_main.cpp:1826\n- SDL_WINDOW_BORDERLESS flag: src/gui/gui_main.cpp:1816\n- Win32 borderless wndproc (fine, not in scope): src/gui/gui_main.cpp:1293-1335"
+  },
+  {
+    "id": "TASK-374",
+    "priority": "HIGH",
+    "title": "Resample WAV cab IRs to the engine sample rate",
+    "domain": "engine",
+    "phase": 15,
+    "status": "in_progress",
+    "claimedBy": "claude",
+    "depends": [],
+    "estimatedTokens": 25000,
+    "release": "1.4.0",
+    "acceptanceCriteria": [
+      "fx_cab_load_wav resamples the decoded IR from the file's rate to the engine's sample rate (load time only, windowed-sinc, anti-aliased when downsampling). Matching rates skip resampling and are bit-identical to before.",
+      "Accept IR files at any rate from 22050 to 192000 Hz (previously 44100/48000 only, and used as-is regardless of engine rate).",
+      "4096-sample cap applies after resampling; the 2-second pre-decode sanity cap is unchanged.",
+      "Test: 44.1k IR with a unit impulse at sample 441 (10 ms) loaded into a 48k engine puts the output peak at sample 480 (+/-1); same IR in a 44.1k engine stays at 441.",
+      "Test: 44.1k IR of a decaying 2 kHz sinusoid in a 48k engine: output spectrum peak at 2 kHz (+/-1 bin), not ~2177 Hz.",
+      "Test: 96k IR loads into a 48k engine (previously rejected)."
+    ],
+    "files": [
+      "src/engine/internal/cab_ir.c",
+      "src/engine/internal/engine.c",
+      "src/engine/internal/engine_internal.h",
+      "tests/api_test.c"
+    ],
+    "notes": "Bundled IRs are all 44.1k and were played at the engine rate unchanged, so any engine at 48k (standalone Rate=48000, PipeWire graph rate, most DAW sessions) shifted every cab ~9% up in frequency; at 96k in a DAW, >2x. Prerequisite for TASK-375 (JACK path runs at the graph rate, 48k on Fedora)."
+  },
+  {
+    "id": "TASK-375",
+    "priority": "HIGH",
+    "title": "Low-latency JACK/PipeWire duplex audio path for the Linux standalone",
+    "domain": "engine",
+    "phase": 15,
+    "status": "claimed",
+    "claimedBy": "claude",
+    "depends": [
+      "TASK-374"
+    ],
+    "estimatedTokens": 60000,
+    "release": "1.4.0",
+    "acceptanceCriteria": [
+      "New src/audio/jack_duplex.c: dlopen(\"libjack.so.0\") at runtime (PipeWire's libjack or real JACK). No build-time dependency; Linux only.",
+      "One process callback reads the capture port, runs input trim + fx_engine_process, and writes the playback port(s) in the same cycle. No intermediate ring buffer.",
+      "Used by default when a JACK server is reachable (JackNoStartServer); otherwise the existing miniaudio path is used unchanged. Windows/macOS untouched.",
+      "Devices listed from physical JACK ports grouped by client name (e.g. 'iRig HD 2 Mono'); input connects that device's first capture port, output connects the device's playback ports (mono engine out to all channels). Selection persists by index like today.",
+      "Buffer size requested via PIPEWIRE_LATENCY before client open; changing Buffer reopens the client. Actual quantum is read back from jack_get_buffer_size and logged.",
+      "Engine is created at the JACK sample rate; the Rate dropdown shows the rate as set by the audio system when JACK is active.",
+      "Round-trip latency estimate (capture + playback port latency + one buffer) logged at start and shown in audio settings.",
+      "Callback chunks blocks larger than the engine max and never processes past the engine's block limit.",
+      "Test: port-name grouping into devices is a pure function covered by a unit test. Manual: Dan verifies with the iRig HD 2 on Fedora that Buffer 64/128 gives audibly lower latency than the Pulse path."
+    ],
+    "files": [
+      "src/audio/jack_duplex.c",
+      "src/audio/jack_duplex.h",
+      "src/audio/audio_device.c",
+      "src/audio/audio_device.h",
+      "src/gui/gui_main.cpp",
+      "CMakeLists.txt",
+      "tests/"
+    ],
+    "notes": "Reported 2026-09-25: significant lag with iRig HD 2 on Fedora 44 / PipeWire 1.6.8. miniaudio 0.11.25 duplex on the PulseAudio backend runs capture and playback as separate pulse streams joined by a duplex ring buffer pre-filled with 2 periods (can grow to 5), plus per-stream pulse buffering and 44.1<->48k resampling — roughly 35 ms+ round trip at 256 frames. miniaudio has no PipeWire backend and its JACK backend can't pick a device (auto-connects to the first physical ports), so we drive libjack ourselves. pipewire-jack port names are '<node.description>:capture_FL' / 'playback_FL' with JackPortIsPhysical set."
   }
 ]
