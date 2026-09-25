@@ -303,10 +303,21 @@ static bool open_audio_device(fx_engine_t *engine) {
         return false;
     }
 
-    FX_INFO("Audio started: in=%s out=%s (%.0f Hz, %d frames)",
+    /* Log what the backend actually granted — the requested period size is a
+     * hint, and a device rate that differs from ours means a resampler (and
+     * its latency) sits in the path. */
+    FX_INFO("Audio started: in=%s out=%s (%.0f Hz, %d frames requested)",
             g_audio.capture_names[cap_idx],
             play_idx >= 0 ? g_audio.playback_names[play_idx] : "(default)",
             g_audio.sample_rate, g_audio.buffer_frames);
+    FX_INFO("  %s: capture %u Hz x %u frames x %u periods, playback %u Hz x %u frames x %u periods",
+            ma_get_backend_name(g_audio.context.backend),
+            g_audio.device.capture.internalSampleRate,
+            g_audio.device.capture.internalPeriodSizeInFrames,
+            g_audio.device.capture.internalPeriods,
+            g_audio.device.playback.internalSampleRate,
+            g_audio.device.playback.internalPeriodSizeInFrames,
+            g_audio.device.playback.internalPeriods);
     return true;
 }
 
@@ -319,10 +330,18 @@ bool fx_audio_set_device(fx_engine_t *engine, int index) {
 bool fx_audio_set_buffer_size(fx_engine_t *engine, int frames) {
     (void)engine;
     if (frames < 32 || frames > 4096) return false;
+    if (g_audio.buffer_frames == frames) return true;
     g_audio.buffer_frames = frames;
+    /* Period size is fixed at device init — reopen a running device so the
+     * new size takes effect now. No-op before the first open. */
+    if (g_audio.device_init && g_audio.engine) {
+        return open_audio_device(g_audio.engine);
+    }
     return true;
 }
 
+/* Must match the rate the engine was created with — the engine's DSP is
+ * tuned to it. Call before opening the device; not meant for live changes. */
 bool fx_audio_set_sample_rate(fx_engine_t *engine, float rate) {
     (void)engine;
     if (rate < 22050.0f || rate > 192000.0f) return false;

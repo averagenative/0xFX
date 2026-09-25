@@ -1961,11 +1961,22 @@ int main(int argc, char *argv[]) {
         if (test_tex) FX_INFO("Texture loaded: %lu", (unsigned long)test_tex);
     }
 
-    /* Audio + engine + MIDI init */
+    static const int   buf_sizes[]  = { 64, 128, 256, 512, 1024 };
+    static const char *buf_labels[] = { "64", "128", "256", "512", "1024" };
+    static const int   sr_values[]  = { 44100, 48000 };
+    static const char *sr_labels[]  = { "44100 Hz", "48000 Hz" };
+
+    /* Audio + engine + MIDI init.
+     * The engine's DSP is built for one rate and the GUI holds engine-owned
+     * IDs, so the saved Rate is applied here at creation — changing it in
+     * settings takes effect on the next launch. */
+    const int active_sr_idx = (s_session_cfg.sr_idx >= 0 && s_session_cfg.sr_idx < 2)
+                              ? s_session_cfg.sr_idx : 0;
     fx_audio_init();
     fx_midi_init();
-    fx_engine_t *engine = fx_engine_create(44100.0f);
-    FX_INFO("Engine created");
+    fx_engine_t *engine = fx_engine_create((float)sr_values[active_sr_idx]);
+    fx_audio_set_sample_rate(engine, (float)sr_values[active_sr_idx]);
+    FX_INFO("Engine created at %d Hz", sr_values[active_sr_idx]);
 
     /* Audio device / settings state */
     int num_input_devices = fx_audio_get_device_count();
@@ -1992,18 +2003,14 @@ int main(int argc, char *argv[]) {
         s_selected_output = s_session_cfg.output_device_idx;
     if (s_session_cfg.buf_size_idx >= 0 && s_session_cfg.buf_size_idx < 5)
         s_selected_buf_idx = s_session_cfg.buf_size_idx;
-    if (s_session_cfg.sr_idx >= 0 && s_session_cfg.sr_idx < 2)
-        s_selected_sr_idx = s_session_cfg.sr_idx;
+    s_selected_sr_idx = active_sr_idx;
+    /* Buffer size must be set before the device opens below */
+    fx_audio_set_buffer_size(engine, buf_sizes[s_selected_buf_idx]);
     /* Restore input gain — apply to audio layer immediately */
     s_input_gain_db = s_session_cfg.input_gain_db;
     s_input_pad     = s_session_cfg.input_pad;
     fx_audio_set_input_gain_db(s_input_gain_db);
     fx_audio_set_input_pad(s_input_pad);
-
-    static const int   buf_sizes[]  = { 64, 128, 256, 512, 1024 };
-    static const char *buf_labels[] = { "64", "128", "256", "512", "1024" };
-    static const int   sr_values[]  = { 44100, 48000 };
-    static const char *sr_labels[]  = { "44100 Hz", "48000 Hz" };
 
     FX_INFO("Launched muted. Select input+output devices to start audio.");
 
@@ -3083,6 +3090,10 @@ int main(int argc, char *argv[]) {
                 ImGui::SetNextItemWidth(300);
                 if (ImGui::Combo("##input", &s_selected_input,
                                  InGetter::get, nullptr, num_input_devices)) {
+                    /* Reopen a running device on the new input; a closed one
+                     * is started by the auto-monitor block below. */
+                    if (s_audio_active || s_monitor_only)
+                        fx_audio_set_device(engine, s_selected_input);
                 }
 
                 ImGui::Spacing();
@@ -3114,8 +3125,11 @@ int main(int argc, char *argv[]) {
                 ImGui::TextDisabled("Rate");
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(100);
-                if (ImGui::Combo("##rate", &s_selected_sr_idx, sr_labels, 2)) {
-                    fx_audio_set_sample_rate(engine, (float)sr_values[s_selected_sr_idx]);
+                /* Saved to config on exit and applied at engine creation */
+                ImGui::Combo("##rate", &s_selected_sr_idx, sr_labels, 2);
+                if (s_selected_sr_idx != active_sr_idx) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Restart to apply");
                 }
 
                 /* ── Input Gain Trim ──────────────────────────── */
