@@ -219,3 +219,25 @@
 - **Priority**: P2
 - **Depends**: TASK-069 (infra - CLAP process), TASK-026
 - **Notes**: ImGui+SDL2 in host-provided native window. Must render correctly in plugin context.
+
+---
+
+### TASK-373: Borderless window drag/resize broken on Linux AppImage
+- **Status**: queued
+- **Priority**: HIGH
+- **Release**: 1.4.0
+- **Reported**: 2026-05-03 by Dan
+- **Symptom**: 0xFX 1.3.0 Linux AppImage — cannot drag-resize from any edge; cannot drag-move via the toolbar.
+- **Why it's already not a missing port**: `SDL_SetWindowHitTest` is wired up unconditionally at `src/gui/gui_main.cpp:1826`, with the callback `fx_window_hit_test` at `src/gui/gui_main.cpp:1261`. The fix exists; it just doesn't work at runtime.
+- **Likely culprit**: SDL2's Wayland backend forwarding hit-test results to `xdg_toplevel` move/resize. Fedora 43 GNOME defaults to Wayland; SDL2's plumbing here has been intermittently broken across 2.0.18 → 2.30.x.
+- **Diagnostic order**:
+  1. `SDL_VIDEODRIVER=x11 ./0xFX.AppImage` — if it works, confirms Wayland-only and fixes triage to "ship X11 default" or "drop borderless on Wayland."
+  2. `FX_DEBUG` inside `fx_window_hit_test` — confirms SDL is at least invoking the callback.
+  3. Check the AppImage's bundled SDL2 version vs system SDL2.
+- **Cheapest acceptable fix**: at startup, if `SDL_GetCurrentVideoDriver() == "wayland"`, drop `SDL_WINDOW_BORDERLESS` and let SDL render a native title bar. Loses custom chrome on Wayland but the window works. Iterate from there.
+- **Acceptance**:
+  - Identify which environment(s) fail (X11 vs Wayland, AppImage vs cmake-built binary).
+  - Implement the chosen fix.
+  - Verify on X11 (e.g. GNOME Xorg) AND Wayland (default Fedora 43 GNOME).
+  - Update README's Linux quick-start with the user-visible behavior.
+- **Files**: `src/gui/gui_main.cpp`, `scripts/packaging/0xfx.AppDir/AppRun`, `README.md`

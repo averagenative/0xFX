@@ -3285,5 +3285,71 @@
       "src/engine/internal/looper.c"
     ],
     "notes": "Dan hit this 2026-04-19 during Wine/Reaper testing after the looper plugin port landed. User's initial hypothesis was looper thread safety; audit found gui_render.cpp has no mutable statics (clean per-instance) but texture.c cache uses thread IDs as keys which Windows can recycle — that's a concrete crash vector. Also flagged the looper slot-tap calloc race as a latent bug. Get the winedbg backtrace first; don't guess at a fix before we know which call is faulting."
+  },
+  {
+    "id": "TASK-372",
+    "priority": "MEDIUM",
+    "title": "BACKLOG: Tape Loop module — varispeed transport with analog warble",
+    "domain": "engine",
+    "phase": 15,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 45000,
+    "release": "1.5.0",
+    "acceptanceCriteria": [
+      "Dedicated Tape Loop module (NOT a pedal in the chain) — separate panel like TASK-363 looper. One tape loop buffer, one transport, rich speed/warble controls.",
+      "Record/Play/Overdub/Stop transport (momentary-arm-to-record like a cassette deck)",
+      "Pre-allocated loop buffer up to ~30 seconds at 48kHz — no malloc in audio path",
+      "Varispeed knob: continuous transport speed from -2.0x (reverse 2x) through 0 (tape stop) to +2.0x (fast forward). Pitch and time scale together, like a physical capstan.",
+      "Capstan inertia: speed changes glide toward the target instead of jumping instantly — models flywheel mass. Inertia amount is a dip-switch or deep parameter (fast/slow glide).",
+      "Wow (slow, 0.5–6 Hz sinusoidal speed modulation): depth knob 0–100%",
+      "Flutter (fast, 10–100 Hz pseudo-random speed modulation): depth knob 0–100%",
+      "Instability scaling: wow/flutter amplitude scales inversely with |speed| — the slower the tape runs, the more pronounced the warble, matching physical tape behavior (slow IPS = more audible wow/flutter). At 1.0x speed warble is subtle; at 0.25x it's dramatic.",
+      "Tape saturation (soft-clip on record) with drive knob",
+      "Age knob: HF rolloff + hiss level + per-pass darkening on recirculated material",
+      "Recirculation/feedback: 0–100% of playback gets re-recorded each pass, with the age darkening applied per pass (like Space Echo self-oscillation)",
+      "Tape stop footswitch / momentary button: decelerates transport to 0 over ~0.3–1.0s then reverses acceleration on release (the classic tape-stop transition with pitch drop)",
+      "Expression / MIDI mapping for varispeed knob — the headline use case is 'assign an expression pedal to speed and ride it down for dramatic warbles'",
+      "Routing: default taps post-chain; toggle to tap pre-chain (same pattern as looper module)",
+      "Export: bounce loop buffer to WAV",
+      "Visual: tape reel animation showing current speed/direction, VU meter, loop position indicator",
+      "Params exposed to CLAP/VST3 for DAW automation",
+      "Test: sine input at 1.0x then slow to 0.25x over 4 seconds — FFT confirms pitch drops 2 octaves and wow/flutter sidebands grow. Test: tape stop from 1.0x to 0 produces smooth pitch bend, no clicks. Test: recirculation at 80% eventually self-oscillates into washed-out drone (age-darkened)."
+    ],
+    "files": [
+      "src/engine/fx_engine.h",
+      "src/engine/internal/tape_loop.c",
+      "src/engine/internal/tape_loop.h",
+      "src/gui/tape_loop_panel.cpp"
+    ],
+    "notes": "Requested 2026-04-20 by Dan. Physical-setup research for parameter choices:\n\n- Open-reel varispeed: slower IPS naturally increases audible wow/flutter (Sound On Sound, Gearspace). Slow speed is how you 'fatten' tape sound but also how you get the warble — that's why instability must scale with speed.\n- Cassette/reel manipulation: finger on the capstan or supply reel induces speed sag; heavy flywheels have inertia, so speed changes glide rather than jump.\n- Chase Bliss Mood Tape mode: quantized speed steps ±4x with reverse; shows users expect a knob they can sweep dramatically, not just subtle modulation.\n- Snazzy FX Wow & Flutter: threshold-triggered warp that responds to input dynamics — optional v2 feature, not in scope for this task but worth keeping in mind.\n- Mellotron/Chamberlin: motor speed pitches entire playback; proves the 'slow down the whole tape for analog warble' workflow is musical.\n- Neold Warble / Baby Audio / Waves J37: standard DSP params are wow rate + depth, flutter rate + depth, bias/saturation, hiss, HF rolloff, age.\n\nDistinct from existing work: TASK-051 (Tape Machine pedal) is a tape ECHO — fixed-time delay with fixed modulation. TASK-363 Looper is a 9-slot keyboard-driven live grid. This module is a SINGLE tape loop with a dramatic varispeed transport — the headline interaction is 'assign expression pedal to speed, ride it for warbles.' Think cassette player with a speed knob you can turn to zero.\n\nThe instability-scales-with-speed behavior is the key differentiator from every existing tape-emulation plugin in the codebase — most apply fixed wow/flutter, but physical tape gets WORSE as it slows down, and that asymmetry is what makes manual slowdowns musical instead of just pitched-down.\n\nKeep it a module (separate panel), not a pedal — the varispeed workflow needs a big knob and transport controls, not a 3-knob stompbox footprint."
+  },
+  {
+    "id": "TASK-373",
+    "priority": "HIGH",
+    "title": "Borderless window drag/resize broken on Linux AppImage",
+    "domain": "frontend",
+    "phase": 15,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [],
+    "estimatedTokens": 18000,
+    "release": "1.4.0",
+    "acceptanceCriteria": [
+      "Confirm the failure mode on the 0xFX 1.3.0 Linux AppImage: edge drag-resize and toolbar drag-move both broken (matches reported 0x808 1.3.0 behavior, which ships the same SDL_SetWindowHitTest path).",
+      "Determine whether SDL_SetWindowHitTest is being called at all (add temporary FX_DEBUG inside fx_window_hit_test at src/gui/gui_main.cpp:1261). If never called → SDL hit-test isn't wired through to the compositor. If called but the OS ignores the result → compositor doesn't honor xdg_toplevel move/resize from hit-test.",
+      "Distinguish X11 vs Wayland: run the AppImage with SDL_VIDEODRIVER=x11 explicitly. If X11 works and Wayland fails, the bug is SDL2's Wayland hit-test path — pick a fix: (a) ship the AppImage launcher with SDL_VIDEODRIVER=x11 default, (b) bundle a newer SDL2, or (c) drop borderless on Wayland and use a normal title bar.",
+      "Cross-check the AppImage's bundled SDL2 version vs the version where SDL_SetWindowHitTest Wayland support actually lands (SDL ≥ 2.0.18 has it, but Wayland support has been buggy through 2.30.x).",
+      "Implement the chosen fix. If we drop borderless on Wayland, gate it on SDL_GetCurrentVideoDriver() == \"wayland\" and let SDL render a native title bar.",
+      "Verify on X11 (e.g. GNOME Xorg session) AND Wayland (default Fedora 43 GNOME) before closing.",
+      "Update README's Linux quick-start with whatever the user-visible behavior is."
+    ],
+    "files": [
+      "src/gui/gui_main.cpp",
+      "scripts/packaging/0xfx.AppDir/AppRun",
+      "README.md"
+    ],
+    "notes": "Reported 2026-05-03 by Dan. The fx_window_hit_test path is wired up (gui_main.cpp:1261, 1826), but drag-resize does not work in shipping Linux builds. Sibling projects (0x808, 0xSYNTH) have the same behavior on their own AppImages and are tracked in their own task systems — coordinate fixes but each project ships its own.\n\nMost likely cause: SDL2's Wayland backend forwarding SDL_SetWindowHitTest results to xdg_toplevel move/resize. Fedora 43 default session is Wayland GNOME; mutter supports move/resize via xdg_toplevel, but SDL2's plumbing has been intermittently broken across 2.0.18 → 2.30.x.\n\nDiagnostic order:\n1. SDL_VIDEODRIVER=x11 ./0xFX.AppImage — if it works, confirms Wayland-only.\n2. FX_DEBUG inside fx_window_hit_test — confirms SDL is at least invoking the callback.\n3. Check SDL2 version bundled in the AppImage vs system SDL2.\n\nCheapest acceptable fix: detect Wayland at startup, drop SDL_WINDOW_BORDERLESS, let SDL render a native title bar. Loses the custom chrome on Wayland but the window actually works. Custom title-bar buttons (_ [] X) can stay as ImGui controls inside the client area; users get a redundant native title bar above them, which is ugly but functional. Iterate from there.\n\nReference points in current code:\n- fx_window_hit_test: src/gui/gui_main.cpp:1261\n- SDL_SetWindowHitTest registration: src/gui/gui_main.cpp:1826\n- SDL_WINDOW_BORDERLESS flag: src/gui/gui_main.cpp:1816\n- Win32 borderless wndproc (fine, not in scope): src/gui/gui_main.cpp:1293-1335"
   }
 ]
