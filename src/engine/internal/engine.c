@@ -506,7 +506,7 @@ bool fx_cab_load_ir(fx_engine_t *engine, fx_chain_id chain,
     if (!engine || chain < 0 || chain >= engine->num_chains || !wav_path)
         return false;
     return fx_cab_load_wav(&engine->chains[chain].cab, wav_path,
-                           FX_MAX_BLOCK_SIZE);
+                           FX_MAX_BLOCK_SIZE, engine->sample_rate);
 }
 
 bool fx_cab_generate_ir(fx_engine_t *engine, fx_chain_id chain,

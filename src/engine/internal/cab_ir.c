@@ -2,7 +2,8 @@
  * 0xFX — Cabinet IR convolution
  *
  * Overlap-add FFT convolution via KissFFT.
- * - Loads .wav IR via dr_wav (16/24/32-bit, mono, 44.1/48kHz)
+ * - Loads .wav IR via dr_wav (16/24/32-bit, any channel count, 22.05-192 kHz)
+ * - Resamples the IR to the engine rate at load time
  * - Pre-computes IR FFT at load time
  * - Per-block: FFT input -> complex multiply with IR FFT -> IFFT -> overlap-add
  * - All allocations happen at load time; process path is real-time safe
@@ -26,10 +27,49 @@ static void cab_brief_wait(void) {
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 static int next_power_of_2(int n) {
     int p = 1;
     while (p < n) p <<= 1;
     return p;
+}
+
+/* Windowed-sinc half-width in zero crossings of the cutoff. 32 keeps the
+ * passband flat to well past 20 kHz at 44.1 <-> 48 kHz. */
+#define IR_RESAMPLE_ZEROS 32
+
+/* Resample an IR from src_rate to dst_rate with a Blackman-windowed sinc.
+ * Load time only (reads the whole input per output sample, no state).
+ * The cutoff sits at the lower of the two Nyquists so downsampling doesn't
+ * alias. Level isn't compensated — fx_cab_load_buffer peak-normalizes.
+ * Writes out_len samples. */
+static void resample_ir(const float *in, int in_len, double src_rate,
+                        float *out, int out_len, double dst_rate) {
+    const double step       = src_rate / dst_rate;          /* input samples per output sample */
+    const double cutoff     = step > 1.0 ? 1.0 / step : 1.0; /* fraction of input Nyquist */
+    const double half_width = IR_RESAMPLE_ZEROS / cutoff;    /* in input samples */
+
+    for (int j = 0; j < out_len; j++) {
+        const double t = (double)j * step;  /* output position on the input grid */
+        int i0 = (int)ceil(t - half_width);
+        int i1 = (int)floor(t + half_width);
+        if (i0 < 0) i0 = 0;
+        if (i1 > in_len - 1) i1 = in_len - 1;
+
+        double acc = 0.0;
+        for (int i = i0; i <= i1; i++) {
+            const double d = t - (double)i;
+            const double x = d * cutoff;
+            const double sinc = (fabs(x) < 1e-9) ? 1.0 : sin(M_PI * x) / (M_PI * x);
+            const double u = d / half_width;  /* window position, -1..1 */
+            const double w = 0.42 + 0.5 * cos(M_PI * u) + 0.08 * cos(2.0 * M_PI * u);
+            acc += (double)in[i] * cutoff * sinc * w;
+        }
+        out[j] = (float)acc;
+    }
 }
 
 /* ── Init / Free ─────────────────────────────────────────────── */
@@ -51,7 +91,8 @@ void fx_cab_free(fx_cab_state_t *cab) {
 
 /* ── Load IR from WAV file ───────────────────────────────────── */
 
-bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) {
+bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size,
+                     float engine_rate) {
     if (!cab || !wav_path || block_size <= 0) return false;
 
     /* ── Pre-validate via header inspection ──────────────────────
@@ -70,9 +111,9 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
         drwav_uint64 f    = probe.totalPCMFrameCount;
         drwav_uninit(&probe);
 
-        if (sr != 44100 && sr != 48000) {
+        if (sr < 22050 || sr > 192000) {
             FX_WARN("IR load: %s unsupported sample rate %u Hz "
-                    "(need 44100 or 48000)", wav_path, sr);
+                    "(need 22050-192000)", wav_path, sr);
             return false;
         }
         if (ch < 1 || ch > 8) {
@@ -109,18 +150,35 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
         return false;
     }
 
-    /* If stereo+, downmix to mono */
+    /* The IR is played back at the engine rate, so a file at any other
+     * rate must be resampled or every cab shifts in pitch (a 44.1k IR in
+     * a 48k engine sits ~9% sharp). Matching rates take the old path. */
+    const bool resample = fabsf((float)sample_rate - engine_rate) > 0.5f;
+    const double step = resample ? (double)sample_rate / (double)engine_rate : 1.0;
+
+    /* Output is capped at 4096 samples at the engine rate. When resampling,
+     * keep enough input to cover that plus the sinc's reach past the end. */
     int ir_len = (int)total_frames;
+    int in_len = ir_len;
+    if (resample) {
+        const double reach = IR_RESAMPLE_ZEROS * (step > 1.0 ? step : 1.0);
+        const double needed = ceil(4096.0 * step + reach) + 1.0;
+        if ((double)in_len > needed) in_len = (int)needed;
+        ir_len = (int)ceil((double)total_frames / step);
+    } else if (in_len > 4096) {
+        in_len = 4096;
+    }
     if (ir_len > 4096) ir_len = 4096;  /* cap IR length */
 
+    /* If stereo+, downmix to mono */
     float *ir_mono = NULL;
     if (channels > 1) {
-        ir_mono = (float *)malloc(sizeof(float) * (size_t)ir_len);
+        ir_mono = (float *)malloc(sizeof(float) * (size_t)in_len);
         if (!ir_mono) {
             drwav_free(ir_samples, NULL);
             return false;
         }
-        for (int i = 0; i < ir_len; i++) {
+        for (int i = 0; i < in_len; i++) {
             float sum = 0.0f;
             for (unsigned int c = 0; c < channels; c++) {
                 sum += ir_samples[i * channels + c];
@@ -130,6 +188,21 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
     }
 
     const float *ir_data = ir_mono ? ir_mono : ir_samples;
+
+    float *ir_resampled = NULL;
+    if (resample) {
+        ir_resampled = (float *)malloc(sizeof(float) * (size_t)ir_len);
+        if (!ir_resampled) {
+            free(ir_mono);
+            drwav_free(ir_samples, NULL);
+            return false;
+        }
+        resample_ir(ir_data, in_len, (double)sample_rate,
+                    ir_resampled, ir_len, (double)engine_rate);
+        ir_data = ir_resampled;
+        FX_INFO("IR load: %s resampled %u -> %.0f Hz (%d samples)",
+                wav_path, sample_rate, engine_rate, ir_len);
+    }
 
     /* Load via fx_cab_load_buffer which handles thread-safe swap.
      * load_buffer clears custom_ir_path, so record it after success. */
@@ -142,6 +215,7 @@ bool fx_cab_load_wav(fx_cab_state_t *cab, const char *wav_path, int block_size) 
     }
 
     /* Cleanup temp data */
+    free(ir_resampled);
     free(ir_mono);
     drwav_free(ir_samples, NULL);
 
@@ -246,10 +320,6 @@ bool fx_cab_load_buffer(fx_cab_state_t *cab, const float *ir_data, int ir_len, i
  * 2. Minimum-phase reconstruction via log-magnitude -> Hilbert -> exp
  * 3. IFFT to time domain, window to 2048 samples
  */
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 #define SYNTH_IR_LEN   2048
 #define SYNTH_FFT_SIZE 4096  /* must be >= 2 * SYNTH_IR_LEN */

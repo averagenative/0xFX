@@ -3358,7 +3358,7 @@
     "title": "Resample WAV cab IRs to the engine sample rate",
     "domain": "engine",
     "phase": 15,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude",
     "depends": [],
     "estimatedTokens": 25000,
@@ -3385,7 +3385,7 @@
     "title": "Low-latency JACK/PipeWire duplex audio path for the Linux standalone",
     "domain": "engine",
     "phase": 15,
-    "status": "claimed",
+    "status": "in_progress",
     "claimedBy": "claude",
     "depends": [
       "TASK-374"

@@ -1565,6 +1565,162 @@ static void test_all_pedal_types(void) {
 
 /* ── Test: cab/distortion frequency response evaluation ─────────── */
 
+/* ── Test: WAV IRs are resampled to the engine rate (TASK-374) ─ */
+
+static bool write_ir_wav(const char *path, const float *data, int len,
+                         unsigned int rate) {
+    drwav wav;
+    drwav_data_format format;
+    format.container = drwav_container_riff;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+    format.channels = 1;
+    format.sampleRate = rate;
+    format.bitsPerSample = 32;
+    if (!drwav_init_file_write(&wav, path, &format, NULL)) return false;
+    drwav_uint64 written = drwav_write_pcm_frames(&wav, (drwav_uint64)len, data);
+    drwav_uninit(&wav);
+    return (int)written == len;
+}
+
+/* Render the same deterministic noise through two engines at engine_rate
+ * with the IR loaded — one with the cab active, one with it bypassed. The
+ * amp and everything else are identical, so the difference between the two
+ * outputs is the cab alone. */
+static bool render_cab_pair(const char *ir_path, float engine_rate,
+                            float *with_cab, float *without_cab, int n) {
+    fx_engine_t *ea = fx_engine_create(engine_rate);
+    fx_engine_t *eb = fx_engine_create(engine_rate);
+    if (!ea || !eb) {
+        fx_engine_destroy(ea);
+        fx_engine_destroy(eb);
+        return false;
+    }
+    bool ok = fx_cab_load_ir(ea, FX_CHAIN_DEFAULT, ir_path) &&
+              fx_cab_load_ir(eb, FX_CHAIN_DEFAULT, ir_path);
+    fx_cab_set_bypass(eb, FX_CHAIN_DEFAULT, true);
+    fx_engine_t *es[2] = { ea, eb };
+    for (int k = 0; k < 2; k++) {
+        fx_amp_set_param(es[k], FX_CHAIN_DEFAULT, FX_AMP_PARAM_GAIN, 0.0f);
+        fx_amp_set_param(es[k], FX_CHAIN_DEFAULT, FX_AMP_PARAM_VOLUME, 0.5f);
+        fx_amp_set_param(es[k], FX_CHAIN_DEFAULT, FX_AMP_PARAM_MASTER, 0.5f);
+    }
+
+    unsigned int seed = 12345;
+    const int block = 256;
+    float in[256];
+    for (int pos = 0; pos < n; pos += block) {
+        int len = (n - pos < block) ? n - pos : block;
+        for (int i = 0; i < len; i++) {
+            seed = seed * 1664525u + 1013904223u;
+            in[i] = 0.2f * ((float)(seed >> 8) / 8388608.0f - 1.0f);
+        }
+        fx_engine_process(ea, in, with_cab + pos, len);
+        fx_engine_process(eb, in, without_cab + pos, len);
+    }
+    fx_engine_destroy(ea);
+    fx_engine_destroy(eb);
+    return ok;
+}
+
+/* Cab delay = lag maximizing the cross-correlation of the two renders */
+static int cab_delay_samples(const char *ir_path, float engine_rate) {
+    enum { N = 8192, MAX_LAG = 1200 };
+    static float a[N], b[N];
+    if (!render_cab_pair(ir_path, engine_rate, a, b, N)) return -1;
+    int best_lag = -1;
+    double best = -1.0;
+    for (int lag = 0; lag < MAX_LAG; lag++) {
+        double c = 0.0;
+        for (int i = lag; i < N; i++) c += (double)a[i] * (double)b[i - lag];
+        if (c > best) { best = c; best_lag = lag; }
+    }
+    return best_lag;
+}
+
+/* Hann-windowed single-bin DFT magnitude */
+static double goertzel_mag(const float *x, int n, double freq, double rate) {
+    const double w = 2.0 * 3.14159265358979 * freq / rate;
+    const double coeff = 2.0 * cos(w);
+    double s1 = 0.0, s2 = 0.0;
+    for (int i = 0; i < n; i++) {
+        double win = 0.5 - 0.5 * cos(2.0 * 3.14159265358979 * i / (n - 1));
+        double s0 = x[i] * win + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return sqrt(s1 * s1 + s2 * s2 - coeff * s1 * s2);
+}
+
+static void test_cab_ir_resample(void) {
+    printf("test_cab_ir_resample...\n");
+    const char *path = "/tmp/test_ir_resample.wav";
+
+    /* ── Delay: an impulse 10 ms into the IR stays 10 ms at any engine rate ── */
+    {
+        float ir[1024] = { 0 };
+        ir[441] = 1.0f;
+        ASSERT(write_ir_wav(path, ir, 1024, 44100), "write 44.1k delay IR");
+
+        int d48 = cab_delay_samples(path, 48000.0f);
+        printf("    44.1k IR, 10 ms impulse, 48k engine: delay=%d (want 480)\n", d48);
+        ASSERT(abs(d48 - 480) <= 1, "44.1k IR in 48k engine should delay 480 samples");
+
+        int d44 = cab_delay_samples(path, 44100.0f);
+        printf("    44.1k IR, 10 ms impulse, 44.1k engine: delay=%d (want 441)\n", d44);
+        ASSERT(d44 == 441, "44.1k IR in 44.1k engine should delay 441 samples");
+    }
+    {
+        float ir[2048] = { 0 };
+        ir[960] = 1.0f;
+        ASSERT(write_ir_wav(path, ir, 2048, 96000), "write 96k delay IR");
+        fx_engine_t *e = fx_engine_create(48000.0f);
+        ASSERT(fx_cab_load_ir(e, FX_CHAIN_DEFAULT, path), "96k IR should load into 48k engine");
+        fx_engine_destroy(e);
+
+        int d = cab_delay_samples(path, 48000.0f);
+        printf("    96k IR, 10 ms impulse, 48k engine: delay=%d (want 480)\n", d);
+        ASSERT(abs(d - 480) <= 1, "96k IR in 48k engine should delay 480 samples");
+    }
+
+    /* ── Pitch: a 2 kHz cab resonance stays at 2 kHz in a 48k engine ── */
+    {
+        float ir[2048];
+        for (int i = 0; i < 2048; i++) {
+            double t = (double)i / 44100.0;
+            ir[i] = (float)(exp(-t / 0.005) * sin(2.0 * 3.14159265358979 * 2000.0 * t));
+        }
+        ASSERT(write_ir_wav(path, ir, 2048, 44100), "write 44.1k resonant IR");
+
+        enum { N = 16384 };
+        static float a[N], b[N];
+        ASSERT(render_cab_pair(path, 48000.0f, a, b, N), "render 48k resonant pair");
+        /* Energy ratio over a 50 Hz window: single-bin ratios spike
+         * wherever this one noise render happens to have a near-null. */
+        enum { STEPS = 281 };  /* 1400..2800 Hz in 5 Hz steps */
+        static double ea[STEPS], eb[STEPS];
+        for (int k = 0; k < STEPS; k++) {
+            double f = 1400.0 + 5.0 * k;
+            double ma = goertzel_mag(a, N, f, 48000.0);
+            double mb = goertzel_mag(b, N, f, 48000.0);
+            ea[k] = ma * ma;
+            eb[k] = mb * mb;
+        }
+        double best_f = 0.0, best_ratio = -1.0;
+        for (int k = 5; k < STEPS - 5; k++) {
+            double sa = 0.0, sb = 0.0;
+            for (int j = k - 5; j <= k + 5; j++) { sa += ea[j]; sb += eb[j]; }
+            double ratio = sb > 1e-12 ? sa / sb : 0.0;
+            if (ratio > best_ratio) { best_ratio = ratio; best_f = 1400.0 + 5.0 * k; }
+        }
+        printf("    44.1k 2 kHz resonance in 48k engine: peak=%.0f Hz (unresampled would be ~2177)\n",
+               best_f);
+        ASSERT(fabs(best_f - 2000.0) <= 15.0, "cab resonance should stay at 2 kHz");
+    }
+
+    unlink(path);
+    printf("  OK\n");
+}
+
 static void test_cab_distortion_freq_response(void) {
     printf("test_cab_distortion_freq_response...\n");
     printf("  Evaluating distortion + cab combinations for boxy sound...\n");
@@ -2029,6 +2185,7 @@ int main(void) {
     test_default_presets();
     test_all_pedal_types();
     test_cab_distortion_freq_response();
+    test_cab_ir_resample();
 
     test_looper_defaults();
     test_looper_state_machine();

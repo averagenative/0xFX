@@ -263,7 +263,7 @@
   **First steps**: run the standalone with `FX_LOG_LEVEL=DEBUG` or add a one-shot `ma_context_get_devices` dump to see what miniaudio reports on this box. Compare against `pw-cli list-objects Node` to confirm PipeWire does see the mic.
 
 ### TASK-374: Resample WAV cab IRs to the engine sample rate
-- **Status**: in_progress
+- **Status**: done
 - **Phase**: 15
 - **Priority**: HIGH
 - **Release**: 1.4.0
@@ -280,7 +280,7 @@
   - Test: a 96k IR loads into a 48k engine.
 
 ### TASK-375: Low-latency JACK/PipeWire duplex audio path for the Linux standalone
-- **Status**: claimed
+- **Status**: in_progress
 - **Phase**: 15
 - **Priority**: HIGH
 - **Release**: 1.4.0
