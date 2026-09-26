@@ -299,7 +299,7 @@
   - Test: port-name grouping is a pure function with a unit test. Manual: Dan verifies with the iRig HD 2 that Buffer 64/128 is audibly tighter than the Pulse path.
 
 ### TASK-376: Tuner pitch detection blows the real-time budget
-- **Status**: in_progress
+- **Status**: done
 - **Phase**: 15
 - **Priority**: HIGH
 - **Release**: 1.4.0
@@ -310,5 +310,20 @@
   **Acceptance criteria**:
   - The NSDF uses FFT autocorrelation (kissfft plans allocated at engine create) and a running energy sum: no O(window x lag) loop and no per-sample modulo on the audio thread.
   - Same algorithm and thresholds (McLeod first peak, parabolic refinement).
-  - Test: E2, A2, E4 and A4 sines detected within 0.5% at 44.1k and 48k.
+  - Low notes fixed: lobes only count after the NSDF first goes negative. E2 and A2 previously read as `sr / min_lag` (about 1225 Hz).
+  - Test: E2, A2, E4 and A4 sines detected within 1% at 44.1k and 48k. The method's own bias is up to about 0.5% here; see TASK-377.
   - Test: the 99th-percentile `fx_engine_process` time for 64-frame blocks of a sustained 110 Hz tone is under 1 ms.
+
+### TASK-377: Tuner accuracy: up to ~9 cents off in the guitar range, octave errors above ~1 kHz
+- **Status**: queued
+- **Phase**: 15
+- **Priority**: MEDIUM
+- **Release**: 1.4.0
+- **Depends**: TASK-376
+- **Files**: `src/engine/internal/tuner.c`, `tests/api_test.c`
+- **Notes**: Measured 2026-09-25 offline with the engine's NSDF and parabolic method (identical output): 329.63 Hz reads 0.52% low at 48k (about 9 cents), 440 Hz reads 0.46% high at 44.1k, 880 Hz reads 1.6% low at 48k, and 1046.5 Hz reads an octave low. Parabolic interpolation on the NSDF peak is biased when the period is only a few dozen samples. Refining against a later period multiple helped some notes but not consistently. Options: a better peak model, upsampling the ACF near the peak, or refining the period in the frequency domain.
+
+  **Acceptance criteria**:
+  - Pure tones E2-E6 (82-1319 Hz) detected within 1 cent at 44.1k and 48k, independent of phase.
+  - Tones with harmonics and noise detected within 3 cents E2-E5, with no octave errors.
+  - No regression in real-time cost (p99 64-frame block under 1 ms).

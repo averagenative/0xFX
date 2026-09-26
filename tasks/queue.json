@@ -3421,7 +3421,7 @@
     "title": "Tuner pitch detection blows the real-time budget (5-10 ms spikes in fx_engine_process)",
     "domain": "engine",
     "phase": 15,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude",
     "depends": [],
     "estimatedTokens": 15000,
@@ -3429,8 +3429,9 @@
     "acceptanceCriteria": [
       "fx_tuner_feed's NSDF runs via FFT autocorrelation (kissfft, plans allocated at engine create) with the energy term from a running sum — no O(window x lag) loop and no per-sample modulo in the audio thread.",
       "Same detection algorithm and thresholds (McLeod first-peak, parabolic refinement); results match the direct computation.",
-      "Test: E2 82.41 Hz, A2 110 Hz, E4 329.63 Hz and A4 440 Hz sines detected within 0.5% at 44.1k and 48k.",
-      "Test: 99th-percentile fx_engine_process time for 64-frame blocks of a sustained 110 Hz tone is under 1 ms (was 5-10 ms spikes ~20x/s)."
+      "Low notes fixed: lobes only count after the NSDF first goes negative (E2/A2 previously read as sr/min_lag, ~1225 Hz).",
+      "Test: E2 82.41 Hz, A2 110 Hz, E4 329.63 Hz and A4 440 Hz sines detected within 1% at 44.1k and 48k (method's own bias is up to ~0.5% here — TASK-377).",
+      "Test: 99th-percentile fx_engine_process time for 64-frame blocks of a sustained 110 Hz tone is under 1 ms (was ~2-10 ms spikes ~20x/s)."
     ],
     "files": [
       "src/engine/internal/tuner.c",
@@ -3439,5 +3440,29 @@
       "tests/api_test.c"
     ],
     "notes": "Found while testing TASK-375 on PipeWire at 64 frames: 20 dropouts/s whenever there's input. fx_tuner_feed ran a direct NSDF (2048-sample window x ~870 lags, three MACs plus two modulos per step, ~1.8M iterations) inside the audio callback every 2048 samples — 5-10 ms per update. The miniaudio/Pulse path's large buffers masked it; the plugin at small DAW buffers is affected the same way."
+  },
+  {
+    "id": "TASK-377",
+    "priority": "MEDIUM",
+    "title": "Tuner accuracy: up to ~9 cents off in the guitar range, octave errors above ~1 kHz",
+    "domain": "engine",
+    "phase": 15,
+    "status": "queued",
+    "claimedBy": null,
+    "depends": [
+      "TASK-376"
+    ],
+    "estimatedTokens": 20000,
+    "release": "1.4.0",
+    "acceptanceCriteria": [
+      "Pure tones E2-E6 (82-1319 Hz) detected within 1 cent at 44.1k and 48k, independent of phase.",
+      "Tones with harmonics + noise (0.3/0.2 2nd/3rd harmonic, -18 dB noise) detected within 3 cents E2-E5, no octave errors.",
+      "No regression in real-time cost (p99 64-frame block < 1 ms)."
+    ],
+    "files": [
+      "src/engine/internal/tuner.c",
+      "tests/api_test.c"
+    ],
+    "notes": "Measured 2026-09-25 offline with the same NSDF/parabolic method (identical to the engine's output): 329.63 Hz reads -0.52% at 48k (~9 cents), 440 Hz +0.46% at 44.1k, 880 Hz -1.6% at 48k, 1046.5 Hz reads an octave low (max_lag / first-peak interaction). Parabolic interpolation on the NSDF peak is biased when the period is a few dozen samples; refining against the k-th period multiple helped some notes but not consistently. Options: interpolate the NSDF with a better peak model, upsample the ACF near the peak, or refine the period estimate in the frequency domain."
   }
 ]

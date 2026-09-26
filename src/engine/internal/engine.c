@@ -64,6 +64,8 @@ void fx_engine_destroy(fx_engine_t *engine) {
     /* Free looper slot buffers */
     looper_free(&engine->looper);
 
+    fx_tuner_free(&engine->tuner);
+
     free(engine);
 }
 

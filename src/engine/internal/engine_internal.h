@@ -157,13 +157,25 @@ typedef struct {
 
 /* ── Tuner state ──────────────────────────────────────────────── */
 
+#define FX_TUNER_BUF_SIZE 4096
+#define FX_TUNER_WINDOW   2048
+#define FX_TUNER_FFT_SIZE 4096  /* >= 2x window: linear, not circular, autocorrelation */
+
 typedef struct {
     float frequency;
     int   midi_note;
     float cents;
-    float buffer[4096];
+    float buffer[FX_TUNER_BUF_SIZE];
     int   write_pos;
     int   samples_since_update;
+
+    /* Analysis scratch — plans allocated at init, used on the audio thread */
+    kiss_fftr_cfg fft_fwd;
+    kiss_fftr_cfg fft_inv;
+    float         window[FX_TUNER_FFT_SIZE];   /* analysis window, zero-padded */
+    kiss_fft_cpx  spectrum[FX_TUNER_FFT_SIZE / 2 + 1];
+    float         acf[FX_TUNER_FFT_SIZE];
+    float         nsdf[FX_TUNER_WINDOW];
 } fx_tuner_state_t;
 
 /* ── The engine ───────────────────────────────────────────────── */
@@ -220,6 +232,7 @@ void fx_gate_process(fx_noise_gate_t *gate, float *buf, int n, float sr);
 
 /* Tuner */
 void fx_tuner_init(fx_tuner_state_t *tuner);
+void fx_tuner_free(fx_tuner_state_t *tuner);
 void fx_tuner_feed(fx_tuner_state_t *tuner, const float *buf, int n, float sr);
 
 /* Pedal DSP dispatch */

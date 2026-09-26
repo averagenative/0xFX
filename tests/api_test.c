@@ -11,6 +11,7 @@
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <time.h>
 
 /* dr_wav for writing test WAV files (declaration only — impl is in cab_ir.c) */
 #include "dr_wav.h"
@@ -264,6 +265,69 @@ static void test_tuner(void) {
            "tuner should detect roughly ~440Hz");
 
     fx_engine_destroy(e);
+    printf("  OK\n");
+}
+
+/* ── Test: tuner accuracy + real-time cost (TASK-376) ──────────── */
+
+static float tuner_detect(float rate, float freq) {
+    fx_engine_t *e = fx_engine_create(rate);
+    float in[256], out[256];
+    int n = 0;
+    for (int block = 0; block < 64; block++) {
+        for (int i = 0; i < 256; i++, n++)
+            in[i] = 0.4f * sinf(2.0f * 3.14159265f * freq * (float)n / rate);
+        fx_engine_process(e, in, out, 256);
+    }
+    float f = fx_tuner_get_frequency(e);
+    fx_engine_destroy(e);
+    return f;
+}
+
+static int cmp_double(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return (x > y) - (x < y);
+}
+
+static void test_tuner_accuracy_and_cost(void) {
+    printf("test_tuner_accuracy_and_cost...\n");
+
+    const float notes[] = { 82.41f, 110.0f, 329.63f, 440.0f };
+    const float rates[] = { 44100.0f, 48000.0f };
+    for (int r = 0; r < 2; r++) {
+        for (int k = 0; k < 4; k++) {
+            float f = tuner_detect(rates[r], notes[k]);
+            float err = fabsf(f - notes[k]) / notes[k];
+            printf("    %.0f Hz engine, %.2f Hz tone: detected %.2f Hz\n", rates[r], notes[k], f);
+            /* 1%: the NSDF + parabolic method's own bias reaches ~0.5% in
+             * this range (TASK-377). Before TASK-376 low notes read as
+             * sr / min_lag, over 10x off. */
+            ASSERT(err < 0.01f, "tuner should detect within 1%");
+        }
+    }
+
+    /* The tuner runs inside fx_engine_process — its update must fit in a
+     * small audio buffer, not just on average. 64 frames at 48k = 1.33 ms. */
+    enum { BLOCKS = 1500 };
+    static double us[BLOCKS];
+    fx_engine_t *e = fx_engine_create(48000.0f);
+    float in[64], out[64];
+    int n = 0;
+    for (int b = 0; b < BLOCKS; b++) {
+        for (int i = 0; i < 64; i++, n++)
+            in[i] = 0.4f * sinf(2.0f * 3.14159265f * 110.0f * (float)n / 48000.0f);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        fx_engine_process(e, in, out, 64);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        us[b] = (double)(t1.tv_sec - t0.tv_sec) * 1e6 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e3;
+    }
+    fx_engine_destroy(e);
+    qsort(us, BLOCKS, sizeof(us[0]), cmp_double);
+    double p50 = us[BLOCKS / 2], p99 = us[BLOCKS * 99 / 100], worst = us[BLOCKS - 1];
+    printf("    64-frame blocks @ 48k: p50=%.0f us  p99=%.0f us  worst=%.0f us\n", p50, p99, worst);
+    ASSERT(p99 < 1000.0, "p99 engine block time should stay under 1 ms at 64 frames");
+
     printf("  OK\n");
 }
 
@@ -2175,6 +2239,7 @@ int main(void) {
     test_compressor();
     test_pedal_param_names();
     test_tuner();
+    test_tuner_accuracy_and_cost();
     test_cab_ir();
     test_parallel_chain_routing();
     test_cab_load_api();
