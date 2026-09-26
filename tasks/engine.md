@@ -284,7 +284,7 @@
 - **Phase**: 15
 - **Priority**: HIGH
 - **Release**: 1.4.0
-- **Depends**: TASK-374
+- **Depends**: TASK-374, TASK-376
 - **Files**: `src/audio/jack_duplex.c`, `src/audio/jack_duplex.h`, `src/audio/audio_device.c`, `src/audio/audio_device.h`, `src/gui/gui_main.cpp`, `CMakeLists.txt`, `tests/`
 - **Notes**: Reported 2026-09-25: significant lag with the iRig HD 2 on Fedora 44 / PipeWire 1.6.8. miniaudio 0.11.25 duplex on the PulseAudio backend runs capture and playback as separate streams joined by a ring buffer pre-filled with 2 periods (can grow to 5), plus per-stream pulse buffering and 44.1/48k resampling: roughly 35 ms+ round trip at 256 frames. miniaudio has no PipeWire backend and its JACK backend can't pick a device, so we drive libjack ourselves. pipewire-jack port names are `<node.description>:capture_FL` / `playback_FL` with `JackPortIsPhysical` set.
 
@@ -297,3 +297,18 @@
   - The engine is created at the JACK sample rate; the Rate control shows it as set by the audio system.
   - A round-trip latency estimate is logged at start and shown in audio settings.
   - Test: port-name grouping is a pure function with a unit test. Manual: Dan verifies with the iRig HD 2 that Buffer 64/128 is audibly tighter than the Pulse path.
+
+### TASK-376: Tuner pitch detection blows the real-time budget
+- **Status**: in_progress
+- **Phase**: 15
+- **Priority**: HIGH
+- **Release**: 1.4.0
+- **Depends**: none
+- **Files**: `src/engine/internal/tuner.c`, `src/engine/internal/engine_internal.h`, `src/engine/internal/engine.c`, `tests/api_test.c`
+- **Notes**: Found while testing TASK-375 at 64 frames on PipeWire: about 20 dropouts per second whenever there's input. `fx_tuner_feed` ran a direct NSDF (2048-sample window by ~870 lags, three multiply-adds and two modulos per step) inside the audio callback every 2048 samples, taking 5-10 ms per update. The Pulse path's large buffers hid it; the plugin at small DAW buffers is affected the same way.
+
+  **Acceptance criteria**:
+  - The NSDF uses FFT autocorrelation (kissfft plans allocated at engine create) and a running energy sum: no O(window x lag) loop and no per-sample modulo on the audio thread.
+  - Same algorithm and thresholds (McLeod first peak, parabolic refinement).
+  - Test: E2, A2, E4 and A4 sines detected within 0.5% at 44.1k and 48k.
+  - Test: the 99th-percentile `fx_engine_process` time for 64-frame blocks of a sustained 110 Hz tone is under 1 ms.

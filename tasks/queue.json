@@ -3388,7 +3388,8 @@
     "status": "in_progress",
     "claimedBy": "claude",
     "depends": [
-      "TASK-374"
+      "TASK-374",
+      "TASK-376"
     ],
     "estimatedTokens": 60000,
     "release": "1.4.0",
@@ -3413,5 +3414,30 @@
       "tests/"
     ],
     "notes": "Reported 2026-09-25: significant lag with iRig HD 2 on Fedora 44 / PipeWire 1.6.8. miniaudio 0.11.25 duplex on the PulseAudio backend runs capture and playback as separate pulse streams joined by a duplex ring buffer pre-filled with 2 periods (can grow to 5), plus per-stream pulse buffering and 44.1<->48k resampling — roughly 35 ms+ round trip at 256 frames. miniaudio has no PipeWire backend and its JACK backend can't pick a device (auto-connects to the first physical ports), so we drive libjack ourselves. pipewire-jack port names are '<node.description>:capture_FL' / 'playback_FL' with JackPortIsPhysical set."
+  },
+  {
+    "id": "TASK-376",
+    "priority": "HIGH",
+    "title": "Tuner pitch detection blows the real-time budget (5-10 ms spikes in fx_engine_process)",
+    "domain": "engine",
+    "phase": 15,
+    "status": "in_progress",
+    "claimedBy": "claude",
+    "depends": [],
+    "estimatedTokens": 15000,
+    "release": "1.4.0",
+    "acceptanceCriteria": [
+      "fx_tuner_feed's NSDF runs via FFT autocorrelation (kissfft, plans allocated at engine create) with the energy term from a running sum — no O(window x lag) loop and no per-sample modulo in the audio thread.",
+      "Same detection algorithm and thresholds (McLeod first-peak, parabolic refinement); results match the direct computation.",
+      "Test: E2 82.41 Hz, A2 110 Hz, E4 329.63 Hz and A4 440 Hz sines detected within 0.5% at 44.1k and 48k.",
+      "Test: 99th-percentile fx_engine_process time for 64-frame blocks of a sustained 110 Hz tone is under 1 ms (was 5-10 ms spikes ~20x/s)."
+    ],
+    "files": [
+      "src/engine/internal/tuner.c",
+      "src/engine/internal/engine_internal.h",
+      "src/engine/internal/engine.c",
+      "tests/api_test.c"
+    ],
+    "notes": "Found while testing TASK-375 on PipeWire at 64 frames: 20 dropouts/s whenever there's input. fx_tuner_feed ran a direct NSDF (2048-sample window x ~870 lags, three MACs plus two modulos per step, ~1.8M iterations) inside the audio callback every 2048 samples — 5-10 ms per update. The miniaudio/Pulse path's large buffers masked it; the plugin at small DAW buffers is affected the same way."
   }
 ]
