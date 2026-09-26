@@ -3385,7 +3385,7 @@
     "title": "Low-latency JACK/PipeWire duplex audio path for the Linux standalone",
     "domain": "engine",
     "phase": 15,
-    "status": "in_progress",
+    "status": "done",
     "claimedBy": "claude",
     "depends": [
       "TASK-374",
@@ -3396,13 +3396,13 @@
     "acceptanceCriteria": [
       "New src/audio/jack_duplex.c: dlopen(\"libjack.so.0\") at runtime (PipeWire's libjack or real JACK). No build-time dependency; Linux only.",
       "One process callback reads the capture port, runs input trim + fx_engine_process, and writes the playback port(s) in the same cycle. No intermediate ring buffer.",
-      "Used by default when a JACK server is reachable (JackNoStartServer); otherwise the existing miniaudio path is used unchanged. Windows/macOS untouched.",
-      "Devices listed from physical JACK ports grouped by client name (e.g. 'iRig HD 2 Mono'); input connects that device's first capture port, output connects the device's playback ports (mono engine out to all channels). Selection persists by index like today.",
-      "Buffer size requested via PIPEWIRE_LATENCY before client open; changing Buffer reopens the client. Actual quantum is read back from jack_get_buffer_size and logged.",
-      "Engine is created at the JACK sample rate; the Rate dropdown shows the rate as set by the audio system when JACK is active.",
-      "Round-trip latency estimate (capture + playback port latency + one buffer) logged at start and shown in audio settings.",
-      "Callback chunks blocks larger than the engine max and never processes past the engine's block limit.",
-      "Test: port-name grouping into devices is a pure function covered by a unit test. Manual: Dan verifies with the iRig HD 2 on Fedora that Buffer 64/128 gives audibly lower latency than the Pulse path."
+      "Used by default when a JACK server is reachable (JackNoStartServer); otherwise the existing miniaudio path is used unchanged (FX_AUDIO_BACKEND=miniaudio forces it). Windows/macOS untouched.",
+      "Devices listed from physical JACK ports: one input per capture port ('<client>' or '<client> (In N)'), one output per client (first stereo pair). With no output picked, the output sharing the most leading words with the input's card is used (PipeWire names one card's ports by profile: 'iRig HD 2 Mono' / 'iRig HD 2 Analog Stereo').",
+      "Buffer size set with jack_set_buffer_size (PipeWire: node.force-quantum while running) — live, no reopen. Device switches rewire the running client.",
+      "Engine created at the JACK sample rate; Rate shows as set by the audio system. Recorder uses the engine rate.",
+      "Audio settings show the backend, the period in use and the round-trip estimate from the connected ports' reported latency.",
+      "Saved devices are matched by name (exact, then '<name> (In N)'); pre-name configs only reuse indices on the miniaudio path.",
+      "Test: port grouping and default-output matching are pure functions with unit tests (fx_jack_ports_test). Manual: Dan verifies with the iRig HD 2 that Buffer 64/128 is audibly tighter than the Pulse path."
     ],
     "files": [
       "src/audio/jack_duplex.c",

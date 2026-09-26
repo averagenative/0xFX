@@ -216,6 +216,8 @@ target_link_libraries(0xfx_standalone PRIVATE fx_engine fx_core shine m)
 
 # Platform-specific audio deps
 if(UNIX AND NOT APPLE)
+    # JACK/PipeWire duplex path — libjack is dlopen'd, no build dependency
+    target_sources(0xfx_standalone PRIVATE src/audio/jack_duplex.c)
     target_link_libraries(0xfx_standalone PRIVATE pthread dl)
     if(ALSA_FOUND)
         target_include_directories(0xfx_standalone PRIVATE ${ALSA_INCLUDE_DIRS})
@@ -363,6 +365,7 @@ if(HAS_GUI)
             "-framework AudioToolbox" "-framework AudioUnit" "-framework IOKit"
             pthread)
     elseif(UNIX AND NOT APPLE)
+        target_sources(0xfx_gui PRIVATE src/audio/jack_duplex.c)
         target_link_libraries(0xfx_gui PRIVATE GL pthread dl)
         if(ALSA_FOUND)
             target_include_directories(0xfx_gui PRIVATE ${ALSA_INCLUDE_DIRS})
@@ -384,6 +387,13 @@ target_link_libraries(fx_api_test PRIVATE fx_engine fx_core m)
 
 enable_testing()
 add_test(NAME api_test COMMAND fx_api_test)
+
+if(UNIX AND NOT APPLE)
+    add_executable(fx_jack_ports_test tests/jack_ports_test.c src/audio/jack_duplex.c)
+    target_include_directories(fx_jack_ports_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(fx_jack_ports_test PRIVATE fx_core dl)
+    add_test(NAME jack_ports_test COMMAND fx_jack_ports_test)
+endif()
 
 # ── Cross-compile support (MinGW) ────────────────────────────
 if(MINGW)

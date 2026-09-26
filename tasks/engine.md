@@ -280,23 +280,24 @@
   - Test: a 96k IR loads into a 48k engine.
 
 ### TASK-375: Low-latency JACK/PipeWire duplex audio path for the Linux standalone
-- **Status**: in_progress
+- **Status**: done (manual iRig listening test pending)
 - **Phase**: 15
 - **Priority**: HIGH
 - **Release**: 1.4.0
 - **Depends**: TASK-374, TASK-376
-- **Files**: `src/audio/jack_duplex.c`, `src/audio/jack_duplex.h`, `src/audio/audio_device.c`, `src/audio/audio_device.h`, `src/gui/gui_main.cpp`, `CMakeLists.txt`, `tests/`
-- **Notes**: Reported 2026-09-25: significant lag with the iRig HD 2 on Fedora 44 / PipeWire 1.6.8. miniaudio 0.11.25 duplex on the PulseAudio backend runs capture and playback as separate streams joined by a ring buffer pre-filled with 2 periods (can grow to 5), plus per-stream pulse buffering and 44.1/48k resampling: roughly 35 ms+ round trip at 256 frames. miniaudio has no PipeWire backend and its JACK backend can't pick a device, so we drive libjack ourselves. pipewire-jack port names are `<node.description>:capture_FL` / `playback_FL` with `JackPortIsPhysical` set.
+- **Files**: `src/audio/jack_duplex.c`, `src/audio/jack_duplex.h`, `src/audio/audio_device.c`, `src/audio/audio_device.h`, `src/gui/gui_main.cpp`, `src/standalone/main.c`, `CMakeLists.txt`, `tests/jack_ports_test.c`
+- **Notes**: Reported 2026-09-25: significant lag with the iRig HD 2 on Fedora 44 / PipeWire 1.6.8. miniaudio 0.11.25 duplex on the PulseAudio backend runs capture and playback as separate streams joined by a ring buffer pre-filled with 2 periods (can grow to 5), plus per-stream pulse buffering and 44.1/48k resampling: roughly 35 ms+ round trip at 256 frames. miniaudio has no PipeWire backend and its JACK backend can't pick a device, so we drive libjack ourselves. Measured with the new path: PipeWire reports ~3.3 ms round trip at 64 frames and ~6 ms at 128, with 0 xruns once TASK-376 landed.
 
   **Acceptance criteria**:
   - `src/audio/jack_duplex.c` loads `libjack.so.0` with `dlopen` at runtime (PipeWire's libjack or real JACK). No build-time dependency; Linux only.
   - One process callback reads the capture port, applies input trim, runs `fx_engine_process`, and writes the playback port(s) in the same cycle. No intermediate ring buffer.
-  - Used by default when a JACK server is reachable (`JackNoStartServer`); otherwise the existing miniaudio path runs unchanged. Windows/macOS untouched.
-  - Devices are listed from physical JACK ports grouped by client name. Input connects the device's first capture port; output connects all of the device's playback ports.
-  - Buffer size is requested via `PIPEWIRE_LATENCY` before the client opens; changing Buffer reopens the client. The actual quantum is read back and logged.
-  - The engine is created at the JACK sample rate; the Rate control shows it as set by the audio system.
-  - A round-trip latency estimate is logged at start and shown in audio settings.
-  - Test: port-name grouping is a pure function with a unit test. Manual: Dan verifies with the iRig HD 2 that Buffer 64/128 is audibly tighter than the Pulse path.
+  - Used by default when a JACK server is reachable; otherwise the miniaudio path runs unchanged. `FX_AUDIO_BACKEND=miniaudio` forces it. Windows/macOS untouched.
+  - One input per physical capture port, one output per device (first stereo pair). With no output picked, the output whose name shares the most leading words with the input's is used, because PipeWire names one card's ports by profile (`iRig HD 2 Mono` / `iRig HD 2 Analog Stereo`).
+  - Buffer size changes live via `jack_set_buffer_size` (PipeWire applies it as `node.force-quantum` while running). Device switches rewire the running client.
+  - The engine runs at the JACK rate; the Rate control shows it as set by the audio system. The recorder uses the engine rate.
+  - Audio settings show the backend, the period in use, and the round-trip estimate from the ports' reported latency.
+  - Saved devices are matched by name; configs from before names were saved only reuse indices on the miniaudio path.
+  - Test: port grouping and default-output matching are unit tested. Manual: Dan verifies with the iRig HD 2 that Buffer 64/128 is audibly tighter than the Pulse path.
 
 ### TASK-376: Tuner pitch detection blows the real-time budget
 - **Status**: done

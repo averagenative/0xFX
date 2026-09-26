@@ -176,6 +176,14 @@ Download from [Releases](https://github.com/averagenative/0xFX/releases).
 - **AppImage** (x64 only): `chmod +x 0xFX-*.AppImage && ./0xFX-*.AppImage`
 - ARM64 builds target Raspberry Pi 4/5, Pine64, ARM Chromebooks, etc.
 
+**Low-latency audio**: the standalone uses JACK when a server is reachable, which
+on current Fedora/Ubuntu is PipeWire's `pipewire-jack` (installed by default on
+Fedora). Input, amp and output then run in one PipeWire cycle, and the Buffer
+setting sets the cycle size: 64 or 128 frames is typically 3-6 ms round trip. The
+engine runs at the PipeWire rate (usually 48 kHz). Without a JACK server it falls
+back to PulseAudio/ALSA via miniaudio, which has noticeably more latency; set
+`FX_AUDIO_BACKEND=miniaudio` to force that path.
+
 ---
 
 ## Building from Source
@@ -315,7 +323,7 @@ Audio under Wine is **not** representative — use this to verify the GUI render
 ```
 Layer 4: Host Wrappers — Standalone (SDL2) | CLAP | VST3
 Layer 3: GUI — C++ / Dear ImGui / OpenGL 3.3
-Layer 2: Audio I/O — miniaudio (duplex) + MIDI input
+Layer 2: Audio I/O — JACK/PipeWire duplex (Linux) or miniaudio + MIDI input
 Layer 1: DSP Engine — pure C99, zero deps, RT-safe
 ```
 

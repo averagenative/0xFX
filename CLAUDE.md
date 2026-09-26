@@ -83,7 +83,7 @@ C debugging MCP server available at `~/projects/mcp-gdb-glib/`. Can be used for 
 4-layer design — no upward dependencies:
 
 - **Layer 1 — Engine** (`src/engine/`): Pure C99. Public API header (`fx_engine.h`) with opaque handles. Private internals for effects DSP, amp models, IR convolution + synthesis, tuner. Zero deps, real-time safe.
-- **Layer 2 — Audio Device Manager** (`src/audio/`): miniaudio-based. USB class-compliant (iRig, Scarlett), Bluetooth (with latency warning). Standalone only — plugins get I/O from host.
+- **Layer 2 — Audio Device Manager** (`src/audio/`): miniaudio-based, plus a JACK duplex path on Linux (`jack_duplex.c`, libjack dlopen'd — PipeWire's pipewire-jack on Fedora) used whenever a JACK server is reachable; `FX_AUDIO_BACKEND=miniaudio` forces miniaudio. USB class-compliant (iRig, Scarlett), Bluetooth (with latency warning). Standalone only — plugins get I/O from host.
 - **Layer 3 — GUI** (`src/gui/`): C / Dear ImGui / SDL2 / OpenGL. Single frontend. Skeuomorphic pedalboard with drag-and-drop reorder. Turnable knobs on amps and pedals. Calls engine API only.
 - **Layer 4 — Host Wrappers** (`src/standalone/`, `src/plugin/`): SDL2 standalone host, CLAP (first-class) and VST3 (secondary) via CPLUG.
 

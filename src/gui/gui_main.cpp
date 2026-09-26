@@ -116,6 +116,8 @@ static void user_preset_path(char *out, size_t out_size, const char *name) {
 struct SessionConfig {
     int   input_device_idx;
     int   output_device_idx;
+    char  input_device_name[256];   /* preferred over the index when set */
+    char  output_device_name[256];
     int   window_w;
     int   window_h;
     int   buf_size_idx;
@@ -128,6 +130,8 @@ struct SessionConfig {
 static void session_config_defaults(SessionConfig *cfg) {
     cfg->input_device_idx  = -1;
     cfg->output_device_idx = -1;
+    cfg->input_device_name[0]  = '\0';
+    cfg->output_device_name[0] = '\0';
     cfg->window_w          = 1400;
     cfg->window_h          = 800;
     cfg->buf_size_idx      = 2;
@@ -156,6 +160,10 @@ static bool session_config_load(SessionConfig *cfg) {
     cJSON *v;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_device"))  && cJSON_IsNumber(v)) cfg->input_device_idx  = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "output_device")) && cJSON_IsNumber(v)) cfg->output_device_idx = (int)v->valuedouble;
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "input_device_name"))  && cJSON_IsString(v))
+        snprintf(cfg->input_device_name, sizeof(cfg->input_device_name), "%s", v->valuestring);
+    if ((v = cJSON_GetObjectItemCaseSensitive(root, "output_device_name")) && cJSON_IsString(v))
+        snprintf(cfg->output_device_name, sizeof(cfg->output_device_name), "%s", v->valuestring);
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "window_w"))      && cJSON_IsNumber(v)) cfg->window_w          = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "window_h"))      && cJSON_IsNumber(v)) cfg->window_h          = (int)v->valuedouble;
     if ((v = cJSON_GetObjectItemCaseSensitive(root, "buf_size_idx"))  && cJSON_IsNumber(v)) cfg->buf_size_idx      = (int)v->valuedouble;
@@ -172,6 +180,8 @@ static void session_config_save(const SessionConfig *cfg) {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "input_device",  cfg->input_device_idx);
     cJSON_AddNumberToObject(root, "output_device", cfg->output_device_idx);
+    cJSON_AddStringToObject(root, "input_device_name",  cfg->input_device_name);
+    cJSON_AddStringToObject(root, "output_device_name", cfg->output_device_name);
     cJSON_AddNumberToObject(root, "window_w",      cfg->window_w);
     cJSON_AddNumberToObject(root, "window_h",      cfg->window_h);
     cJSON_AddNumberToObject(root, "buf_size_idx",  cfg->buf_size_idx);
@@ -185,6 +195,24 @@ static void session_config_save(const SessionConfig *cfg) {
     FILE *f = fopen(get_config_path(), "w");
     if (f) { fputs(json, f); fclose(f); }
     free(json);
+}
+
+/* Resolve a saved device by name: exact match first, then a per-input
+ * JACK entry "<name> (In N)" for a device saved under its plain name
+ * (the miniaudio list names whole devices). -1 when it isn't listed. */
+static int find_device_by_name(const char *name, int count,
+                               const char *(*get_name)(int)) {
+    if (!name || !name[0]) return -1;
+    const size_t len = strlen(name);
+    for (int i = 0; i < count; i++) {
+        const char *n = get_name(i);
+        if (n && strcmp(n, name) == 0) return i;
+    }
+    for (int i = 0; i < count; i++) {
+        const char *n = get_name(i);
+        if (n && strncmp(n, name, len) == 0 && strncmp(n + len, " (In ", 5) == 0) return i;
+    }
+    return -1;
 }
 
 /* ── Preset Browser ─────────────────────────────────────────── */
@@ -1968,15 +1996,18 @@ int main(int argc, char *argv[]) {
 
     /* Audio + engine + MIDI init.
      * The engine's DSP is built for one rate and the GUI holds engine-owned
-     * IDs, so the saved Rate is applied here at creation — changing it in
-     * settings takes effect on the next launch. */
+     * IDs, so the rate is fixed at creation: the audio system's own rate
+     * when it sets one (the JACK/PipeWire graph), else the saved Rate —
+     * changing that in settings takes effect on the next launch. */
     const int active_sr_idx = (s_session_cfg.sr_idx >= 0 && s_session_cfg.sr_idx < 2)
                               ? s_session_cfg.sr_idx : 0;
     fx_audio_init();
     fx_midi_init();
-    fx_engine_t *engine = fx_engine_create((float)sr_values[active_sr_idx]);
-    fx_audio_set_sample_rate(engine, (float)sr_values[active_sr_idx]);
-    FX_INFO("Engine created at %d Hz", sr_values[active_sr_idx]);
+    const float native_rate = fx_audio_get_native_rate();
+    const float engine_rate = native_rate > 0.0f ? native_rate : (float)sr_values[active_sr_idx];
+    fx_engine_t *engine = fx_engine_create(engine_rate);
+    fx_audio_set_sample_rate(engine, engine_rate);
+    FX_INFO("Engine created at %.0f Hz (%s)", engine_rate, fx_audio_get_backend_name());
 
     /* Audio device / settings state */
     int num_input_devices = fx_audio_get_device_count();
@@ -1996,11 +2027,21 @@ int main(int argc, char *argv[]) {
     static float s_input_gain_db  = 0.0f;   /* -24..+12 dB, default 0 dB */
     static bool  s_input_pad      = false;  /* -20 dB pad toggle */
 
-    /* Restore from session config */
-    if (s_session_cfg.input_device_idx  >= 0 && s_session_cfg.input_device_idx  < num_input_devices)
-        s_selected_input  = s_session_cfg.input_device_idx;
-    if (s_session_cfg.output_device_idx >= 0 && s_session_cfg.output_device_idx < num_output_devices)
-        s_selected_output = s_session_cfg.output_device_idx;
+    /* Restore from session config. Devices are matched by name — indices
+     * shift with hot-plug and differ between the JACK and miniaudio lists.
+     * Configs from before names were saved fall back to the index, but only
+     * on the miniaudio path those indices came from. */
+    if (s_session_cfg.input_device_name[0] || s_session_cfg.output_device_name[0]) {
+        s_selected_input  = find_device_by_name(s_session_cfg.input_device_name,
+                                                num_input_devices, fx_audio_get_device_name);
+        s_selected_output = find_device_by_name(s_session_cfg.output_device_name,
+                                                num_output_devices, fx_audio_get_output_name);
+    } else if (native_rate == 0.0f) {
+        if (s_session_cfg.input_device_idx  >= 0 && s_session_cfg.input_device_idx  < num_input_devices)
+            s_selected_input  = s_session_cfg.input_device_idx;
+        if (s_session_cfg.output_device_idx >= 0 && s_session_cfg.output_device_idx < num_output_devices)
+            s_selected_output = s_session_cfg.output_device_idx;
+    }
     if (s_session_cfg.buf_size_idx >= 0 && s_session_cfg.buf_size_idx < 5)
         s_selected_buf_idx = s_session_cfg.buf_size_idx;
     s_selected_sr_idx = active_sr_idx;
@@ -2017,8 +2058,8 @@ int main(int argc, char *argv[]) {
     /* Auto-start monitoring if we have saved device preferences */
     if (s_selected_input >= 0 && num_input_devices > 0 && !s_monitor_only) {
         if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+        fx_audio_set_mute_output(true);  /* before the device runs, not after */
         if (fx_audio_set_device(engine, s_selected_input)) {
-            fx_audio_set_mute_output(true);
             s_monitor_only = true;
             FX_INFO("Auto-monitoring input: %s", fx_audio_get_device_name(s_selected_input));
         }
@@ -2801,7 +2842,7 @@ int main(int argc, char *argv[]) {
                             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                             t->tm_hour, t->tm_min, t->tm_sec,
                             exts[rec_format_idx]);
-                        fx_recorder_start(rec_path, (fx_record_format_t)rec_format_idx, 44100.0f);
+                        fx_recorder_start(rec_path, (fx_record_format_t)rec_format_idx, engine_rate);
                         strncpy(s_last_rec_path, rec_path, sizeof(s_last_rec_path) - 1);
                         s_last_rec_path[sizeof(s_last_rec_path) - 1] = '\0';
                     }
@@ -3124,12 +3165,35 @@ int main(int argc, char *argv[]) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("Rate");
                 ImGui::SameLine();
-                ImGui::SetNextItemWidth(100);
-                /* Saved to config on exit and applied at engine creation */
-                ImGui::Combo("##rate", &s_selected_sr_idx, sr_labels, 2);
-                if (s_selected_sr_idx != active_sr_idx) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Restart to apply");
+                if (native_rate > 0.0f) {
+                    /* The JACK/PipeWire graph owns the rate */
+                    ImGui::Text("%.0f Hz", native_rate);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Set by the audio system (%s)", fx_audio_get_backend_name());
+                } else {
+                    ImGui::SetNextItemWidth(100);
+                    /* Saved to config on exit and applied at engine creation */
+                    ImGui::Combo("##rate", &s_selected_sr_idx, sr_labels, 2);
+                    if (s_selected_sr_idx != active_sr_idx) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Restart to apply");
+                    }
+                }
+
+                /* What the audio system actually granted */
+                {
+                    const int   actual_buf = fx_audio_get_actual_buffer();
+                    const float latency    = fx_audio_get_latency_ms();
+                    ImGui::TextDisabled("Audio system: %s", fx_audio_get_backend_name());
+                    if (actual_buf > 0) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("  In use: %d frames (%.1f ms)", actual_buf,
+                                            1000.0f * (float)actual_buf / engine_rate);
+                    }
+                    if (latency > 0.0f) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("  Round trip: ~%.1f ms", latency);
+                    }
                 }
 
                 /* ── Input Gain Trim ──────────────────────────── */
@@ -3196,8 +3260,8 @@ int main(int argc, char *argv[]) {
                         /* Auto-start monitoring if not already open */
                         if (!s_monitor_only) {
                             if (s_selected_output >= 0) fx_audio_set_output(s_selected_output);
+                            fx_audio_set_mute_output(true);  /* before the device runs */
                             if (fx_audio_set_device(engine, s_selected_input)) {
-                                fx_audio_set_mute_output(true);
                                 s_monitor_only = true;
                                 FX_INFO("Monitoring input: %s", fx_audio_get_device_name(s_selected_input));
                             }
@@ -6319,6 +6383,14 @@ int main(int argc, char *argv[]) {
         s_session_cfg.window_h          = wh;
         s_session_cfg.input_device_idx  = s_selected_input;
         s_session_cfg.output_device_idx = s_selected_output;
+        {
+            const char *in_name  = s_selected_input  >= 0 ? fx_audio_get_device_name(s_selected_input)  : NULL;
+            const char *out_name = s_selected_output >= 0 ? fx_audio_get_output_name(s_selected_output) : NULL;
+            snprintf(s_session_cfg.input_device_name,  sizeof(s_session_cfg.input_device_name),
+                     "%s", in_name  ? in_name  : "");
+            snprintf(s_session_cfg.output_device_name, sizeof(s_session_cfg.output_device_name),
+                     "%s", out_name ? out_name : "");
+        }
         s_session_cfg.buf_size_idx      = s_selected_buf_idx;
         s_session_cfg.sr_idx            = s_selected_sr_idx;
         s_session_cfg.input_gain_db     = s_input_gain_db;

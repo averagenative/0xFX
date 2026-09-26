@@ -57,8 +57,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* Create engine */
-    fx_engine_t *engine = fx_engine_create(44100.0f);
+    /* Create engine at the audio system's rate when it sets one (JACK) */
+    float rate = fx_audio_get_native_rate();
+    if (rate <= 0.0f) rate = 44100.0f;
+    fx_engine_t *engine = fx_engine_create(rate);
+    fx_audio_set_sample_rate(engine, rate);
     if (!engine) {
         FX_ERROR("Failed to create engine");
         fx_audio_shutdown();

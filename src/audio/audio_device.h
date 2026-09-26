@@ -24,6 +24,13 @@ void        fx_audio_set_output(int index);
 bool        fx_audio_set_buffer_size(struct fx_engine *engine, int frames);
 bool        fx_audio_set_sample_rate(struct fx_engine *engine, float rate);
 
+/* Rate the audio system runs at when it dictates one (the JACK/PipeWire
+ * graph on Linux); 0 when the app picks. Create the engine at this rate. */
+float       fx_audio_get_native_rate(void);
+const char *fx_audio_get_backend_name(void);
+int         fx_audio_get_actual_buffer(void);  /* running period, 0 if stopped */
+float       fx_audio_get_latency_ms(void);     /* round-trip estimate, 0 if unknown */
+
 /* Monitor mode: process engine (for tuner/meters) but mute output */
 void        fx_audio_set_mute_output(bool mute);
 
